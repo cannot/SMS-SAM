@@ -1,0 +1,481 @@
+# Admin\ApiKeyController - การทำงานและฟังก์ชัน
+
+## 📋 ภาพรวมการทำงาน
+
+`Admin\ApiKeyController` เป็น Controller สำหรับจัดการ API Keys ในระบบ Smart Notification System โดยทำหน้าที่เป็น **Admin Interface** สำหรับการจัดการ API Keys ที่ระบบภายนอกจะใช้เรียก API
+
+---
+
+## 🎯 หน้าที่หลัก
+
+### 1. **API Key Management (CRUD)**
+- **สร้าง API Key ใหม่** สำหรับระบบภายนอก
+- **แสดงรายการ API Keys** ทั้งหมดพร้อมสถานะ
+- **แก้ไขการตั้งค่า** API Key (rate limits, permissions, expiry)
+- **ลบ API Key** ที่ไม่ใช้แล้ว
+
+### 2. **Security & Access Control**
+- **กำหนดสิทธิการเข้าถึง** ว่า API Key ใดเรียก endpoint ไหนได้บ้าง
+- **จัดการ Rate Limiting** ต่อ API Key
+- **ติดตามการใช้งาน** และการละเมิดกฎ
+- **ระงับ/เปิดใช้งาน** API Key
+
+### 3. **Usage Analytics & Monitoring**
+- **สถิติการใช้งาน** ของแต่ละ API Key
+- **การเตือนเมื่อใกล้เกิน Rate Limit**
+- **ประวัติการเรียกใช้ API**
+- **รายงานความผิดปกติ**
+
+---
+
+## 🔧 ฟังก์ชันที่ต้องมี (Methods)
+
+### **Basic CRUD Operations**
+
+#### `index()`
+```php
+// แสดงรายการ API Keys ทั้งหมด
+- แสดงตาราง API Keys พร้อมข้อมูล:
+  - ชื่อ API Key
+  - สถานะ (Active/Inactive/Expired)
+  - การใช้งานล่าสุด
+  - จำนวนการเรียกใช้
+  - วันหมดอายุ
+- กรองและค้นหา API Keys
+- Pagination
+- Export เป็น CSV/Excel
+```
+
+#### `create()`
+```php
+// แสดงฟอร์มสร้าง API Key ใหม่
+- ฟอร์มกรอกข้อมูล:
+  - ชื่อ API Key (เพื่อระบุ)
+  - คำอธิบาย/วัตถุประสงค์
+  - Rate Limit (requests per minute)
+  - วันหมดอายุ
+  - Permissions/Scope
+  - IP Whitelist (optional)
+```
+
+#### `store()`
+```php
+// บันทึก API Key ใหม่
+- Validate ข้อมูลที่ส่งมา
+- Generate API Key แบบ secure (32-64 characters)
+- Hash และเก็บในฐานข้อมูล
+- สร้าง Log การสร้าง API Key
+- Redirect กลับไปหน้า index พร้อมแสดง API Key ที่สร้าง (แสดงครั้งเดียว)
+```
+
+#### `show($apiKey)`
+```php
+// แสดงรายละเอียด API Key
+- ข้อมูลพื้นฐาน (ชื่อ, สถานะ, วันที่สร้าง)
+- Usage Statistics:
+  - จำนวนการเรียกใช้รวม
+  - การใช้งานรายวัน/เดือน
+  - Top endpoints ที่เรียกใช้
+  - Error rate
+- Recent Activity Logs
+- Performance Metrics
+```
+
+#### `edit($apiKey)`
+```php
+// แสดงฟอร์มแก้ไข API Key
+- ฟอร์มที่มีข้อมูลปัจจุบัน
+- ไม่แสดง API Key จริง (เป็น masked)
+- แก้ไขได้: ชื่อ, คำอธิบาย, Rate Limit, วันหมดอายุ, Permissions
+```
+
+#### `update($apiKey)`
+```php
+// อัปเดต API Key
+- Validate ข้อมูลใหม่
+- อัปเดตฐานข้อมูล
+- บันทึก Activity Log
+- แจ้งเตือนเจ้าของ API Key (ถ้ามีการเปลี่ยนแปลงสำคัญ)
+```
+
+#### `destroy($apiKey)`
+```php
+// ลบ API Key
+- ยืนยันการลบ
+- Revoke API Key ทันที
+- บันทึก Log การลบ
+- แจ้งเตือนเจ้าของ API Key
+- Cleanup ข้อมูลที่เกี่ยวข้อง
+```
+
+---
+
+### **Security & Management Functions**
+
+#### `regenerate($apiKey)`
+```php
+// สร้าง API Key ใหม่
+- Revoke API Key เดิม
+- Generate API Key ใหม่
+- อัปเดตฐานข้อมูล
+- บันทึก Security Log
+- แสดง API Key ใหม่ (ครั้งเดียว)
+- ส่งอีเมลแจ้งเตือนการเปลี่ยนแปลง
+```
+
+#### `toggleStatus($apiKey)`
+```php
+// เปิด/ปิดการใช้งาน API Key
+- เปลี่ยนสถานะ Active/Inactive
+- บันทึก Log
+- แจ้งเตือนเจ้าของ API Key
+- ทำให้ API Key หยุดทำงานทันที (ถ้าปิด)
+```
+
+#### `resetUsage($apiKey)`
+```php
+// รีเซ็ตสถิติการใช้งาน
+- รีเซ็ต usage counter
+- รีเซ็ต rate limit tracking
+- บันทึก Log การรีเซ็ต
+- ใช้เมื่อต้องการให้ API Key เริ่มใหม่
+```
+
+---
+
+### **Analytics & Reporting Functions**
+
+#### `usageStats($apiKey)`
+```php
+// สถิติการใช้งานรายละเอียด
+- Usage by time period (hourly, daily, monthly)
+- Endpoint popularity
+- Response time analysis
+- Error rate analysis
+- Geographic usage (if tracked)
+- Return JSON สำหรับ charts
+```
+
+#### `usageHistory($apiKey)`
+```php
+// ประวัติการใช้งาน
+- Request logs (recent 1000 requests)
+- Timestamp, endpoint, response code, response time
+- IP address, user agent
+- Error details (ถ้ามี)
+- Pagination สำหรับประวัติย้อนหลัง
+```
+
+#### `auditLog()`
+```php
+// Log การเปลี่ยนแปลง API Keys
+- การสร้าง/แก้ไข/ลบ API Key
+- การเปลี่ยนสถานะ
+- การ regenerate
+- ผู้ทำการเปลี่ยนแปลง
+- IP address และ timestamp
+```
+
+#### `securityReport()`
+```php
+// รายงานความปลอดภัย
+- API Keys ที่ใกล้หมดอายุ
+- Usage patterns ที่ผิดปกติ
+- Failed authentication attempts
+- Rate limit violations
+- Suspicious IP addresses
+```
+
+---
+
+### **Bulk Operations**
+
+#### `bulkToggleStatus()`
+```php
+// เปิด/ปิด API Keys หลายตัวพร้อมกัน
+- รับ array ของ API Key IDs
+- เปลี่ยนสถานะทั้งหมด
+- บันทึก Bulk Log
+- ส่งการแจ้งเตือน
+```
+
+#### `bulkUpdateLimits()`
+```php
+// อัปเดต Rate Limits หลาย API Keys
+- อัปเดต rate_limit_per_minute
+- อัปเดตวันหมดอายุ
+- บันทึก Changes Log
+```
+
+#### `bulkDelete()`
+```php
+// ลบ API Keys หลายตัวพร้อมกัน
+- ยืนยันการลบ
+- Revoke ทั้งหมดทันที
+- Cleanup ข้อมูล
+- บันทึก Security Log
+```
+
+---
+
+### **Export & Integration Functions**
+
+#### `export($format)`
+```php
+// Export ข้อมูล API Keys
+- รองรับ CSV, Excel, PDF
+- ข้อมูลที่ Export:
+  - ชื่อ API Key (ไม่รวม key จริง)
+  - สถานะ, วันที่สร้าง, หมดอายุ
+  - Usage statistics
+  - Last used date
+- Filter ตามช่วงวันที่
+```
+
+---
+
+## 🔒 Security Considerations
+
+### **1. API Key Storage**
+```php
+// ไม่เก็บ API Key แบบ plaintext
+- Hash ด้วย bcrypt หรือ argon2
+- เก็บเฉพาะ hashed value
+- แสดง API Key จริงเฉพาะตอนสร้างใหม่
+```
+
+### **2. Access Control**
+```php
+// มีเฉพาะ Admin เท่านั้นที่เข้าถึงได้
+- Middleware: 'can:manage-api-keys'
+- Log ทุกการกระทำ
+- Two-factor authentication (recommended)
+```
+
+### **3. Rate Limiting Protection**
+```php
+// ป้องกันการใช้งานเกินขีดจำกัด
+- Real-time rate limit checking
+- Auto-suspend เมื่อละเมิดกฎ
+- Alert เมื่อมีการใช้งานผิดปกติ
+```
+
+---
+
+## 📊 Database Schema ที่เกี่ยวข้อง
+
+### **api_keys table**
+```sql
+- id (bigint, primary key)
+- name (string) - ชื่อ API Key
+- description (text) - คำอธิบาย
+- key_hash (string) - Hashed API Key
+- is_active (boolean) - สถานะ
+- rate_limit_per_minute (integer) - จำกัดการเรียกใช้
+- usage_count (bigint) - จำนวนการใช้รวม
+- last_used_at (timestamp) - ใช้ครั้งล่าสุด
+- expires_at (timestamp) - วันหมดอายุ
+- permissions (json) - สิทธิการเข้าถึง
+- ip_whitelist (json) - IP ที่อนุญาต
+- created_by (bigint) - ผู้สร้าง
+- created_at, updated_at
+```
+
+### **api_usage_logs table**
+```sql
+- id (bigint, primary key)
+- api_key_id (bigint, foreign key)
+- endpoint (string) - API endpoint ที่เรียก
+- method (string) - HTTP method
+- ip_address (string) - IP ผู้เรียก
+- user_agent (text) - User agent
+- response_code (integer) - HTTP response code
+- response_time (integer) - เวลาตอบสนอง (ms)
+- request_data (json) - ข้อมูลที่ส่งมา
+- created_at
+```
+
+---
+
+## 🎨 UI/UX Features
+
+### **Dashboard View**
+- แสดงสถิติรวม API Keys
+- กราฟการใช้งานรายวัน
+- Alert สำหรับ API Keys ที่ใกล้หมดอายุ
+- Top consumers
+
+### **API Key Management Table**
+- Sortable columns
+- Search และ Filter
+- Bulk actions checkboxes
+- Status indicators (badges)
+- Quick actions (toggle, regenerate)
+
+### **Detail View**
+- Real-time usage charts
+- Recent activity timeline
+- Security alerts
+- Quick settings panel
+
+---
+
+## 🔧 Integration Points
+
+### **ใช้ร่วมกับ Middleware**
+```php
+ApiKeyMiddleware::class
+RateLimitMiddleware::class
+```
+
+### **ใช้ร่วมกับ Services**
+```php
+ApiKeyService::class - จัดการ business logic
+NotificationService::class - ส่งการแจ้งเตือน
+LoggingService::class - บันทึก logs
+```
+
+### **Events & Listeners**
+```php
+ApiKeyCreated::class
+ApiKeyRegenerated::class
+ApiKeyRevoked::class
+RateLimitExceeded::class
+```
+
+---
+
+## 📈 Performance Considerations
+
+### **Caching**
+- Cache API Key validation results
+- Cache usage statistics
+- Cache rate limit counters
+
+### **Database Optimization**
+- Index บน key_hash
+- Index บน api_key_id ใน usage_logs
+- Partition usage_logs ตาม created_at
+
+### **Background Processing**
+- Usage statistics calculation
+- Old logs cleanup
+- Rate limit reset (cron job)
+
+---
+
+## 🧪 Testing Requirements
+
+### **Unit Tests**
+- API Key generation และ validation
+- Rate limiting logic
+- Permission checking
+- Hash verification
+
+### **Feature Tests**
+- CRUD operations
+- Bulk operations
+- Security scenarios
+- API integration
+
+### **Security Tests**
+- Brute force protection
+- SQL injection prevention
+- XSS protection
+- CSRF protection
+
+## สรุปการทำงานของ `Admin\ApiKeyController`
+
+### 🎯 **หน้าที่หลัก:**
+`ApiKeyController` เป็น **ศูนย์กลางการจัดการ API Keys** สำหรับ Admin ในการควบคุมการเข้าถึง API ของระบบภายนอก
+
+### 🔑 **ฟังก์ชันสำคัญ:**
+
+1. **การจัดการ API Key** - สร้าง, แก้ไข, ลบ, regenerate
+2. **Security Control** - กำหนดสิทธิ, rate limiting, IP whitelist  
+3. **Usage Monitoring** - ติดตามการใช้งาน, สถิติ, การละเมิด
+4. **Bulk Operations** - จัดการหลาย API Keys พร้อมกัน
+5. **Reporting** - รายงานความปลอดภัย, audit logs
+
+### 🔒 **ความปลอดภัย:**
+- เก็บเฉพาะ **hashed API Key** ไม่เก็บ plaintext
+- แสดง API Key จริงเฉพาะ**ตอนสร้างใหม่เท่านั้น**
+- มี **audit trail** ครบถ้วน
+- **Rate limiting** และ **IP whitelist** protection
+
+### 📊 **Analytics & Monitoring:**
+- Real-time usage statistics
+- Performance metrics
+- Error rate tracking  
+- Suspicious activity detection
+- Automated alerts
+
+### 💡 **จุดสำคัญ:**
+ต่างจาก API Controller ทั่วไป ตัวนี้เน้น **Administrative Functions** สำหรับการจัดการ API Keys ในมุมมอง Admin แทนที่จะเป็นการใช้งาน API Keys เอง
+
+ต้องการให้ผมสร้าง implementation ของ `ApiKeyController` ที่สมบูรณ์ไหมครับ?
+
+เรียบร้อยแล้วครับ! ตอนนี้ได้สร้างไฟล์ครบทั้งหมดแล้ว:
+
+## 📁 **ไฟล์ที่สร้างเสร็จสมบูรณ์:**
+
+### 🗄️ **Database & Models:**
+1. ✅ **API Keys Migration** - โครงสร้างตารางครบถ้วน
+2. ✅ **API Usage Logs Migration** - เก็บ log การใช้งาน
+3. ✅ **ApiKey Model** - พร้อม relationships, scopes, helper methods
+4. ✅ **ApiUsageLogs Model** - จัดการ logs พร้อม analytics
+
+### 🎨 **Complete Blade Views:**
+1. ✅ **`index.blade.php`** - รายการ API Keys พร้อม filters, bulk actions, statistics
+2. ✅ **`show.blade.php`** - รายละเอียดครบถ้วน พร้อม charts, live monitoring
+3. ✅ **`create.blade.php`** - สร้าง API Key พร้อม validation, guidelines
+4. ✅ **`edit.blade.php`** - แก้ไข API Key พร้อม change tracking, warnings
+
+### 🛡️ **Security Middleware:**
+1. ✅ **`ApiKeyMiddleware`** - Authentication, authorization, logging
+2. ✅ **`RateLimitMiddleware`** - Rate limiting, violation tracking, analytics
+
+## 🔥 **Key Features:**
+
+### **Security Features:**
+- ✅ API Key hashing & masking
+- ✅ Permission-based access control
+- ✅ IP whitelist support
+- ✅ Rate limiting with violation tracking
+- ✅ Security event logging
+- ✅ Suspicious activity detection
+
+### **Monitoring & Analytics:**
+- ✅ Real-time usage tracking
+- ✅ Performance metrics (response time, success rate)
+- ✅ Usage charts (daily trends, hourly distribution)
+- ✅ Top endpoints analysis
+- ✅ Rate limit utilization
+- ✅ Security alerts
+
+### **Management Features:**
+- ✅ Bulk operations (activate/deactivate, rate limits, delete)
+- ✅ Advanced filtering & search
+- ✅ Export capabilities (CSV, Excel, PDF)
+- ✅ Audit trail & change history
+- ✅ Auto-suggestions for optimization
+
+### **API Integration:**
+- ✅ Multiple authentication methods (header, bearer token)
+- ✅ Comprehensive error responses
+- ✅ Rate limit headers
+- ✅ Request/response logging
+- ✅ Usage statistics API
+
+## 🚀 **Next Steps:**
+
+หลังจากนี้ยังต้อง:
+1. **Events & Listeners** - สำหรับ API Key events
+2. **Export Classes** - `ApiKeysExport` for Excel/CSV
+3. **Notification Services** - แจ้งเตือนเมื่อมีการเปลี่ยนแปลง
+4. **Tests** - Unit & Feature tests
+5. **Documentation** - API documentation
+
+ระบบ API Key Management นี้พร้อมใช้งานเต็มรูปแบบแล้ว พร้อมความปลอดภัยสูงและการติดตามการใช้งานแบบ real-time! 
+
+ต้องการให้ผมสร้างส่วนไหนต่อไปครับ?

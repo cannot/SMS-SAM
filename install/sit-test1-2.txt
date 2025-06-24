@@ -1,0 +1,21 @@
+สรุปแผน SIT Testing:
+🔴 Phase 1 (3 วัน): Foundation & Authentication Testing
+
+Unit Testing: LDAP Connection, Authentication Methods, Data Retrieval
+Integration Testing: Laravel + LDAP Integration, Session & JWT Management
+Security Testing: Authentication vulnerabilities, Security scanning
+
+🟠 Phase 2 (4 วัน): Core System & Database Testing
+
+Database Testing: PostgreSQL Performance, Laravel Models, Migrations
+RabbitMQ Testing: Queue Configuration, Message Flow, Retry Mechanisms
+Notification Testing: Template Engine, Scheduling, Recipient Management
+Performance Testing: Queue Processing, Database Optimization
+
+จุดเด่นของแผน:
+
+✅ 22 Test Cases ครอบคลุมทุกส่วนสำคัญ
+✅ Testing Tools: PHPUnit, Laravel Dusk, JMeter, OWASP ZAP
+✅ Performance Targets: 100 msg/min, 500ms query time, 10K jobs/hour
+✅ Security Focus: LDAP Injection, Brute Force, Session Security
+✅ Timeline: 7 วันทำงาน พร้อม milestone แต่ละวัน

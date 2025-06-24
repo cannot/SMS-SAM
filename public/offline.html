@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartNotify - ไม่มีอินเทอร์เน็ต</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .offline-container {
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .offline-icon {
+            font-size: 4rem;
+            color: #6c757d;
+            margin-bottom: 1rem;
+        }
+        
+        .offline-icon::before {
+            content: "📶";
+            font-size: 4rem;
+        }
+        
+        h2 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        
+        .message {
+            color: #6c757d;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        
+        .retry-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .retry-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .retry-btn::before {
+            content: "🔄";
+            font-size: 18px;
+        }
+        
+        .status {
+            margin-top: 1rem;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffffff;
+            border-top: 2px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .checking .spinner {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon"></div>
+        <h2>ไม่มีอินเทอร์เน็ต</h2>
+        <p class="message">
+            ดูเหมือนว่าคุณจะไม่มีอินเทอร์เน็ตในขณะนี้<br>
+            กรุณาตรวจสอบการเชื่อมต่อและลองใหม่อีกครั้ง
+        </p>
+        <button class="retry-btn" onclick="checkConnection()">
+            <span class="spinner"></span>
+            ลองใหม่อีกครั้ง
+        </button>
+        <div class="status" id="status">พร้อมตรวจสอบการเชื่อมต่อ</div>
+    </div>
+
+    <script>
+        let isChecking = false;
+        
+        function checkConnection() {
+            if (isChecking) return;
+            
+            isChecking = true;
+            const btn = document.querySelector('.retry-btn');
+            const status = document.getElementById('status');
+            
+            btn.classList.add('checking');
+            status.textContent = 'กำลังตรวจสอบการเชื่อมต่อ...';
+            
+            // Try to fetch a small resource to test connection
+            fetch('/favicon.ico', { 
+                method: 'HEAD',
+                cache: 'no-cache'
+            })
+            .then(response => {
+                if (response.ok) {
+                    status.textContent = 'เชื่อมต่อสำเร็จ! กำลังโหลดหน้าใหม่...';
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    throw new Error('Network response was not ok');
+                }
+            })
+            .catch(error => {
+                status.textContent = 'ยังไม่สามารถเชื่อมต่อได้ กรุณาลองใหม่อีกครั้ง';
+                btn.classList.remove('checking');
+                isChecking = false;
+            });
+        }
+        
+        // Check connection status periodically
+        setInterval(() => {
+            if (navigator.onLine && !isChecking) {
+                checkConnection();
+            }
+        }, 10000); // Check every 10 seconds
+        
+        // Listen for online event
+        window.addEventListener('online', () => {
+            if (!isChecking) {
+                checkConnection();
+            }
+        });
+        
+        // Update status when offline
+        window.addEventListener('offline', () => {
+            document.getElementById('status').textContent = 'การเชื่อมต่อถูกตัด';
+        });
+    </script>
+</body>
+</html> 
