@@ -1,0 +1,67 @@
+/* ===========================================
+   CSS CUSTOM PROPERTIES (VARIABLES)
+   =========================================== */
+
+   @import url(https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap);
+
+   :root {
+       /* Primary Colors */
+       --primary-green: #256B36;
+       --primary-pink: #E1A6AD;
+       --primary-brown: #4B4058;
+   
+       /* Secondary Colors */
+       --light-green: #65D1B5;
+       --aqua: #659DAB;
+       --blue: #315470;
+       --purple: #47566A0;
+       --orange: #BB864E;
+   
+       /* Gradient Colors */
+       --gradient-start: #25A854;
+       --gradient-mid: #65D1B5;
+       --gradient-end: #E1A6AD;
+   
+       /* Sidebar Dimensions */
+       --sidebar-width: 280px;
+       --sidebar-collapsed-width: 70px;
+       --sidebar-height: calc(100vh - 56px);
+       
+       /* Sidebar Scroll Config */
+       --sidebar-scroll-width: 6px;
+       --sidebar-scroll-track-bg: rgba(255, 255, 255, 0.1);
+       --sidebar-scroll-thumb-bg: rgba(255, 255, 255, 0.3);
+       --sidebar-scroll-thumb-hover-bg: rgba(255, 255, 255, 0.5);
+       --sidebar-padding-bottom: 2rem;
+       
+       /* Sidebar Animation */
+       --sidebar-transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+       --sidebar-hover-transform: translateX(3px);
+       
+       /* Tooltip Config */
+       --tooltip-bg: rgba(0, 0, 0, 0.9);
+       --tooltip-offset: 15px;
+       --tooltip-border-radius: 6px;
+       --tooltip-padding: 0.5rem 0.75rem;
+       --tooltip-font-size: 0.875rem;
+       --tooltip-z-index: 1050;
+   
+       /* Bootstrap Overrides */
+       --bs-font-sans-serif: "Inter", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+       --bs-font-monospace: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+       --bs-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0));
+       --bs-body-font-family: var(--bs-font-sans-serif);
+       --bs-body-font-size: 0.9rem;
+       --bs-body-font-weight: 400;
+       --bs-body-line-height: 1.5;
+   
+       /* Legacy Color Variables for Compatibility */
+       --primary-color: #0d6efd;
+       --secondary-color: #6c757d;
+       --success-color: #198754;
+       --danger-color: #dc3545;
+       --warning-color: #ffc107;
+       --info-color: #0dcaf0;
+       --light-color: #f8f9fa;
+       --dark-color: #212529;
+   }

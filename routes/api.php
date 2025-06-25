@@ -1,10 +1,9 @@
 <?php
 
-// routes/api.php
-
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\NotificationController;
-use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\UserController as V1UserController;
 use App\Http\Controllers\Api\V1\GroupController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\TemplateController;
@@ -12,9 +11,11 @@ use App\Http\Controllers\Api\V1\DeliveryController;
 use App\Http\Controllers\Api\V1\LdapController;
 use App\Http\Controllers\Api\V1\SystemController;
 use App\Http\Controllers\Api\V1\WebhookController;
+use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Middleware\ApiKeyMiddleware;
 use App\Http\Middleware\RateLimitMiddleware;
-use App\Http\Controllers\Admin\ApiKeyController;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,88 +31,153 @@ use App\Http\Controllers\Admin\ApiKeyController;
 // ===========================================
 // PUBLIC API ENDPOINTS (No Authentication)
 // ===========================================
-Route::prefix('v1')->group(function () {
+
+// API Health Check
+Route::get('/health', [SystemController::class, 'health'])->name('api.health');
+
+// API Documentation
+Route::get('/docs', function () {
+    return response()->json([
+        'success' => true,
+        'message' => 'Smart Notification System API Documentation',
+        'version' => '1.0.0',
+        'base_url' => url('/api'),
+        'authentication' => [
+            'web' => 'Session-based (CSRF token required)',
+            'api_key' => 'X-API-Key header',
+            'sanctum' => 'Bearer token'
+        ],
+        'endpoints' => [
+            'v1' => '/api/v1/* - External API with API Key authentication',
+            'dashboard' => '/api/dashboard/* - Dashboard widgets (auth required)',
+            'admin' => '/api/admin/* - Admin functions (admin permission required)',
+            'user' => '/api/user/* - User functions (auth required)',
+            'notifications' => '/api/notifications/* - Notification functions (auth required)'
+        ]
+    ]);
+})->name('api.docs');
+
+// ===========================================
+// QUICK FIX ROUTES (แก้ 404 errors)
+// ===========================================
+Route::middleware(['auth', 'web'])->group(function () {
     
-    // API Health Check
-    Route::get('/health', [SystemController::class, 'health'])->name('api.health');
-
-    // API Documentation endpoint
-    Route::get('/docs', function () {
-        return response()->json([
-            'success' => true,
-            'message' => 'Smart Notification System API Documentation',
-            'version' => '1.0.0',
-            'base_url' => url('/api/v1'),
-            'authentication' => [
-                'method' => 'API Key',
-                'header' => 'X-API-Key: your-api-key-here',
-                'alternative' => 'Authorization: Bearer your-api-key-here'
-            ],
-            'rate_limits' => [
-                'default' => '60 requests per minute',
-                'bulk' => '20 notifications per request',
-                'configurable' => 'Per API key settings'
-            ],
-            'endpoints' => [
-                'notifications' => [
-                    'POST /notifications/send' => 'Send single notification',
-                    'POST /notifications/bulk' => 'Send bulk notifications',
-                    'POST /notifications/schedule' => 'Schedule notification',
-                    'GET /notifications/{id}/status' => 'Get notification status',
-                    'GET /notifications/history' => 'Get notification history',
-                    'DELETE /notifications/{id}/cancel' => 'Cancel scheduled notification',
-                    'POST /notifications/{id}/retry' => 'Retry failed notification'
-                ],
-                'users' => [
-                    'GET /users' => 'List users from LDAP',
-                    'GET /users/search' => 'Search users',
-                    'GET /users/{id}' => 'Get user details',
-                    'GET /users/{id}/preferences' => 'Get user preferences',
-                    'PUT /users/{id}/preferences' => 'Update user preferences'
-                ],
-                'groups' => [
-                    'GET /groups' => 'List notification groups',
-                    'POST /groups' => 'Create notification group',
-                    'GET /groups/{id}' => 'Get group details',
-                    'PUT /groups/{id}' => 'Update notification group',
-                    'DELETE /groups/{id}' => 'Delete notification group',
-                    'GET /groups/{id}/members' => 'Get group members',
-                    'POST /groups/{id}/members' => 'Add group members',
-                    'DELETE /groups/{id}/members' => 'Remove group members'
-                ],
-                'templates' => [
-                    'GET /templates' => 'List notification templates',
-                    'POST /templates' => 'Create notification template',
-                    'GET /templates/{id}' => 'Get template details',
-                    'PUT /templates/{id}' => 'Update notification template',
-                    'DELETE /templates/{id}' => 'Delete notification template',
-                    'POST /templates/{id}/render' => 'Render template with data'
+    // Dashboard quick stats - เรียกจาก JavaScript
+    Route::get('/dashboard/quick-stats', function () {
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total_users' => \App\Models\User::count(),
+                    'active_users' => \App\Models\User::where('is_active', true)->count(),
+                    'total_notifications' => \App\Models\Notification::count(),
+                    'notifications_today' => \App\Models\Notification::whereDate('created_at', today())->count(),
+                    'active_api_keys' => \App\Models\ApiKey::where('is_active', true)->count(),
+                    'sent_notifications' => \App\Models\Notification::where('status', 'sent')->count(),
+                    'failed_notifications' => \App\Models\Notification::where('status', 'failed')->count(),
                 ]
-            ]
-        ]);
-    })->name('api.docs');
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => 'Failed to load stats'], 500);
+        }
+    })->name('api.dashboard.quick-stats');
 
-    // API Status endpoint
-    Route::get('/status', [SystemController::class, 'status'])->name('api.status');
+    // Admin stats
+    Route::get('/admin/stats', function () {
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'users' => [
+                        'total' => \App\Models\User::count(),
+                        'active' => \App\Models\User::where('is_active', true)->count(),
+                        'new_this_week' => \App\Models\User::where('created_at', '>=', now()->startOfWeek())->count(),
+                    ],
+                    'notifications' => [
+                        'total' => \App\Models\Notification::count(),
+                        'sent' => \App\Models\Notification::where('status', 'sent')->count(),
+                        'failed' => \App\Models\Notification::where('status', 'failed')->count(),
+                        'today' => \App\Models\Notification::whereDate('created_at', today())->count(),
+                    ],
+                    'api_keys' => [
+                        'total' => \App\Models\ApiKey::count(),
+                        'active' => \App\Models\ApiKey::where('is_active', true)->count(),
+                    ]
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => 'Failed to load admin stats'], 500);
+        }
+    })->name('api.admin.stats')->middleware('can:manage-system');
+
+    // User stats  
+    Route::get('/user/stats', [UserController::class, 'getUserStats'])->name('api.user.stats');
+
+    // Unread notifications count
+    Route::get('/notifications/unread-count', [UserController::class, 'getUnreadNotifications'])->name('api.notifications.unread-count');
 });
 
 // ===========================================
-// PROTECTED API ENDPOINTS (Require API Key)
+// DASHBOARD API ENDPOINTS
+// ===========================================
+Route::middleware(['auth', 'web'])->prefix('dashboard')->name('api.dashboard.')->group(function () {
+    Route::get('/chart-data', [DashboardController::class, 'chartData'])->name('chart-data');
+    Route::get('/recent-activities', [DashboardController::class, 'recentActivities'])->name('recent-activities');
+    Route::get('/widget/{type}', [DashboardController::class, 'widget'])->name('widget');
+});
+
+// ===========================================
+// ADMIN API ENDPOINTS
+// ===========================================
+Route::middleware(['auth', 'can:manage-system'])->prefix('admin')->name('api.admin.')->group(function () {
+    Route::get('/system-info', [AdminController::class, 'systemInfo'])->name('system-info');
+    Route::get('/performance', [AdminController::class, 'performance'])->name('performance');
+    Route::post('/cache/clear', [AdminController::class, 'clearCache'])->name('cache.clear');
+    Route::post('/queue/restart', [AdminController::class, 'restartQueue'])->name('queue.restart');
+});
+
+// ===========================================
+// USER API ENDPOINTS
+// ===========================================
+Route::middleware(['auth', 'web'])->prefix('user')->name('api.user.')->group(function () {
+    Route::get('/profile', [UserController::class, 'getProfile'])->name('profile');
+    Route::get('/groups', [UserController::class, 'getGroups'])->name('groups');
+    Route::put('/preferences', [UserController::class, 'updatePreferences'])->name('preferences.update');
+    Route::get('/notifications/unread', [UserController::class, 'getUnreadNotifications'])->name('notifications.unread');
+    Route::get('/search', [UserController::class, 'search'])->name('search');
+});
+
+// ===========================================
+// NOTIFICATIONS API ENDPOINTS (Simple)
+// ===========================================
+Route::middleware(['auth', 'web'])->prefix('notifications')->name('api.notifications.')->group(function () {
+    Route::get('/user-stats', [UserController::class, 'getUserStats'])->name('user-stats');
+    Route::post('/{id}/mark-read', function ($id) {
+        try {
+            $log = \App\Models\NotificationLog::where('id', $id)
+                ->where('user_id', auth()->id())
+                ->firstOrFail();
+            $log->update(['read_at' => now()]);
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => 'Failed to mark as read'], 500);
+        }
+    })->name('mark-read');
+});
+
+// ===========================================
+// V1 API ROUTES (External API with API Key)
 // ===========================================
 Route::prefix('v1')->middleware([ApiKeyMiddleware::class, RateLimitMiddleware::class])->group(function () {
     
-    // ===========================================
-    // AUTHENTICATION & VALIDATION
-    // ===========================================
-    Route::prefix('auth')->name('api.auth.')->group(function () {
+    // Authentication
+    Route::prefix('auth')->name('api.v1.auth.')->group(function () {
         Route::post('/validate', [AuthController::class, 'validateKey'])->name('validate');
         Route::get('/info', [AuthController::class, 'getApiKeyInfo'])->name('info');
     });
 
-    // ===========================================
-    // NOTIFICATION MANAGEMENT
-    // ===========================================
-    Route::prefix('notifications')->name('api.notifications.')->controller(NotificationController::class)->group(function () {
+    // Notification Management
+    Route::prefix('notifications')->name('api.v1.notifications.')->controller(NotificationController::class)->group(function () {
         
         // Core notification operations
         Route::get('/', 'index')->name('index');
@@ -139,374 +205,118 @@ Route::prefix('v1')->middleware([ApiKeyMiddleware::class, RateLimitMiddleware::c
         // Advanced operations
         Route::post('/preview', 'preview')->name('preview');
         Route::post('/validate', 'validate')->name('validate');
+        Route::get('/unread-count', 'getUnreadCount')->name('unread-count');
     });
 
-    // ===========================================
-    // USER MANAGEMENT
-    // ===========================================
-    Route::prefix('users')->name('api.users.')->controller(UserController::class)->group(function () {
-        
-        // User listing and search
+    // User Management
+    Route::prefix('users')->name('api.v1.users.')->controller(V1UserController::class)->group(function () {
         Route::get('/', 'index')->name('index');
         Route::get('/search', 'search')->name('search');
-        Route::get('/active', 'getActive')->name('active');
-        Route::get('/departments', 'getDepartments')->name('departments');
-        
-        // User details
         Route::get('/{id}', 'show')->name('show');
-        Route::get('/{id}/details', 'getDetails')->name('details');
-        
-        // User preferences
         Route::get('/{id}/preferences', 'getPreferences')->name('preferences');
         Route::put('/{id}/preferences', 'updatePreferences')->name('preferences.update');
-        Route::delete('/{id}/preferences', 'resetPreferences')->name('preferences.reset');
-        
-        // User groups and roles
         Route::get('/{id}/groups', 'getUserGroups')->name('groups');
-        Route::get('/{id}/permissions', 'getUserPermissions')->name('permissions');
-        
-        // Bulk operations
-        Route::post('/bulk/validate', 'bulkValidate')->name('bulk.validate');
-        Route::post('/bulk/preferences', 'bulkUpdatePreferences')->name('bulk.preferences');
-        
-        // Statistics
-        Route::get('/stats/overview', 'getOverviewStats')->name('stats.overview');
-        Route::get('/stats/by-department', 'getStatsByDepartment')->name('stats.department');
+        Route::post('/{id}/sync', 'syncFromLdap')->name('sync');
     });
 
-    // ===========================================
-    // GROUP MANAGEMENT
-    // ===========================================
-    Route::prefix('groups')->name('api.groups.')->controller(GroupController::class)->group(function () {
-        
-        // Group CRUD operations
+    // Group Management
+    Route::prefix('groups')->name('api.v1.groups.')->controller(GroupController::class)->group(function () {
         Route::get('/', 'index')->name('index');
         Route::post('/', 'store')->name('store');
         Route::get('/{id}', 'show')->name('show');
         Route::put('/{id}', 'update')->name('update');
         Route::delete('/{id}', 'destroy')->name('destroy');
-        
-        // Group member management
         Route::get('/{id}/members', 'getMembers')->name('members');
-        Route::post('/{id}/members', 'addMembers')->name('members.add');
-        Route::delete('/{id}/members', 'removeMembers')->name('members.remove');
-        Route::put('/{id}/members/sync', 'syncMembers')->name('members.sync');
-        
-        // Group operations
-        Route::post('/{id}/duplicate', 'duplicate')->name('duplicate');
-        Route::get('/{id}/stats', 'getGroupStats')->name('stats');
-        Route::post('/preview-members', 'previewMembers')->name('preview-members');
-        
-        // Bulk operations
-        Route::post('/bulk/create', 'bulkCreate')->name('bulk.create');
-        Route::post('/bulk/update', 'bulkUpdate')->name('bulk.update');
-        Route::delete('/bulk/delete', 'bulkDelete')->name('bulk.delete');
-        
-        // Group statistics
-        Route::get('/stats/overview', 'getStats')->name('overview.stats');
-        Route::get('/stats/usage', 'getUsageStats')->name('usage.stats');
+        Route::post('/{id}/members', 'addMember')->name('members.add');
+        Route::delete('/{id}/members/{userId}', 'removeMember')->name('members.remove');
+        Route::post('/{id}/sync', 'syncMembers')->name('sync');
     });
 
-    // ===========================================
-    // TEMPLATE MANAGEMENT
-    // ===========================================
-    Route::prefix('templates')->name('api.templates.')->controller(TemplateController::class)->group(function () {
-        
-        // Template CRUD operations
+    // Template Management
+    Route::prefix('templates')->name('api.v1.templates.')->controller(TemplateController::class)->group(function () {
         Route::get('/', 'index')->name('index');
-        Route::post('/', 'store')->name('store');
         Route::get('/{id}', 'show')->name('show');
-        Route::put('/{id}', 'update')->name('update');
-        Route::delete('/{id}', 'destroy')->name('destroy');
-        
-        // Template metadata
-        Route::get('/categories', 'getCategories')->name('categories');
-        Route::get('/{id}/variables', 'getVariables')->name('variables');
-        Route::get('/{id}/usage-stats', 'getUsageStats')->name('usage-stats');
-        
-        // Template operations
         Route::post('/{id}/render', 'render')->name('render');
         Route::post('/{id}/send', 'sendNotification')->name('send');
-        Route::post('/{id}/duplicate', 'duplicate')->name('duplicate');
-        Route::post('/{id}/test', 'test')->name('test');
-        
-        // Template validation and preview
-        Route::post('/validate', 'validate')->name('validate');
-        Route::post('/preview', 'preview')->name('preview');
-        Route::post('/{id}/preview/{channel}', 'previewChannel')->name('preview.channel');
-        
-        // Bulk operations
-        Route::post('/bulk/validate', 'bulkValidate')->name('bulk.validate');
-        Route::post('/bulk/update', 'bulkUpdate')->name('bulk.update');
-        Route::delete('/bulk/delete', 'bulkDelete')->name('bulk.delete');
-        
-        // Import/Export
-        Route::get('/export/{format}', 'export')->name('export');
-        Route::post('/import', 'import')->name('import');
+        Route::post('/{id}/preview', 'preview')->name('preview');
     });
 
-    // ===========================================
-    // DELIVERY & STATUS TRACKING
-    // ===========================================
-    Route::prefix('delivery')->name('api.delivery.')->controller(DeliveryController::class)->group(function () {
-        
-        // Delivery statistics
-        Route::get('/stats', 'getDeliveryStats')->name('stats');
-        Route::get('/stats/summary', 'getSummaryStats')->name('stats.summary');
-        Route::get('/stats/by-channel', 'getStatsByChannel')->name('stats.channel');
-        Route::get('/stats/by-date', 'getStatsByDate')->name('stats.date');
-        
-        // Failed delivery management
-        Route::get('/failed', 'getFailedDeliveries')->name('failed');
-        Route::get('/failed/{id}/details', 'getFailureDetails')->name('failure-details');
-        Route::post('/failed/retry', 'retryFailed')->name('retry-failed');
-        Route::post('/failed/bulk-retry', 'bulkRetryFailed')->name('bulk-retry-failed');
-        
-        // Delivery tracking
-        Route::get('/tracking/{id}', 'getTrackingInfo')->name('tracking');
-        Route::get('/logs', 'getDeliveryLogs')->name('logs');
-        Route::get('/logs/export', 'exportLogs')->name('logs.export');
-        
-        // Real-time status
-        Route::get('/status/live', 'getLiveStatus')->name('status.live');
-        Route::get('/queue/status', 'getQueueStatus')->name('queue.status');
-    });
-
-    // ===========================================
-    // LDAP INTEGRATION
-    // ===========================================
-    Route::prefix('ldap')->name('api.ldap.')->controller(LdapController::class)->group(function () {
-        
-        // LDAP user operations
-        Route::get('/users', 'getUsers')->name('users');
-        Route::get('/users/search', 'searchUsers')->name('users.search');
-        Route::get('/users/{username}', 'getUser')->name('user');
-        
-        // Organization structure
-        Route::get('/departments', 'getDepartments')->name('departments');
-        Route::get('/departments/{dept}/users', 'getDepartmentUsers')->name('dept-users');
-        Route::get('/structure', 'getOrganizationStructure')->name('structure');
-        
-        // LDAP synchronization
-        Route::post('/sync', 'sync')->name('sync');
-        Route::post('/sync/manual', 'manualSync')->name('manual-sync');
-        Route::get('/sync/status', 'getSyncStatus')->name('sync-status');
-        Route::get('/sync/history', 'getSyncHistory')->name('sync-history');
-        
-        // LDAP health and testing
-        Route::get('/health', 'checkHealth')->name('health');
-        Route::post('/test-connection', 'testConnection')->name('test-connection');
+    // Delivery Tracking
+    Route::prefix('delivery')->name('api.v1.delivery.')->controller(DeliveryController::class)->group(function () {
+        Route::get('/status/{id}', 'getStatus')->name('status');
+        Route::get('/logs/{id}', 'getLogs')->name('logs');
+        Route::post('/webhook', 'handleWebhook')->name('webhook');
         Route::get('/stats', 'getStats')->name('stats');
     });
 
-    // ===========================================
-    // SYSTEM ADMINISTRATION
-    // ===========================================
-    Route::prefix('system')->name('api.system.')->controller(SystemController::class)->group(function () {
-        
-        // System health monitoring
-        Route::get('/health/detailed', 'detailedHealth')->name('health.detailed');
-        Route::get('/health/components', 'checkComponents')->name('health.components');
-        
-        // Queue management
+    // LDAP Integration
+    Route::prefix('ldap')->name('api.v1.ldap.')->controller(LdapController::class)->group(function () {
+        Route::get('/users', 'getUsers')->name('users');
+        Route::get('/groups', 'getGroups')->name('groups');
+        Route::post('/sync', 'syncUsers')->name('sync');
+        Route::get('/test', 'testConnection')->name('test');
+    });
+
+    // System Information
+    Route::prefix('system')->name('api.v1.system.')->controller(SystemController::class)->group(function () {
+        Route::get('/health', 'health')->name('health');
+        Route::get('/info', 'getInfo')->name('info');
+        Route::get('/stats', 'getStats')->name('stats');
         Route::get('/queue/status', 'getQueueStatus')->name('queue.status');
-        Route::get('/queue/stats', 'getQueueStats')->name('queue.stats');
-        Route::post('/queue/clear', 'clearQueue')->name('queue.clear');
-        
-        // External services status
-        Route::get('/services/status', 'getServicesStatus')->name('services.status');
-        Route::post('/services/test', 'testServices')->name('services.test');
-        
-        // System metrics
-        Route::get('/metrics', 'getMetrics')->name('metrics');
-        Route::get('/performance', 'getPerformanceMetrics')->name('performance');
-        Route::get('/usage-stats', 'getUsageStats')->name('usage-stats');
     });
 
-    // ===========================================
-    // API USAGE & ANALYTICS
-    // ===========================================
-    Route::prefix('analytics')->name('api.analytics.')->group(function () {
-        
-        // Current API key usage
-        Route::get('/usage', function () {
-            $apiKey = request()->apiKey;
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'api_key_name' => $apiKey->name,
-                    'usage_count' => $apiKey->usage_count,
-                    'rate_limit' => $apiKey->rate_limit_per_minute,
-                    'requests_remaining' => $apiKey->rate_limit_per_minute - ($apiKey->usage_count_current_minute ?? 0),
-                    'last_used_at' => $apiKey->last_used_at,
-                    'created_at' => $apiKey->created_at,
-                    'expires_at' => $apiKey->expires_at,
-                    'status' => $apiKey->is_active ? 'active' : 'inactive'
-                ]
-            ]);
-        })->name('usage');
-        
-        // API usage history
-        Route::get('/history', [ApiKeyController::class, 'getUsageHistory'])->name('history');
-        Route::get('/stats/daily', [ApiKeyController::class, 'getDailyStats'])->name('stats.daily');
-        Route::get('/stats/monthly', [ApiKeyController::class, 'getMonthlyStats'])->name('stats.monthly');
-        
-        // Rate limiting info
-        Route::get('/rate-limits', function () {
-            $apiKey = request()->apiKey;
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'rate_limit_per_minute' => $apiKey->rate_limit_per_minute,
-                    'current_usage' => $apiKey->usage_count_current_minute ?? 0,
-                    'remaining' => $apiKey->rate_limit_per_minute - ($apiKey->usage_count_current_minute ?? 0),
-                    'reset_time' => now()->addMinute()->startOfMinute(),
-                    'retry_after' => $apiKey->rate_limit_exceeded ? 60 : null
-                ]
-            ]);
-        })->name('rate-limits');
-    });
-
-    // ===========================================
-    // DEVELOPMENT & TESTING ENDPOINTS
-    // ===========================================
-    Route::prefix('test')->name('api.test.')->group(function () {
-        
-        // Test API key authentication
-        Route::get('/auth', function () {
-            $apiKey = request()->apiKey;
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'API key authentication successful',
-                'api_key_info' => [
-                    'id' => $apiKey->id,
-                    'name' => $apiKey->name,
-                    'permissions' => $apiKey->permissions ?? [],
-                    'rate_limit' => $apiKey->rate_limit_per_minute,
-                    'last_used' => $apiKey->last_used_at,
-                    'expires_at' => $apiKey->expires_at
-                ],
-                'request_info' => [
-                    'ip' => request()->ip(),
-                    'user_agent' => request()->userAgent(),
-                    'timestamp' => now()->toISOString()
-                ]
-            ]);
-        })->name('auth');
-        
-        // Test notification (dry run)
-        Route::post('/notification', function () {
-            $apiKey = request()->apiKey;
-            
-            $result = [
-                'success' => true,
-                'message' => 'Test notification validated (dry run)',
-                'test_data' => request()->all(),
-                'api_key' => $apiKey->name,
-                'validation_results' => [
-                    'recipients_valid' => true,
-                    'template_valid' => true,
-                    'channels_available' => ['email', 'teams'],
-                    'estimated_delivery_time' => now()->addMinutes(2)->toISOString()
-                ],
-                'timestamp' => now()->toISOString()
-            ];
-            
-            \Log::info('API test notification', [
-                'api_key' => $apiKey->name,
-                'data' => request()->all(),
-                'ip' => request()->ip()
-            ]);
-            
-            return response()->json($result);
-        })->name('notification');
-        
-        // Test system connectivity
-        Route::get('/connectivity', [SystemController::class, 'testConnectivity'])->name('connectivity');
-        
-        // Echo endpoint for debugging
-        Route::post('/echo', function () {
-            return response()->json([
-                'success' => true,
-                'echo' => request()->all(),
-                'headers' => request()->headers->all(),
-                'timestamp' => now()->toISOString()
-            ]);
-        })->name('echo');
+    // Webhooks
+    Route::prefix('webhooks')->name('api.v1.webhooks.')->controller(WebhookController::class)->group(function () {
+        Route::post('/teams', 'handleTeamsWebhook')->name('teams');
+        Route::post('/email', 'handleEmailWebhook')->name('email');
+        Route::post('/delivery', 'handleDeliveryWebhook')->name('delivery');
     });
 });
 
 // ===========================================
-// WEBHOOK ENDPOINTS (External Services)
+// AJAX ROUTES (for Web Interface)
 // ===========================================
-Route::prefix('webhooks')->name('api.webhooks.')->middleware(['webhook.auth'])->group(function () {
+Route::middleware(['auth', 'web'])->prefix('ajax')->name('api.ajax.')->group(function () {
     
-    // Microsoft Teams webhooks
-    Route::post('/teams/message-sent', [WebhookController::class, 'teamsMessageSent'])->name('teams.sent');
-    Route::post('/teams/message-delivered', [WebhookController::class, 'teamsMessageDelivered'])->name('teams.delivered');
-    Route::post('/teams/message-failed', [WebhookController::class, 'teamsMessageFailed'])->name('teams.failed');
+    // User search and autocomplete
+    Route::get('/users/search', [UserController::class, 'search'])->name('users.search');
+    Route::get('/users/{id}', [UserController::class, 'show'])->name('users.show');
     
-    // Email webhooks
-    Route::post('/email/delivered', [WebhookController::class, 'emailDelivered'])->name('email.delivered');
-    Route::post('/email/bounced', [WebhookController::class, 'emailBounced'])->name('email.bounced');
-    Route::post('/email/opened', [WebhookController::class, 'emailOpened'])->name('email.opened');
-    Route::post('/email/clicked', [WebhookController::class, 'emailClicked'])->name('email.clicked');
+    // Group search
+    Route::get('/groups/search', function(Request $request) {
+        $search = $request->get('q', '');
+        $groups = \App\Models\NotificationGroup::where('is_active', true)
+            ->where('name', 'like', "%{$search}%")
+            ->limit(10)
+            ->get(['id', 'name', 'description', 'type']);
+        return response()->json(['success' => true, 'data' => $groups]);
+    })->name('groups.search');
     
-    // LDAP webhooks (if supported by LDAP system)
-    Route::post('/ldap/user-updated', [WebhookController::class, 'ldapUserUpdated'])->name('ldap.user-updated');
-    Route::post('/ldap/user-deleted', [WebhookController::class, 'ldapUserDeleted'])->name('ldap.user-deleted');
+    // Template search
+    Route::get('/templates/search', function(Request $request) {
+        $search = $request->get('q', '');
+        $templates = \App\Models\NotificationTemplate::where('is_active', true)
+            ->where('name', 'like', "%{$search}%")
+            ->limit(10)
+            ->get(['id', 'name', 'category']);
+        return response()->json(['success' => true, 'data' => $templates]);
+    })->name('templates.search');
 });
 
 // ===========================================
-// API VERSION 2 (Future Expansion)
+// FALLBACK ERROR HANDLING
 // ===========================================
-Route::prefix('v2')->name('api.v2.')->group(function () {
-    Route::get('/health', function () {
-        return response()->json([
-            'success' => true,
-            'message' => 'API v2 is under development',
-            'version' => '2.0.0-beta',
-            'available_endpoints' => []
-        ]);
-    })->name('health');
-});
-
-// ===========================================
-// API ERROR HANDLING & FALLBACKS
-// ===========================================
-
-// Rate limit exceeded response
-Route::get('/rate-limit-exceeded', function () {
-    return response()->json([
-        'success' => false,
-        'message' => 'Rate limit exceeded',
-        'error_code' => 'RATE_LIMIT_EXCEEDED',
-        'retry_after' => 60,
-        'timestamp' => now()->toISOString()
-    ], 429);
-})->name('api.rate-limit-exceeded');
-
-// API key invalid response
-Route::get('/unauthorized', function () {
-    return response()->json([
-        'success' => false,
-        'message' => 'Invalid or missing API key',
-        'error_code' => 'UNAUTHORIZED',
-        'timestamp' => now()->toISOString()
-    ], 401);
-})->name('api.unauthorized');
-
-// API endpoint not found fallback
 Route::fallback(function () {
     return response()->json([
         'success' => false,
         'message' => 'API endpoint not found',
-        'error_code' => 'ENDPOINT_NOT_FOUND',
-        'available_versions' => ['v1', 'v2'],
-        'documentation' => url('/api/v1/docs'),
-        'timestamp' => now()->toISOString()
+        'available_endpoints' => [
+            'GET /api/docs' => 'API Documentation',
+            'GET /api/health' => 'Health Check',
+            'GET /api/v1/*' => 'External API (requires API key)',
+            'GET /api/dashboard/*' => 'Dashboard widgets (requires auth)',
+            'GET /api/user/*' => 'User functions (requires auth)',
+            'GET /api/admin/*' => 'Admin functions (requires admin permission)',
+        ]
     ], 404);
-})->name('api.not-found');
+});

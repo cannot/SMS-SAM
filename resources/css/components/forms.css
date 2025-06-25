@@ -1,0 +1,16 @@
+/* ===========================================
+   FORM COMPONENTS
+   =========================================== */
+
+   .form-control:focus,
+   .form-select:focus {
+       border-color: var(--light-green);
+       box-shadow: 0 0 0 0.25rem rgba(101, 209, 181, 0.25);
+   }
+   
+   /* Legacy compatibility */
+   .form-control:focus,
+   .form-select:focus {
+       border-color: var(--primary-color);
+       box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+   }

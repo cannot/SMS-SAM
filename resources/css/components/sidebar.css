@@ -1,0 +1,345 @@
+/* ===========================================
+   ENHANCED SIDEBAR WITH SCROLL
+   =========================================== */
+
+/* Main Sidebar Container */
+.sidebar {
+    /* Positioning & Dimensions */
+    position: fixed;
+    top: 56px;
+    left: 0;
+    width: var(--sidebar-width);
+    height: var(--sidebar-height);
+    z-index: 1020;
+    
+    /* Background & Visual Effects */
+    background: linear-gradient(180deg, var(--primary-green) 0%, var(--light-green) 50%, var(--primary-pink) 100%);
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+    
+    /* Scroll Configuration */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    
+    /* Animation */
+    transition: var(--sidebar-transition);
+}
+
+/* Sidebar Inner Container */
+.sidebar .position-sticky {
+    position: relative !important; /* Override Bootstrap sticky */
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Custom Scrollbar for Sidebar */
+.sidebar::-webkit-scrollbar {
+    width: var(--sidebar-scroll-width);
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: var(--sidebar-scroll-track-bg);
+    border-radius: calc(var(--sidebar-scroll-width) / 2);
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background: var(--sidebar-scroll-thumb-bg);
+    border-radius: calc(var(--sidebar-scroll-width) / 2);
+    transition: background 0.3s ease;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+    background: var(--sidebar-scroll-thumb-hover-bg);
+}
+
+/* Firefox Scrollbar */
+.sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sidebar-scroll-thumb-bg) var(--sidebar-scroll-track-bg);
+}
+
+/* Collapsed Sidebar */
+.sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+}
+
+/* Navigation Container */
+.sidebar .nav {
+    flex: 1;
+    padding-bottom: var(--sidebar-padding-bottom);
+}
+
+/* Sidebar Toggle Button in Header */
+.sidebar-toggle-desktop {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.sidebar-toggle-desktop:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+/* Navigation Links */
+.sidebar .nav-link {
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 8px;
+    margin: 2px 8px;
+    transition: var(--sidebar-transition);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    position: relative;
+    white-space: nowrap;
+}
+
+.sidebar.collapsed .nav-link {
+    padding: 0.75rem;
+    justify-content: center;
+    margin: 2px 5px;
+}
+
+.sidebar .nav-link:hover {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.15);
+    transform: var(--sidebar-hover-transform);
+}
+
+.sidebar.collapsed .nav-link:hover {
+    transform: none;
+}
+
+.sidebar .nav-link.active {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar .nav-link i {
+    width: 20px;
+    text-align: center;
+    margin-right: 0.75rem;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.sidebar.collapsed .nav-link i {
+    margin-right: 0;
+}
+
+/* Text and Badge Hiding */
+.nav-text {
+    transition: all 0.3s ease;
+    flex: 1;
+    overflow: hidden;
+}
+
+.sidebar.collapsed .nav-text {
+    opacity: 0;
+    transform: translateX(20px);
+    position: absolute;
+    pointer-events: none;
+    width: 0;
+    overflow: hidden;
+}
+
+.sidebar .badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.sidebar.collapsed .badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    transform: scale(0.8);
+    min-width: 18px;
+    height: 18px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+}
+
+/* Sidebar Heading */
+.sidebar-heading {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.6) !important;
+    margin: 1rem 0 0.5rem 0;
+    padding: 0 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.sidebar.collapsed .sidebar-heading {
+    opacity: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Collapse/Accordion */
+.collapse {
+    transition: all 0.3s ease;
+}
+
+.sidebar.collapsed .collapse {
+    display: none !important;
+}
+
+.sidebar.collapsed [data-bs-toggle="collapse"] .fa-chevron-down,
+.sidebar.collapsed [data-bs-toggle="collapse"] .dropdown-arrow {
+    display: none;
+}
+
+/* Stats Card */
+.sidebar .stats-card {
+    margin: 0 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 0.5rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.sidebar.collapsed .stats-card {
+    margin: 0 0.3rem;
+    padding: 0.5rem 0.2rem;
+}
+
+.sidebar.collapsed .stats-card .small,
+.sidebar.collapsed .stats-card small {
+    display: none;
+}
+
+.sidebar.collapsed .stats-card .d-flex {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.sidebar.collapsed .stats-card .badge {
+    position: static;
+    transform: none;
+    margin: 0;
+}
+
+/* Enhanced Tooltip สำหรับ collapsed state */
+.nav-tooltip {
+    position: absolute;
+    left: calc(100% + var(--tooltip-offset));
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--tooltip-bg);
+    color: white;
+    padding: var(--tooltip-padding);
+    border-radius: var(--tooltip-border-radius);
+    font-size: var(--tooltip-font-size);
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    z-index: var(--tooltip-z-index);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+.nav-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: var(--tooltip-bg);
+}
+
+.sidebar.collapsed .nav-item:hover .nav-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(5px);
+}
+
+/* Dropdown Arrow */
+.dropdown-arrow {
+    margin-left: auto;
+    transition: transform 0.3s ease;
+    flex-shrink: 0;
+    font-size: 0.8rem;
+}
+
+.nav-link[aria-expanded="true"] .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+/* Loading States */
+.sidebar .nav-link.loading {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.sidebar .nav-link.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Sidebar Toggle Button for Mobile */
+.sidebar-toggle {
+    position: fixed;
+    top: 70px;
+    left: 20px;
+    z-index: 1025;
+    background: linear-gradient(135deg, var(--primary-green) 0%, var(--light-green) 100%);
+    border: none;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(37, 107, 54, 0.3);
+}
+
+.sidebar-toggle:hover {
+    background: linear-gradient(135deg, var(--light-green) 0%, var(--primary-green) 100%);
+    transform: scale(1.1);
+}
+
+@media (min-width: 992px) {
+    .sidebar-toggle {
+        display: none;
+    }
+}

@@ -1,0 +1,151 @@
+/* ===========================================
+   RESPONSIVE DESIGN
+   =========================================== */
+
+/* Mobile Responsive - Large screens */
+@media (max-width: 991.98px) {
+    .sidebar {
+        transform: translateX(-100%);
+        width: var(--sidebar-width);
+    }
+
+    .sidebar.show {
+        transform: translateX(0);
+    }
+
+    .sidebar.collapsed {
+        width: var(--sidebar-width);
+        transform: translateX(-100%);
+    }
+
+    .sidebar.collapsed.show {
+        transform: translateX(0);
+    }
+
+    .main-content,
+    .main-content.expanded {
+        margin-left: 0;
+    }
+
+    .sidebar-toggle-desktop {
+        display: none;
+    }
+
+    /* Hide tooltips on mobile */
+    .nav-tooltip {
+        display: none;
+    }
+    
+    /* Adjust scroll thumb for mobile */
+    .sidebar::-webkit-scrollbar {
+        width: 4px;
+    }
+}
+
+/* Mobile Responsive - Small screens */
+@media (max-width: 767.98px) {
+    .content-wrapper {
+        padding: 1rem;
+    }
+    
+    /* Even thinner scroll on very small screens */
+    .sidebar::-webkit-scrollbar {
+        width: 3px;
+    }
+
+    /* Mobile Sidebar */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -250px;
+        width: 250px;
+        height: 100vh;
+        z-index: 1050;
+        transition: left 0.3s ease;
+    }
+    
+    .sidebar.show {
+        left: 0;
+    }
+    
+    .main-content {
+        margin-left: 0;
+    }
+}
+
+/* Tablet and Small Desktop */
+@media (max-width: 1200px) {
+    .main-content {
+        padding: 1.5rem;
+    }
+}
+
+/* Large Desktop */
+@media (min-width: 1400px) {
+    .content-wrapper {
+        padding: 2.5rem;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .sidebar {
+        display: none;
+    }
+    
+    .main-content {
+        margin-left: 0 !important;
+    }
+    
+    .sidebar-toggle,
+    .go-to-top {
+        display: none;
+    }
+    
+    .navbar {
+        display: none;
+    }
+    
+    body {
+        padding-top: 0;
+    }
+}
+
+/* Dark Mode Sidebar Scrollbar */
+@media (prefers-color-scheme: dark) {
+    .sidebar::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .sidebar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .sidebar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+    .sidebar {
+        border-right: 2px solid #000;
+    }
+    
+    .navbar {
+        border-bottom: 2px solid #000;
+    }
+    
+    .card {
+        border: 1px solid #000;
+    }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

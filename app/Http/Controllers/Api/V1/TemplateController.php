@@ -5,490 +5,447 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\NotificationTemplate;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class TemplateController extends Controller
 {
     /**
-     * List available templates
-     * GET /api/v1/templates
+     * List notification templates
      */
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
+        $validator = Validator::make($request->all(), [
+            'category' => 'sometimes|string|max:50',
+            'active_only' => 'sometimes|boolean',
+            'search' => 'sometimes|string|min:2|max:50',
+            'limit' => 'sometimes|integer|min:1|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
         try {
-            $apiKey = $request->apiKey;
-
-            $validator = Validator::make($request->all(), [
-                'category' => 'nullable|string|max:50',
-                'channel' => 'nullable|in:email,teams',
-                'active_only' => 'nullable|boolean',
-                'limit' => 'integer|min:1|max:100',
-                'offset' => 'integer|min:0'
-            ]);
-
-            if ($validator->fails()) {
-                return $this->errorResponse('Validation failed', $validator->errors(), 422);
-            }
-
             $query = NotificationTemplate::query();
 
-            // Apply filters
-            if ($request->category) {
-                $query->byCategory($request->category);
+            if ($request->has('category')) {
+                $query->where('category', $request->category);
             }
 
-            if ($request->channel) {
-                $query->supportsChannel($request->channel);
+            if ($request->get('active_only', true)) {
+                $query->where('is_active', true);
             }
 
-            if ($request->boolean('active_only', true)) {
-                $query->active();
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('description', 'like', "%{$search}%");
+                });
             }
 
-            // Pagination
-            $limit = $request->limit ?? 20;
-            $offset = $request->offset ?? 0;
-            
-            $total = $query->count();
-            $templates = $query->orderBy('name')
-                              ->offset($offset)
-                              ->limit($limit)
-                              ->get();
+            $limit = $request->get('limit', 50);
+            $templates = $query->orderBy('name')->limit($limit)->get();
 
-            // Format response
             $data = $templates->map(function ($template) {
                 return [
                     'id' => $template->id,
-                    'slug' => $template->slug,
                     'name' => $template->name,
                     'description' => $template->description,
+                    'slug' => $template->slug,
                     'category' => $template->category,
-                    'supported_channels' => $template->supported_channels,
-                    'variables' => $template->variables,
-                    'default_variables' => $template->default_variables,
                     'priority' => $template->priority,
+                    'supported_channels' => $template->supported_channels,
+                    'variables' => $template->variables ?? [],
                     'is_active' => $template->is_active,
                     'version' => $template->version,
-                    'created_at' => $template->created_at->toISOString()
+                    'created_at' => $template->created_at,
                 ];
             });
 
-            // Log API usage
-            $this->logApiUsage($apiKey, $request, 'list_templates', [
-                'total_results' => $total,
-                'returned_count' => $templates->count()
-            ]);
-
-            return $this->successResponse([
-                'templates' => $data,
-                'pagination' => [
-                    'total' => $total,
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'meta' => [
+                    'total' => $templates->count(),
                     'limit' => $limit,
-                    'offset' => $offset,
-                    'has_more' => ($offset + $limit) < $total
                 ]
             ]);
-
         } catch (\Exception $e) {
-            Log::error('API template list failed', [
-                'error' => $e->getMessage(),
-                'api_key_id' => $request->apiKey->id ?? null
-            ]);
-
-            return $this->errorResponse('Internal server error', [], 500);
-        }
-    }
-
-    /**
-     * Get template details
-     * GET /api/v1/templates/{id}
-     */
-    public function show(Request $request, $templateId)
-    {
-        try {
-            $apiKey = $request->apiKey;
-
-            // Find template by ID or slug
-            $template = NotificationTemplate::where('id', $templateId)
-                                           ->orWhere('slug', $templateId)
-                                           ->active()
-                                           ->first();
-
-            if (!$template) {
-                return $this->errorResponse('Template not found', [], 404);
-            }
-
-            $data = [
-                'id' => $template->id,
-                'slug' => $template->slug,
-                'name' => $template->name,
-                'description' => $template->description,
-                'category' => $template->category,
-                'subject_template' => $template->subject_template,
-                'body_html_template' => $template->body_html_template,
-                'body_text_template' => $template->body_text_template,
-                'variables' => $template->variables,
-                'default_variables' => $template->default_variables,
-                'supported_channels' => $template->supported_channels,
-                'priority' => $template->priority,
-                'version' => $template->version,
-                'created_at' => $template->created_at->toISOString(),
-                'updated_at' => $template->updated_at->toISOString()
-            ];
-
-            // Log API usage
-            $this->logApiUsage($apiKey, $request, 'get_template', [
-                'template_id' => $template->id,
-                'template_slug' => $template->slug
-            ]);
-
-            return $this->successResponse($data);
-
-        } catch (\Exception $e) {
-            Log::error('API template show failed', [
-                'template_id' => $templateId,
-                'error' => $e->getMessage(),
-                'api_key_id' => $request->apiKey->id ?? null
-            ]);
-
-            return $this->errorResponse('Internal server error', [], 500);
-        }
-    }
-
-    /**
-     * Render template with variables
-     * POST /api/v1/templates/{id}/render
-     */
-    public function render(Request $request, $templateId)
-    {
-        try {
-            $apiKey = $request->apiKey;
-
-            $validator = Validator::make($request->all(), [
-                'variables' => 'nullable|array',
-                'preview_only' => 'nullable|boolean'
-            ]);
-
-            if ($validator->fails()) {
-                return $this->errorResponse('Validation failed', $validator->errors(), 422);
-            }
-
-            // Find template
-            $template = NotificationTemplate::where('id', $templateId)
-                                           ->orWhere('slug', $templateId)
-                                           ->active()
-                                           ->first();
-
-            if (!$template) {
-                return $this->errorResponse('Template not found', [], 404);
-            }
-
-            // Get variables
-            $variables = $request->variables ?? [];
-            $previewOnly = $request->boolean('preview_only', false);
-
-            // Validate required variables
-            $requiredVars = $template->variables ?? [];
-            $missingVars = array_diff($requiredVars, array_keys($variables));
-
-            if (!$previewOnly && !empty($missingVars)) {
-                return $this->errorResponse('Missing required variables', [
-                    'missing_variables' => $missingVars,
-                    'required_variables' => $requiredVars
-                ], 422);
-            }
-
-            // Render template
-            if ($previewOnly) {
-                $rendered = $template->preview($variables);
-            } else {
-                $rendered = $template->render($variables);
-            }
-
-            $data = [
-                'template_id' => $template->id,
-                'template_slug' => $template->slug,
-                'template_name' => $template->name,
-                'rendered' => $rendered,
-                'supported_channels' => $template->supported_channels,
-                'is_preview' => $previewOnly
-            ];
-
-            // Log API usage
-            $this->logApiUsage($apiKey, $request, 'render_template', [
-                'template_id' => $template->id,
-                'variables_count' => count($variables),
-                'is_preview' => $previewOnly
-            ]);
-
-            return $this->successResponse($data);
-
-        } catch (\Exception $e) {
-            Log::error('API template render failed', [
-                'template_id' => $templateId,
-                'error' => $e->getMessage(),
-                'api_key_id' => $request->apiKey->id ?? null
-            ]);
-
-            return $this->errorResponse('Template rendering failed', [
-                'error_details' => $e->getMessage()
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve templates',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Get template variables information
-     * GET /api/v1/templates/{id}/variables
+     * Get template details
      */
-    public function getVariables(Request $request, $templateId)
+    public function show($id): JsonResponse
     {
         try {
-            $apiKey = $request->apiKey;
-
-            // Find template
-            $template = NotificationTemplate::where('id', $templateId)
-                                           ->orWhere('slug', $templateId)
-                                           ->active()
-                                           ->first();
-
-            if (!$template) {
-                return $this->errorResponse('Template not found', [], 404);
-            }
+            $template = NotificationTemplate::findOrFail($id);
 
             $data = [
-                'template_id' => $template->id,
-                'template_slug' => $template->slug,
-                'template_name' => $template->name,
-                'variables' => [
-                    'required' => $template->variables ?? [],
-                    'default' => $template->default_variables ?? [],
-                    'system' => array_keys($template->getSystemVariables()),
-                    'descriptions' => NotificationTemplate::getAvailableVariables()
-                ]
+                'id' => $template->id,
+                'name' => $template->name,
+                'description' => $template->description,
+                'slug' => $template->slug,
+                'category' => $template->category,
+                'subject_template' => $template->subject_template,
+                'body_html_template' => $template->body_html_template,
+                'body_text_template' => $template->body_text_template,
+                'variables' => $template->variables ?? [],
+                'default_variables' => $template->default_variables ?? [],
+                'supported_channels' => $template->supported_channels,
+                'priority' => $template->priority,
+                'is_active' => $template->is_active,
+                'version' => $template->version,
+                'created_at' => $template->created_at,
+                'updated_at' => $template->updated_at,
             ];
 
-            // Log API usage
-            $this->logApiUsage($apiKey, $request, 'get_template_variables', [
-                'template_id' => $template->id
+            return response()->json([
+                'success' => true,
+                'data' => $data
             ]);
-
-            return $this->successResponse($data);
-
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template not found'
+            ], 404);
         } catch (\Exception $e) {
-            Log::error('API template variables failed', [
-                'template_id' => $templateId,
-                'error' => $e->getMessage(),
-                'api_key_id' => $request->apiKey->id ?? null
-            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get template details',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
-            return $this->errorResponse('Internal server error', [], 500);
+    /**
+     * Render template with variables
+     */
+    public function render($id, Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'variables' => 'sometimes|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $template = NotificationTemplate::findOrFail($id);
+            $variables = array_merge(
+                $template->default_variables ?? [],
+                $request->variables ?? []
+            );
+
+            // Simple template rendering (replace {{variable}} with values)
+            $subject = $template->subject_template;
+            $bodyHtml = $template->body_html_template;
+            $bodyText = $template->body_text_template;
+
+            foreach ($variables as $key => $value) {
+                $placeholder = "{{" . $key . "}}";
+                $subject = str_replace($placeholder, $value, $subject);
+                $bodyHtml = str_replace($placeholder, $value, $bodyHtml);
+                $bodyText = str_replace($placeholder, $value, $bodyText);
+            }
+
+            $rendered = [
+                'subject' => $subject,
+                'body_html' => $bodyHtml,
+                'body_text' => $bodyText,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'template_id' => $template->id,
+                    'template_name' => $template->name,
+                    'variables_used' => $variables,
+                    'rendered' => $rendered,
+                ]
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to render template',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Preview template
+     */
+    public function preview($id, Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'variables' => 'sometimes|array',
+            'sample_data' => 'sometimes|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $template = NotificationTemplate::findOrFail($id);
+            
+            // Use sample data if requested
+            $variables = $request->variables ?? [];
+            if ($request->get('sample_data', false)) {
+                $sampleData = [
+                    'name' => 'John Doe',
+                    'email' => 'john.doe@example.com',
+                    'date' => now()->format('Y-m-d'),
+                    'time' => now()->format('H:i'),
+                    'title' => 'Sample Notification Title',
+                    'message' => 'This is a sample notification message',
+                    'department' => 'Information Technology',
+                    'company' => 'Your Company Name',
+                ];
+                $variables = array_merge($sampleData, $variables);
+            }
+
+            // Merge with default variables
+            $variables = array_merge(
+                $template->default_variables ?? [],
+                $variables
+            );
+
+            // Render the template
+            $subject = $template->subject_template;
+            $bodyHtml = $template->body_html_template;
+            $bodyText = $template->body_text_template;
+
+            foreach ($variables as $key => $value) {
+                $placeholder = "{{" . $key . "}}";
+                $subject = str_replace($placeholder, $value, $subject);
+                $bodyHtml = str_replace($placeholder, $value, $bodyHtml);
+                $bodyText = str_replace($placeholder, $value, $bodyText);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'template' => [
+                        'id' => $template->id,
+                        'name' => $template->name,
+                        'category' => $template->category,
+                        'supported_channels' => $template->supported_channels,
+                    ],
+                    'variables' => $variables,
+                    'preview' => [
+                        'subject' => $subject,
+                        'body_html' => $bodyHtml,
+                        'body_text' => $bodyText,
+                    ],
+                    'metadata' => [
+                        'character_count' => [
+                            'subject' => strlen($subject),
+                            'body_text' => strlen($bodyText),
+                            'body_html' => strlen($bodyHtml),
+                        ],
+                        'estimated_size' => [
+                            'text' => round(strlen($bodyText) / 1024, 2) . ' KB',
+                            'html' => round(strlen($bodyHtml) / 1024, 2) . ' KB',
+                        ]
+                    ]
+                ]
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to preview template',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
     /**
      * Send notification using template
-     * POST /api/v1/templates/{id}/send
      */
-    public function sendNotification(Request $request, $templateId)
+    public function sendNotification($id, Request $request): JsonResponse
     {
+        $validator = Validator::make($request->all(), [
+            'recipients' => 'required|array|min:1',
+            'recipients.*' => 'email',
+            'variables' => 'sometimes|array',
+            'channels' => 'sometimes|array',
+            'channels.*' => 'in:email,teams',
+            'priority' => 'sometimes|in:low,normal,high,urgent',
+            'scheduled_at' => 'sometimes|date|after:now',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
         try {
-            $apiKey = $request->apiKey;
-
-            $validator = Validator::make($request->all(), [
-                'recipients' => 'required|array|min:1',
-                'recipients.*' => 'email',
-                'variables' => 'nullable|array',
-                'channels' => 'nullable|array',
-                'channels.*' => 'in:email,teams',
-                'priority' => 'nullable|in:low,medium,normal,high,urgent',
-                'scheduled_at' => 'nullable|date|after:now'
-            ]);
-
-            if ($validator->fails()) {
-                return $this->errorResponse('Validation failed', $validator->errors(), 422);
-            }
-
-            // Find template
-            $template = NotificationTemplate::where('id', $templateId)
-                                           ->orWhere('slug', $templateId)
-                                           ->active()
-                                           ->first();
-
-            if (!$template) {
-                return $this->errorResponse('Template not found', [], 404);
-            }
-
-            // Validate required variables
-            $variables = $request->variables ?? [];
-            $requiredVars = $template->variables ?? [];
-            $missingVars = array_diff($requiredVars, array_keys($variables));
-
-            if (!empty($missingVars)) {
-                return $this->errorResponse('Missing required variables', [
-                    'missing_variables' => $missingVars,
-                    'required_variables' => $requiredVars
-                ], 422);
-            }
-
+            $template = NotificationTemplate::findOrFail($id);
+            
             // Use template's supported channels if not specified
             $channels = $request->channels ?? $template->supported_channels;
             
-            // Render template
-            $rendered = $template->render($variables);
+            // Merge variables
+            $variables = array_merge(
+                $template->default_variables ?? [],
+                $request->variables ?? []
+            );
 
-            // Prepare notification data
-            $notificationData = [
+            // Render template
+            $subject = $template->subject_template;
+            $bodyHtml = $template->body_html_template;
+            $bodyText = $template->body_text_template;
+
+            foreach ($variables as $key => $value) {
+                $placeholder = "{{" . $key . "}}";
+                $subject = str_replace($placeholder, $value, $subject);
+                $bodyHtml = str_replace($placeholder, $value, $bodyHtml);
+                $bodyText = str_replace($placeholder, $value, $bodyText);
+            }
+
+            // Create notification
+            $notification = \App\Models\Notification::create([
+                'uuid' => \Illuminate\Support\Str::uuid(),
                 'template_id' => $template->id,
-                'subject' => $rendered['subject'],
-                'body_html' => $rendered['body_html'],
-                'body_text' => $rendered['body_text'],
+                'subject' => $subject,
+                'body_html' => $bodyHtml,
+                'body_text' => $bodyText,
                 'channels' => $channels,
                 'recipients' => $request->recipients,
                 'variables' => $variables,
-                'priority' => $request->priority ?? $template->priority ?? 'medium',
-                'scheduled_at' => $request->scheduled_at ? new \DateTime($request->scheduled_at) : null,
-                'api_key_id' => $apiKey->id,
-                'created_by' => null
-            ];
-
-            // Create and schedule notification
-            $notificationService = app(\App\Services\NotificationService::class);
-            $notification = $notificationService->createNotification($notificationData);
-
-            if (!$notification) {
-                return $this->errorResponse('Failed to create notification', [], 500);
-            }
-
-            $scheduled = $notificationService->scheduleNotification($notification);
-            
-            if (!$scheduled) {
-                return $this->errorResponse('Failed to schedule notification', [], 500);
-            }
-
-            $data = [
-                'notification_id' => $notification->uuid,
-                'template_id' => $template->id,
-                'template_name' => $template->name,
-                'status' => $notification->status,
-                'recipients_count' => $notification->total_recipients,
-                'channels' => $notification->channels,
-                'priority' => $notification->priority,
-                'scheduled_at' => $notification->scheduled_at,
-                'message' => 'Notification sent successfully using template'
-            ];
-
-            // Log API usage
-            $this->logApiUsage($apiKey, $request, 'send_notification_with_template', [
-                'template_id' => $template->id,
-                'notification_id' => $notification->uuid,
-                'recipients_count' => count($request->recipients),
-                'channels' => $channels
+                'priority' => $request->priority ?? $template->priority,
+                'status' => $request->scheduled_at ? 'scheduled' : 'queued',
+                'scheduled_at' => $request->scheduled_at,
+                'total_recipients' => count($request->recipients),
+                'api_key_id' => $request->attributes->get('api_key')?->id,
             ]);
 
-            return $this->successResponse($data, 201);
-
+            return response()->json([
+                'success' => true,
+                'message' => 'Notification created using template',
+                'data' => [
+                    'notification_id' => $notification->uuid,
+                    'template_id' => $template->id,
+                    'template_name' => $template->name,
+                    'status' => $notification->status,
+                    'recipients_count' => $notification->total_recipients,
+                    'channels' => $notification->channels,
+                    'scheduled_at' => $notification->scheduled_at,
+                ]
+            ], 201);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template not found'
+            ], 404);
         } catch (\Exception $e) {
-            Log::error('API template send notification failed', [
-                'template_id' => $templateId,
-                'error' => $e->getMessage(),
-                'api_key_id' => $request->apiKey->id ?? null
-            ]);
-
-            return $this->errorResponse('Failed to send notification', [
-                'error_details' => $e->getMessage()
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send notification using template',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
      * Get template categories
-     * GET /api/v1/templates/categories
      */
-    public function getCategories(Request $request)
+    public function getCategories(): JsonResponse
     {
         try {
-            $apiKey = $request->apiKey;
+            $categories = NotificationTemplate::where('is_active', true)
+                                             ->distinct()
+                                             ->pluck('category')
+                                             ->filter()
+                                             ->sort()
+                                             ->values();
 
-            $categories = NotificationTemplate::getCategories();
+            return response()->json([
+                'success' => true,
+                'data' => $categories
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get template categories',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate template variables
+     */
+    public function validateVariables($id, Request $request): JsonResponse
+    {
+        try {
+            $template = NotificationTemplate::findOrFail($id);
+            $providedVariables = $request->variables ?? [];
             
-            // Get template count per category
-            $categoryCounts = NotificationTemplate::active()
-                ->selectRaw('category, COUNT(*) as count')
-                ->groupBy('category')
-                ->pluck('count', 'category');
+            $requiredVariables = $template->variables ?? [];
+            $missingVariables = array_diff($requiredVariables, array_keys($providedVariables));
+            $extraVariables = array_diff(array_keys($providedVariables), $requiredVariables);
 
-            $data = [];
-            foreach ($categories as $key => $name) {
-                $data[] = [
-                    'key' => $key,
-                    'name' => $name,
-                    'template_count' => $categoryCounts[$key] ?? 0
-                ];
-            }
+            $validation = [
+                'is_valid' => empty($missingVariables),
+                'required_variables' => $requiredVariables,
+                'provided_variables' => array_keys($providedVariables),
+                'missing_variables' => array_values($missingVariables),
+                'extra_variables' => array_values($extraVariables),
+                'default_variables' => array_keys($template->default_variables ?? []),
+            ];
 
-            // Log API usage
-            $this->logApiUsage($apiKey, $request, 'get_template_categories', []);
-
-            return $this->successResponse([
-                'categories' => $data,
-                'total_categories' => count($categories)
+            return response()->json([
+                'success' => true,
+                'data' => $validation
             ]);
-
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template not found'
+            ], 404);
         } catch (\Exception $e) {
-            Log::error('API template categories failed', [
-                'error' => $e->getMessage(),
-                'api_key_id' => $request->apiKey->id ?? null
-            ]);
-
-            return $this->errorResponse('Internal server error', [], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to validate template variables',
+                'error' => $e->getMessage()
+            ], 500);
         }
-    }
-
-    /**
-     * Log API usage
-     */
-    private function logApiUsage($apiKey, $request, $action, $metadata = [])
-    {
-        try {
-            \App\Models\ApiUsageLog::create([
-                'api_key_id' => $apiKey->id,
-                'endpoint' => $request->path(),
-                'method' => $request->method(),
-                'action' => $action,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'request_size' => strlen($request->getContent()),
-                'metadata' => $metadata,
-                'created_at' => now()
-            ]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to log API usage: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Success response format
-     */
-    private function successResponse($data, $statusCode = 200)
-    {
-        return response()->json([
-            'success' => true,
-            'data' => $data,
-            'timestamp' => now()->toISOString()
-        ], $statusCode);
-    }
-
-    /**
-     * Error response format
-     */
-    private function errorResponse($message, $errors = [], $statusCode = 400)
-    {
-        return response()->json([
-            'success' => false,
-            'message' => $message,
-            'errors' => $errors,
-            'timestamp' => now()->toISOString()
-        ], $statusCode);
     }
 }

@@ -7,11 +7,17 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', config('app.name', 'Smart Notification System'))</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    {{-- <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="{{ asset('css/app.css') }}" rel="stylesheet"> 
+    <link href="{{ asset('css/app.css') }}" rel="stylesheet"> --}}
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+
+    <!-- Vite CSS -->
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 
     @yield('styles')
     @stack('styles')
@@ -76,11 +82,15 @@
                                 </tr>
                                 <tr>
                                     <td>Environment:</td>
-                                    <td><span class="badge bg-{{ app()->environment() === 'production' ? 'success' : 'warning' }}">{{ app()->environment() }}</span></td>
+                                    <td><span
+                                            class="badge bg-{{ app()->environment() === 'production' ? 'success' : 'warning' }}">{{ app()->environment() }}</span>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td>Debug Mode:</td>
-                                    <td><span class="badge bg-{{ config('app.debug') ? 'danger' : 'success' }}">{{ config('app.debug') ? 'ON' : 'OFF' }}</span></td>
+                                    <td><span
+                                            class="badge bg-{{ config('app.debug') ? 'danger' : 'success' }}">{{ config('app.debug') ? 'ON' : 'OFF' }}</span>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td>PHP Version:</td>
@@ -101,19 +111,26 @@
                                 </tr>
                                 <tr>
                                     <td>Total Roles:</td>
-                                    <td><span class="badge bg-info">{{ \Spatie\Permission\Models\Role::count() }}</span></td>
+                                    <td><span
+                                            class="badge bg-info">{{ \Spatie\Permission\Models\Role::count() }}</span>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td>Total Permissions:</td>
-                                    <td><span class="badge bg-success">{{ \Spatie\Permission\Models\Permission::count() }}</span></td>
+                                    <td><span
+                                            class="badge bg-success">{{ \Spatie\Permission\Models\Permission::count() }}</span>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td>Active API Keys:</td>
-                                    <td><span class="badge bg-warning">{{ \App\Models\ApiKey::where('is_active', true)->count() }}</span></td>
+                                    <td><span
+                                            class="badge bg-warning">{{ \App\Models\ApiKey::where('is_active', true)->count() }}</span>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td>Total Notifications:</td>
-                                    <td><span class="badge bg-secondary">{{ \App\Models\Notification::count() }}</span></td>
+                                    <td><span class="badge bg-secondary">{{ \App\Models\Notification::count() }}</span>
+                                    </td>
                                 </tr>
                             </table>
                         </div>
@@ -122,7 +139,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Main Content -->
     <main class="main-content" id="mainContent">
         <div class="content-wrapper">
@@ -183,12 +200,13 @@
     </button>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {{-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script> --}}
 
-    {{-- <script src="{{ asset('js/app.js') }}" defer></script> --}}
+    <!-- Scripts -->
+    {{-- @vite(['resources/js/app.js']) --}}
 
     <script>
         // Global App Variables
@@ -210,6 +228,18 @@
             });
         }
 
+        // Set user data
+        window.App.user = @json(auth()->user());
+        
+        // Auto-hide alerts
+        setTimeout(() => {
+            document.querySelectorAll('.alert').forEach(alert => {
+                if (alert.classList.contains('alert-success')) {
+                    alert.remove();
+                }
+            });
+        }, 5000);
+
         // Enhanced Sidebar functionality
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -220,10 +250,10 @@
             const sidebar = document.getElementById('sidebar');
             const mainContent = document.getElementById('mainContent');
             const toggleIcon = document.getElementById('sidebarToggleIcon');
-            
+
             sidebar.classList.toggle('collapsed');
             mainContent.classList.toggle('expanded');
-            
+
             // Update icon
             if (sidebar.classList.contains('collapsed')) {
                 toggleIcon.className = 'fas fa-angle-right';
@@ -244,7 +274,7 @@
                 const sidebar = document.getElementById('sidebar');
                 const mainContent = document.getElementById('mainContent');
                 const toggleIcon = document.getElementById('sidebarToggleIcon');
-                
+
                 sidebar.classList.add('collapsed');
                 mainContent.classList.add('expanded');
                 if (toggleIcon) {
@@ -258,7 +288,7 @@
             document.querySelectorAll('.nav-item').forEach(item => {
                 const badge = item.querySelector('[data-stat]');
                 const tooltip = item.querySelector('.nav-tooltip');
-                
+
                 if (badge && tooltip && badge.dataset.stat) {
                     const baseText = tooltip.textContent.split(' (')[0];
                     const count = badge.textContent.trim();
@@ -289,7 +319,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             // Load sidebar state
             loadSidebarState();
-            
+
             // Initialize tooltips
             updateTooltipsWithStats();
 
@@ -393,14 +423,14 @@
 
         // Update page title
         function updatePageTitle(title) {
-            document.title = title + ' - {{ config("app.name") }}';
+            document.title = title + ' - {{ config('app.name') }}';
         }
 
         // Handle form submissions with loading states
         document.addEventListener('submit', function(e) {
             const form = e.target;
             const submitBtn = form.querySelector('button[type="submit"]');
-            
+
             if (submitBtn && !form.dataset.noLoading) {
                 showLoading(submitBtn);
             }
@@ -421,7 +451,8 @@
             // Ctrl + / for search (if search input exists)
             if (e.ctrlKey && e.key === '/') {
                 e.preventDefault();
-                const searchInput = document.querySelector('input[type="search"], input[placeholder*="search"], input[placeholder*="ค้นหา"]');
+                const searchInput = document.querySelector(
+                    'input[type="search"], input[placeholder*="search"], input[placeholder*="ค้นหา"]');
                 if (searchInput) {
                     searchInput.focus();
                 }
@@ -440,8 +471,19 @@
         // Auto-refresh functionality for real-time data
         function startAutoRefresh(interval = 300000) { // 5 minutes default
             setInterval(() => {
+
+                const webHeaders = {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Accept': 'application/json'
+                };
+
                 // Update notification count
-                fetch('/api/notifications/unread-count')
+                fetch('/api/notifications/unread-count', {
+                            method: 'GET',
+                            headers: webHeaders,
+                            credentials: 'same-origin'
+                        })
                     .then(response => response.json())
                     .then(data => {
                         const badge = document.querySelector('.navbar .badge');
@@ -451,11 +493,15 @@
                         }
                     })
                     .catch(error => console.log('Failed to update notification count:', error));
-                
+
                 // Update sidebar stats if they exist
                 const statsElements = document.querySelectorAll('[data-stat]');
                 if (statsElements.length > 0) {
-                    fetch('/api/dashboard/quick-stats')
+                    fetch('/api/dashboard/quick-stats', {
+                            method: 'GET',
+                            headers: webHeaders,
+                            credentials: 'same-origin'
+                        })
                         .then(response => response.json())
                         .then(data => {
                             statsElements.forEach(element => {

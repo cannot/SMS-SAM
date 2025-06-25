@@ -258,8 +258,10 @@ class NotificationController extends Controller
 
             DB::commit();
 
-            return redirect()->route('admin.notifications.show', $notification)
-                        ->with('success', 'Notification created successfully!');
+            // return redirect()->route('admin.notifications.show', $notification)
+            //             ->with('success', 'Notification created successfully!');
+            return redirect()->route('admin.notifications.show', $notification->uuid)
+               ->with('success', 'Notification created successfully!');
 
         } catch (\Exception $e) {
             DB::rollback();
@@ -313,8 +315,9 @@ class NotificationController extends Controller
     /**
      * Display the specified notification with detailed information
      */
-    public function show(Notification $notification)
+    public function show($uuid)
     {
+        $notification = Notification::where('uuid', $uuid)->firstOrFail();
         $notification->load(['template', 'group', 'creator', 'logs.user']);
 
         // Delivery statistics

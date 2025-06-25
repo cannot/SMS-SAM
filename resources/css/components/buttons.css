@@ -1,0 +1,54 @@
+/* ===========================================
+   BUTTON COMPONENTS
+   =========================================== */
+
+   .btn {
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+    background: linear-gradient(45deg, var(--primary-green) 0%, var(--light-green) 100%);
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(45deg, var(--light-green) 0%, var(--primary-green) 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(37, 107, 54, 0.3);
+}
+
+.btn-success {
+    background: linear-gradient(45deg, var(--light-green) 0%, var(--aqua) 100%);
+    border: none;
+}
+
+.btn-warning {
+    background: linear-gradient(45deg, var(--orange) 0%, #ffc107 100%);
+    border: none;
+    color: white;
+}
+
+.btn-danger {
+    background: linear-gradient(45deg, var(--primary-pink) 0%, #dc3545 100%);
+    border: none;
+}
+
+.btn-info {
+    background: linear-gradient(45deg, var(--aqua) 0%, var(--blue) 100%);
+    border: none;
+}
+
+.btn-secondary {
+    background: linear-gradient(45deg, var(--primary-brown) 0%, #6c757d 100%);
+    border: none;
+}

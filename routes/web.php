@@ -14,6 +14,8 @@ use App\Http\Controllers\Web\ReportController;
 use App\Http\Controllers\Web\RoleController;
 use App\Http\Controllers\Web\UserController;
 use App\Http\Controllers\Web\UserPreferenceController;
+use App\Http\Controllers\Api\V1\UserController as ApiUserController;
+
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -68,6 +70,11 @@ Route::middleware(['auth', 'web'])->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // Route::prefix('user')->name('api.user.')->group(function () {
+    //     Route::get('/stats', [ApiUserController::class, 'getUserStats'])->name('stats');
+    //     Route::get('/notifications/unread', [ApiUserController::class, 'getUnreadNotifications'])->name('notifications.unread');
+    //     Route::get('/profile', [ApiUserController::class, 'getProfile'])->name('profile');
+    // });
     // ===========================================
     // PERMISSIONS MANAGEMENT ROUTES
     // ===========================================

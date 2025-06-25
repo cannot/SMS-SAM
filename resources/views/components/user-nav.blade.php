@@ -321,6 +321,14 @@
     </div>
 </div>
 <script>
+
+const webHeaders = {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Accept': 'application/json'
+                };
+
+    console.log(webHeaders); 
 // Test notification functionality
 function testNotificationSettings(event) {
     event.preventDefault();
@@ -407,7 +415,12 @@ function openDocumentation() {
 
 // Update user statistics
 function updateUserStats() {
-    fetch('/api/user/stats')
+
+    fetch('/api/user/stats', {
+            method: 'GET',
+            headers: webHeaders,
+            credentials: 'same-origin'
+        })
         .then(response => response.json())
         .then(data => {
             document.querySelectorAll('[data-stat]').forEach(element => {
@@ -430,7 +443,7 @@ function updateUserStats() {
         .catch(error => console.log('Failed to update user stats:', error));
 }
 
-// Auto-update user stats every 2 minutes
+// Auto-update user stats every 2 minutes 120000
 setInterval(updateUserStats, 120000);
 
 // Export user functions for global use

@@ -1,0 +1,84 @@
+/* ===========================================
+   UTILITY CLASSES
+   =========================================== */
+
+/* Alerts */
+.alert {
+    border: none;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+}
+
+.alert-success {
+    background: linear-gradient(135deg, rgba(101, 209, 181, 0.1) 0%, rgba(101, 157, 171, 0.1) 100%);
+    border-left: 4px solid var(--light-green);
+    color: var(--primary-green);
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, rgba(225, 166, 173, 0.1) 0%, rgba(220, 53, 69, 0.1) 100%);
+    border-left: 4px solid var(--primary-pink);
+    color: #842029;
+}
+
+.alert-warning {
+    background: linear-gradient(135deg, rgba(187, 134, 78, 0.1) 0%, rgba(255, 193, 7, 0.1) 100%);
+    border-left: 4px solid var(--orange);
+    color: #664d03;
+}
+
+.alert-info {
+    background: linear-gradient(135deg, rgba(101, 157, 171, 0.1) 0%, rgba(49, 84, 112, 0.1) 100%);
+    border-left: 4px solid var(--aqua);
+    color: var(--blue);
+}
+
+/* Text Utilities */
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+.slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Dark Mode Override - Force Light Theme */
+/* body {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
+    color: #212529 !important;
+}
+
+.card {
+    background: white !important;
+    color: #212529 !important;
+} */
+
+/* Override any dark mode styles */
+/* @media (prefers-color-scheme: dark) {
+    body {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
+        color: #212529 !important;
+    }
+    
+    .card {
+        background: white !important;
+        color: #212529 !important;
+        border: none !important;
+    } */
+
+    /* Force light theme for all content */
+    /* {
+        background-color: inherit !important;
+        color: inherit !important;
+    }
+
+    .table {
+        background: white !important;
+        color: #212529 !important;
+    }
+    
+    .table th {
+        background-color: #f8f9fa !important;
+        color: #495057 !important;
+    }
+} */

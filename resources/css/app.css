@@ -1,11 +1,268 @@
-@import 'tailwindcss';
+/* ===========================================
+   MAIN CSS ENTRY POINT FOR VITE
+   =========================================== */
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
-@source '../**/*.blade.php';
-@source '../**/*.js';
+/* External Dependencies */
+@import 'bootstrap/dist/css/bootstrap.min.css';
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+@import 'datatables.net-bs5/css/dataTables.bootstrap5.min.css';
+@import 'select2/dist/css/select2.min.css';
+@import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
+@import 'sweetalert2/dist/sweetalert2.min.css';
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+/* Custom CSS Components */
+@import './components/variables.css';
+@import './components/sidebar.css';
+@import './components/navbar.css';
+@import './components/cards.css';
+@import './components/buttons.css';
+@import './components/forms.css';
+@import './components/tables.css';
+@import './components/utilities.css';
+@import './components/animations.css';
+@import './components/responsive.css';
+
+/* Global Styles */
+body {
+    font-family: var(--bs-body-font-family);
+    font-size: var(--bs-body-font-size);
+    font-weight: var(--bs-body-font-weight);
+    line-height: var(--bs-body-line-height);
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding-top: 56px;
+}
+
+/* Main Layout */
+.main-content {
+    margin-left: var(--sidebar-width);
+    min-height: calc(100vh - 56px);
+    transition: margin-left 0.3s ease;
+    padding: 0;
+}
+
+.main-content.expanded {
+    margin-left: var(--sidebar-collapsed-width);
+}
+
+.content-wrapper {
+    padding: 2rem;
+}
+
+/* Page Header */
+.page-header {
+    background: linear-gradient(135deg, var(--primary-green) 0%, var(--light-green) 50%, var(--primary-pink) 100%);
+    color: white;
+    padding: 2rem 0;
+    margin: -1rem -15px 2rem -15px;
+    border-radius: 0 0 15px 15px;
+}
+
+.page-header h2 {
+    margin: 0;
+    font-weight: 600;
+}
+
+.page-header p {
+    margin: 0;
+    opacity: 0.9;
+}
+
+/* Go to Top Button */
+.go-to-top {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #315470 0%, #23477C 100%);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 1025;
+    box-shadow: 0 4px 20px rgba(49, 84, 112, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.go-to-top.show {
+    opacity: 1;
+    visibility: visible;
+    transform: scale(1);
+}
+
+.go-to-top:hover {
+    background: linear-gradient(135deg, #23477C 0%, #315470 100%);
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 30px rgba(49, 84, 112, 0.4);
+}
+
+/* Modal z-index fix */
+.modal {
+    z-index: 1060 !important;
+}
+
+.modal-backdrop {
+    z-index: 1055 !important;
+}
+
+/* Enhanced Custom Scrollbar for General Use */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--light-green) 0%, var(--primary-green) 100%);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--primary-green) 0%, var(--light-green) 100%);
+}
+
+/* Loading Spinner */
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s ease-in-out infinite;
+}
+
+/* Notification Badge */
+.notification-badge {
+    position: relative;
+}
+
+.notification-badge .badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    transform: scale(0.8);
+}
+
+/* Status Indicators */
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 0.5rem;
+}
+
+.status-online {
+    background: #28a745;
+}
+
+.status-offline {
+    background: #dc3545;
+}
+
+.status-busy {
+    background: #ffc107;
+}
+
+/* Status Badges */
+.status-draft { background-color: #6c757d !important; }
+.status-scheduled { background-color: #0dcaf0 !important; }
+.status-queued { background-color: #ffc107 !important; color: #000 !important; }
+.status-processing { background-color: #fd7e14 !important; }
+.status-sent { background-color: #198754 !important; }
+.status-failed { background-color: #dc3545 !important; }
+.status-cancelled { background-color: #6c757d !important; }
+
+/* Priority Badges */
+.priority-low { background-color: #198754 !important; }
+.priority-normal { background-color: #0dcaf0 !important; }
+.priority-high { background-color: #ffc107 !important; color: #000 !important; }
+.priority-urgent { background-color: #dc3545 !important; }
+
+/* User Avatar */
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+/* Breadcrumb */
+.breadcrumb {
+    background: transparent;
+    padding: 0;
+    margin-bottom: 1rem;
+}
+
+.breadcrumb-item+.breadcrumb-item::before {
+    content: "›";
+    font-weight: bold;
+    color: var(--light-green);
+}
+
+.breadcrumb-item.active {
+    color: var(--primary-green);
+    font-weight: 500;
+}
+
+/* Animation for badge notification */
+.badge.animate {
+    animation: pulse 2s infinite;
+}
+
+/* Sidebar state memory */
+.sidebar-collapsed-state {
+    transition: all 0.3s ease;
+}
+
+/* Focus states for accessibility */
+.sidebar .nav-link:focus {
+    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+    .sidebar {
+        display: none;
+    }
+    
+    .main-content {
+        margin-left: 0 !important;
+    }
+    
+    .sidebar-toggle,
+    .go-to-top {
+        display: none;
+    }
 }
