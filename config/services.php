@@ -42,6 +42,8 @@ return [
         'default_team_id' => env('TEAMS_DEFAULT_TEAM_ID'),
         'default_channel_id' => env('TEAMS_DEFAULT_CHANNEL_ID'),
         'ca_bundle_path' => env('TEAMS_CA_BUNDLE_PATH'),
+        'use_mock' => env('USE_MOCK_TEAMS', false),
+        'webhook' => env('TEAMS_WEBHOOK'),
     ],
 
 ];

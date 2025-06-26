@@ -491,7 +491,7 @@
                         </div>
                         <div class="card-body">
                             <div class="d-grid gap-2">
-                                <a href="{{ route('notifications.create', ['template' => $template->id]) }}" class="btn btn-success">
+                                <a href="{{ route('admin.notifications.create', ['template' => $template->id]) }}" class="btn btn-success">
                                     <i class="fas fa-paper-plane me-2"></i>Send Notification
                                 </a>
                                 <a href="{{ route('templates.duplicate', $template) }}" class="btn btn-outline-primary">

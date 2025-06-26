@@ -181,6 +181,16 @@
         padding: 1.5rem;
         margin-top: 1rem;
     }
+
+    /* Style สำหรับ TinyMCE */
+    .tox-tinymce {
+        border: 1px solid #ced4da !important;
+        border-radius: 0.375rem !important;
+    }
+    
+    .tox-editor-header {
+        border-bottom: 1px solid #e9ecef !important;
+    }
 </style>
 @endpush
 
@@ -332,7 +342,7 @@
                         
                         <div class="col-md-6 mb-3">
                             <label for="body_text" class="form-label fw-bold">
-                                เนื้อหา Text <small class="text-muted">(สำหรับ Teams)</small>
+                                เนื้อหา Text <small class="text-muted">(สำหรับ Teams/Webhook)</small>
                             </label>
                             <textarea name="body_text" id="body_text" 
                                       class="form-control @error('body_text') is-invalid @enderror" 
@@ -349,13 +359,6 @@
                     <div class="preview-card">
                         <h6><i class="bi bi-eye"></i> ตัวอย่างเทมเพลต</h6>
                         <div id="templatePreviewContent"></div>
-                        
-                        <!-- Edit Template Content -->
-                        {{-- <div class="mt-3">
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="editTemplateContent()">
-                                <i class="bi bi-pencil"></i> แก้ไขเนื้อหา
-                            </button>
-                        </div> --}}
                         
                         <!-- Editable Template Form (hidden initially) -->
                         <div id="editableTemplateForm" style="display: none;" class="mt-3">
@@ -490,7 +493,7 @@
                 <div class="mt-4">
                     <h6>ช่องทางการส่ง</h6>
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="channels[]" 
                                        value="email" id="channel_email" checked>
@@ -499,13 +502,57 @@
                                 </label>
                             </div>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="channels[]" 
                                        value="teams" id="channel_teams">
                                 <label class="form-check-label" for="channel_teams">
                                     <i class="bi bi-microsoft-teams me-2"></i> Microsoft Teams
                                 </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="channels[]" 
+                                       value="webhook" id="channel_webhook">
+                                <label class="form-check-label" for="channel_webhook">
+                                    <i class="bi bi-webhook me-2"></i> Webhook
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Webhook Configuration -->
+                    <div id="webhookConfig" style="display: none;" class="mt-3">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="bi bi-webhook"></i> การตั้งค่า Webhook</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-12">
+                                        <label for="webhook_url" class="form-label">Webhook URL *</label>
+                                        <input type="url" name="webhook_url" id="webhook_url" 
+                                               class="form-control" placeholder="https://example.com/webhook">
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <label for="messages" class="form-label">Messages (JSON format)</label>
+                                        <textarea name="messages" id="messages" 
+                                                  class="form-control" rows="3" 
+                                                  placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'></textarea>
+                                    </div>
+                                </div>
+                                
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <button type="button" class="btn btn-outline-info btn-sm" onclick="testWebhook()">
+                                            <i class="bi bi-send"></i> ทดสอบ Webhook
+                                        </button>
+                                        <div id="webhookTestResult" class="mt-2"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -588,6 +635,7 @@
 let currentStep = 1;
 let totalSteps = 6;
 let formData = {};
+let tinyMCEInitialized = false;
 
 document.addEventListener('DOMContentLoaded', function() {
     initializeStepForm();
@@ -625,6 +673,120 @@ function initializeStepForm() {
             selectTemplate(templateId);
         });
     });
+
+    // Initialize webhook channel toggle
+    const webhookCheckbox = document.getElementById('channel_webhook');
+    if (webhookCheckbox) {
+        webhookCheckbox.addEventListener('change', function() {
+            const webhookConfig = document.getElementById('webhookConfig');
+            if (webhookConfig) {
+                webhookConfig.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+    }
+}
+
+/**
+ * Initialize TinyMCE Editor
+ */
+function initializeTinyMCE() {
+    if (tinyMCEInitialized || typeof tinymce === 'undefined') {
+        return;
+    }
+
+    console.log('Initializing TinyMCE...');
+    
+    tinymce.init({
+        selector: '#body_html',
+        height: 400,
+        menubar: false,
+        plugins: [
+            'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+            'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+            'insertdatetime', 'media', 'table', 'help', 'wordcount'
+        ],
+        toolbar: 'undo redo | formatselect | ' +
+            'bold italic backcolor | alignleft aligncenter ' +
+            'alignright alignjustify | bullist numlist outdent indent | ' +
+            'removeformat | code | insertvariable | help',
+        content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, San Francisco, Segoe UI, Roboto, Helvetica Neue, sans-serif; font-size: 14px; }',
+        setup: function(editor) {
+            // เพิ่มปุ่มแทรกตัวแปร
+            editor.ui.registry.addMenuButton('insertvariable', {
+                text: 'Variables',
+                icon: 'template',
+                fetch: function(callback) {
+                    const items = [
+                        {
+                            type: 'menuitem',
+                            text: 'User Name',
+                            onAction: function() {
+                                editor.insertContent('{' + '{user_name}' + '}');
+                            }
+                        },
+                        {
+                            type: 'menuitem',
+                            text: 'User Email',
+                            onAction: function() {
+                                editor.insertContent('{' + '{user_email}' + '}');
+                            }
+                        },
+                        {
+                            type: 'menuitem',
+                            text: 'Subject',
+                            onAction: function() {
+                                editor.insertContent('{' + '{subject}' + '}');
+                            }
+                        },
+                        {
+                            type: 'menuitem',
+                            text: 'Message',
+                            onAction: function() {
+                                editor.insertContent('{' + '{message}' + '}');
+                            }
+                        },
+                        {
+                            type: 'menuitem',
+                            text: 'Current Date',
+                            onAction: function() {
+                                editor.insertContent('{' + '{current_date}' + '}');
+                            }
+                        },
+                        {
+                            type: 'menuitem',
+                            text: 'Current Time',
+                            onAction: function() {
+                                editor.insertContent('{' + '{current_time}' + '}');
+                            }
+                        }
+                    ];
+                    callback(items);
+                }
+            });
+        },
+        init_instance_callback: function(editor) {
+            console.log('TinyMCE initialized successfully for:', editor.id);
+            tinyMCEInitialized = true;
+            
+            // Auto-detect variables when content changes
+            editor.on('input keyup', function() {
+                if (currentStep === 3) {
+                    showDetectedVariables();
+                }
+            });
+        }
+    });
+}
+
+/**
+ * Destroy TinyMCE Editor
+ */
+function destroyTinyMCE() {
+    if (typeof tinymce !== 'undefined' && tinymce.get('body_html')) {
+        tinymce.get('body_html').remove();
+        tinyMCEInitialized = false;
+        console.log('TinyMCE destroyed');
+    }
 }
 
 function selectCreationType(type) {
@@ -717,35 +879,21 @@ function showRecipientDetails(type) {
             // Generate groups dynamically with PHP
             const groups = @json($groups);
             groups.forEach(group => {
-                // groupsHtml += `
-                //     <div class="col-md-4">
-                //         <div class="form-check">
-                //             <input class="form-check-input" type="checkbox" name="recipient_groups[]" 
-                //                    value="${group.id}" id="group_${group.id}" onchange="updateGroupCount()">
-                //             <label class="form-check-label" for="group_${group.id}">
-                //                 <strong>${group.name}</strong>
-                //                 <small class="d-block text-muted">${group.users_count || group.member_count || 0} คน</small>
-                //             </label>
-                //         </div>
-                //     </div>
-                // `;
-
                 groupsHtml += `
                     <div class="col-md-4">
-                            <div class="template-card card" data-group-id="group_${group.id}">
-                                <div class="card-body">
-                                    
-                                    <p class="card-text small text-muted">
-                                        <input class="form-check-input" type="checkbox" name="recipient_groups[]" value="${group.id}" 
-                                        id="group_${group.id}" onchange="updateGroupCount()">
-                                        <label class="form-check-label" for="group_${group.id}">
-                                        <strong>${group.name}</strong>
-                                        <small class="d-block text-muted">${group.users_count || group.member_count || 0} คน</small>
-                                    </label>
+                        <div class="template-card card" data-group-id="group_${group.id}">
+                            <div class="card-body">
+                                <p class="card-text small text-muted">
+                                    <input class="form-check-input" type="checkbox" name="recipient_groups[]" value="${group.id}" 
+                                    id="group_${group.id}" onchange="updateGroupCount()">
+                                    <label class="form-check-label" for="group_${group.id}">
+                                    <strong>${group.name}</strong>
+                                    <small class="d-block text-muted">${group.users_count || group.member_count || 0} คน</small>
+                                </label>
                                 </p>
-                                </div>
                             </div>
                         </div>
+                    </div>
                 `;
             });
             
@@ -808,8 +956,6 @@ function loadTemplateContent(templateId) {
         if (data.success) {
             const template = data.template;
             const preview = data.preview;
-            console.log(template);
-            console.log(preview);
             
             // Store template data
             formData.template = template;
@@ -839,15 +985,15 @@ function loadTemplateContent(templateId) {
                 </div>
             `;
             
-            // Fill editable form fields
-            document.getElementById('template_subject').value = template.subject_template || '';
-            document.getElementById('template_body_html').value = template.body_html_template || '';
-            document.getElementById('template_body_text').value = template.body_text_template || '';
-            
-            // Also fill the main form fields with template content
+            // Fill the main form fields with template content
             document.getElementById('subject').value = preview.subject || '';
             document.getElementById('body_html').value = preview.body_html || '';
             document.getElementById('body_text').value = preview.body_text || '';
+            
+            // Update TinyMCE if initialized
+            if (tinyMCEInitialized && tinymce.get('body_html')) {
+                tinymce.get('body_html').setContent(preview.body_html || '');
+            }
             
             // Update supported channels
             updateSupportedChannels(template.supported_channels);
@@ -862,22 +1008,15 @@ function loadTemplateContent(templateId) {
     });
 }
 
-function editTemplateContent() {
-    const form = document.getElementById('editableTemplateForm');
-    if (form.style.display === 'none') {
-        form.style.display = 'block';
-    } else {
-        form.style.display = 'none';
-    }
-}
-
 function updateSupportedChannels(supportedChannels) {
     const emailCheckbox = document.getElementById('channel_email');
     const teamsCheckbox = document.getElementById('channel_teams');
+    const webhookCheckbox = document.getElementById('channel_webhook');
     
     // Reset checkboxes
     emailCheckbox.checked = false;
     teamsCheckbox.checked = false;
+    if (webhookCheckbox) webhookCheckbox.checked = false;
     
     // Check supported channels
     if (supportedChannels.includes('email')) {
@@ -886,31 +1025,27 @@ function updateSupportedChannels(supportedChannels) {
     if (supportedChannels.includes('teams')) {
         teamsCheckbox.checked = true;
     }
+    if (supportedChannels.includes('webhook')) {
+        if (webhookCheckbox) webhookCheckbox.checked = true;
+    }
 }
 
 function detectVariables() {
     let content = '';
     
-    // if (formData.creation_type === 'manual') {
-        const subject = document.getElementById('subject').value || '';
-        let bodyHtml = '';
-        
-        // Get content from TinyMCE if available
-        const editor = tinymce.get('body_html');
-        if (editor) {
-            bodyHtml = editor.getContent();
-        } else {
-            bodyHtml = document.getElementById('body_html').value || '';
-        }
-        
-        const bodyText = document.getElementById('body_text').value || '';
-        content = subject + ' ' + bodyHtml + ' ' + bodyText;
-        
-    // } else if (formData.template) {
-    //     content = (formData.template.subject_template || '') + ' ' + 
-    //              (formData.template.body_html_template || '') + ' ' + 
-    //              (formData.template.body_text_template || '');
-    // }
+    const subject = document.getElementById('subject').value || '';
+    let bodyHtml = '';
+    
+    // Get content from TinyMCE if available
+    const editor = tinymce.get('body_html');
+    if (editor) {
+        bodyHtml = editor.getContent();
+    } else {
+        bodyHtml = document.getElementById('body_html').value || '';
+    }
+    
+    const bodyText = document.getElementById('body_text').value || '';
+    content = subject + ' ' + bodyHtml + ' ' + bodyText;
     
     // Extract variables using regex
     const variables = [];
@@ -944,7 +1079,7 @@ function showDetectedVariables() {
                 <i class="bi bi-info-circle"></i> 
                 ไม่พบตัวแปรที่กำหนดเองในเนื้อหา
                 <br><small class="text-muted">
-                    ระบบจะใช้ตัวแปรมาตรฐาน เช่น {` + `{user_name}}, {` + `{user_email}}, {` + `{current_date}} อัตโนมัติ
+                    ระบบจะใช้ตัวแปรมาตรฐาน เช่น ` + '{' + '{user_name}' + '}' + `, ` + '{' + '{user_email}' + '}' + `, ` + '{' + '{current_date}' + '}' + ` อัตโนมัติ
                 </small>
             </div>
         `;
@@ -972,11 +1107,6 @@ function showDetectedVariables() {
                     </div>
                     <div class="col-md-3">
                         <span class="badge bg-secondary">custom</span>
-                        <!-- <button type="button" class="btn btn-sm btn-outline-info ms-1" 
-                                onclick="insertVariableToField('${variableDisplay}')" 
-                                title="แทรกลงในเนื้อหา">
-                            <i class="bi bi-plus"></i> -->
-                        </button>
                     </div>
                 </div>
             </div>
@@ -984,77 +1114,6 @@ function showDetectedVariables() {
     });
     
     container.innerHTML = html;
-}
-
-function insertVariableToField(variable) {
-    // Try to insert into TinyMCE first
-    const editor = tinymce.get('body_html');
-    if (editor && editor.hasFocus()) {
-        editor.insertContent(variable);
-        showAlert('แทรกตัวแปร ' + variable + ' ลงใน HTML editor แล้ว', 'success');
-        return;
-    }
-    
-    // Try to insert into focused textarea
-    const activeElement = document.activeElement;
-    if (activeElement && activeElement.tagName === 'TEXTAREA') {
-        const cursorPos = activeElement.selectionStart;
-        const text = activeElement.value;
-        
-        activeElement.value = text.slice(0, cursorPos) + variable + text.slice(cursorPos);
-        activeElement.selectionStart = activeElement.selectionEnd = cursorPos + variable.length;
-        activeElement.focus();
-        
-        showAlert('แทรกตัวแปร ' + variable + ' แล้ว', 'success');
-    } else {
-        // Copy to clipboard as fallback
-        navigator.clipboard.writeText(variable).then(() => {
-            showAlert('คัดลอก ' + variable + ' ไปยังคลิปบอร์ดแล้ว', 'info');
-        });
-    }
-}
-
-function updateVariablePreview() {
-    // Could implement live preview update here
-    console.log('Variables updated');
-}
-
-function selectCreationType(type) {
-    document.querySelectorAll('.option-card[data-type]').forEach(card => {
-        card.classList.remove('selected');
-    });
-    
-    document.querySelector(`[data-type="${type}"]`).classList.add('selected');
-    document.getElementById('creation_type').value = type;
-    
-    if (type === 'template') {
-        document.getElementById('templateSelection').style.display = 'block';
-    } else {
-        document.getElementById('templateSelection').style.display = 'none';
-        document.getElementById('template_id').value = '';
-        formData.template_id = null;
-        formData.template = null;
-    }
-    
-    formData.creation_type = type;
-}
-
-function showAlert(message, type = 'info') {
-    const alertContainer = document.createElement('div');
-    alertContainer.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertContainer.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-    alertContainer.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(alertContainer);
-    
-    setTimeout(() => {
-        if (alertContainer.parentNode) {
-            alertContainer.remove();
-        }
-    }, 4000);
 }
 
 function addCustomVariable() {
@@ -1094,6 +1153,11 @@ function addCustomVariable() {
     // Clear inputs
     document.getElementById('newVariableName').value = '';
     document.getElementById('newVariableValue').value = '';
+}
+
+function updateVariablePreview() {
+    // Could implement live preview update here
+    console.log('Variables updated');
 }
 
 function generateSummary() {
@@ -1167,8 +1231,15 @@ function generateSummary() {
     const channels = [];
     if (document.getElementById('channel_email').checked) channels.push('อีเมล');
     if (document.getElementById('channel_teams').checked) channels.push('Teams');
+    if (document.getElementById('channel_webhook')?.checked) channels.push('Webhook');
     
     html += `<p><strong>ช่องทางการส่ง:</strong> ${channels.join(', ') || 'ไม่ระบุ'}</p>`;
+    
+    // Webhook details if selected
+    if (document.getElementById('channel_webhook')?.checked) {
+        const webhookUrl = document.getElementById('webhook_url').value;
+        html += `<p><small><strong>Webhook URL:</strong> ${webhookUrl || 'ไม่ระบุ'}</small></p>`;
+    }
     
     html += '</div></div>';
     
@@ -1183,6 +1254,11 @@ function nextStep() {
     }
     
     if (currentStep < totalSteps) {
+        // Save TinyMCE content before moving to next step
+        if (currentStep === 2 && tinyMCEInitialized && tinymce.get('body_html')) {
+            tinymce.get('body_html').save();
+        }
+        
         currentStep++;
         updateStepDisplay();
         
@@ -1216,6 +1292,11 @@ function nextStep() {
 
 function previousStep() {
     if (currentStep > 1) {
+        // Save TinyMCE content before moving
+        if (currentStep === 2 && tinyMCEInitialized && tinymce.get('body_html')) {
+            tinymce.get('body_html').save();
+        }
+        
         currentStep--;
         updateStepDisplay();
     }
@@ -1341,6 +1422,26 @@ function validateCurrentStep() {
                 alert('กรุณาเลือกช่องทางการส่งอย่างน้อย 1 ช่องทาง');
                 return false;
             }
+            
+            // Validate webhook configuration if webhook is selected
+            const webhookChecked = document.getElementById('channel_webhook')?.checked;
+            if (webhookChecked) {
+                const webhookUrl = document.getElementById('webhook_url').value.trim();
+                if (!webhookUrl) {
+                    alert('กรุณากรอก Webhook URL');
+                    return false;
+                }
+                
+                // Validate URL format
+                try {
+                    new URL(webhookUrl);
+                } catch (e) {
+                    alert('กรุณากรอก Webhook URL ที่ถูกต้อง');
+                    return false;
+                }
+                
+                
+            }
             break;
     }
     
@@ -1357,10 +1458,53 @@ function sendTest() {
     const testResult = document.getElementById('testResult');
     testResult.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> กำลังส่งทดสอบ...</div>';
     
-    // Implement test sending logic here
-    setTimeout(() => {
-        testResult.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ส่งทดสอบเรียบร้อยแล้ว</div>';
-    }, 2000);
+    // Collect form data for test
+    const testData = {
+        subject: document.getElementById('subject').value,
+        body_html: tinyMCEInitialized && tinymce.get('body_html') ? 
+            tinymce.get('body_html').getContent() : 
+            document.getElementById('body_html').value,
+        body_text: document.getElementById('body_text').value,
+        test_email: testEmail,
+        variables: collectVariables()
+    };
+    
+    // Send test notification
+    fetch('/admin/notifications/test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(testData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            testResult.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ส่งทดสอบเรียบร้อยแล้ว</div>';
+        } else {
+            testResult.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> เกิดข้อผิดพลาด: ${data.message}</div>`;
+        }
+    })
+    .catch(error => {
+        console.error('Test error:', error);
+        testResult.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> เกิดข้อผิดพลาดในการส่งทดสอบ</div>';
+    });
+}
+
+function collectVariables() {
+    const variables = {};
+    const variableInputs = document.querySelectorAll('input[name*="variables["]');
+    
+    variableInputs.forEach(input => {
+        const name = input.name.match(/variables\[([^\]]+)\]/);
+        if (name && name[1]) {
+            variables[name[1]] = input.value;
+        }
+    });
+    
+    return variables;
 }
 
 function saveDraft() {
@@ -1370,8 +1514,243 @@ function saveDraft() {
     draftInput.name = 'save_as_draft';
     draftInput.value = '1';
     form.appendChild(draftInput);
+    
+    // Save TinyMCE content before submitting
+    if (tinyMCEInitialized && tinymce.get('body_html')) {
+        tinymce.get('body_html').save();
+    }
+    
     form.submit();
 }
+
+// Form submission handler
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('notificationForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            // Save TinyMCE content before submitting
+            if (tinyMCEInitialized && tinymce.get('body_html')) {
+                tinymce.get('body_html').save();
+            }
+            
+            // Validate all steps before submitting
+            const originalStep = currentStep;
+            let allValid = true;
+            
+            for (let i = 1; i <= totalSteps - 1; i++) {
+                currentStep = i;
+                if (!validateCurrentStep()) {
+                    allValid = false;
+                    updateStepDisplay();
+                    break;
+                }
+            }
+            
+            if (!allValid) {
+                e.preventDefault();
+                return false;
+            }
+            
+            currentStep = originalStep;
+            
+            // Show loading state
+            const submitBtn = document.getElementById('submitBtn');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> กำลังสร้าง...';
+                submitBtn.disabled = true;
+            }
+        });
+    }
+});
+
+// Auto-save functionality (optional)
+let autoSaveTimer;
+function startAutoSave() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+        saveToLocalStorage();
+    }, 30000); // Auto-save every 30 seconds
+}
+
+function saveToLocalStorage() {
+    const formData = {
+        creation_type: document.getElementById('creation_type').value,
+        template_id: document.getElementById('template_id').value,
+        subject: document.getElementById('subject').value,
+        body_html: tinyMCEInitialized && tinymce.get('body_html') ? 
+            tinymce.get('body_html').getContent() : 
+            document.getElementById('body_html').value,
+        body_text: document.getElementById('body_text').value,
+        // Add other fields as needed
+    };
+    
+    localStorage.setItem('notification_draft', JSON.stringify(formData));
+    console.log('Auto-saved to localStorage');
+}
+
+function loadFromLocalStorage() {
+    const draft = localStorage.getItem('notification_draft');
+    if (draft) {
+        try {
+            const data = JSON.parse(draft);
+            
+            // Restore form data
+            if (data.subject) document.getElementById('subject').value = data.subject;
+            if (data.body_html) document.getElementById('body_html').value = data.body_html;
+            if (data.body_text) document.getElementById('body_text').value = data.body_text;
+            
+            // Show notification about restored draft
+            showAlert('กู้คืนข้อมูลจากการบันทึกอัตโนมัติ', 'info');
+        } catch (e) {
+            console.error('Error loading draft:', e);
+        }
+    }
+}
+
+function showAlert(message, type = 'info') {
+    const alertContainer = document.createElement('div');
+    alertContainer.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertContainer.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertContainer.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(alertContainer);
+    
+    setTimeout(() => {
+        if (alertContainer.parentNode) {
+            alertContainer.remove();
+        }
+    }, 4000);
+}
+
+function testWebhook() {
+    const webhookUrl = document.getElementById('webhook_url').value;
+    
+    // ดึงข้อมูลจากฟอร์ม
+    const subject = document.getElementById('subject').value;
+    let bodyText = document.getElementById('body_text').value;
+    
+    // ถ้าไม่มี body_text ให้ใช้ข้อมูลจาก TinyMCE (แปลงเป็น text)
+    if (!bodyText && tinyMCEInitialized && tinymce.get('body_html')) {
+        const htmlContent = tinymce.get('body_html').getContent();
+        // แปลง HTML เป็น text อย่างง่าย
+        bodyText = htmlContent.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+    }
+    
+    if (!webhookUrl) {
+        alert('กรุณากรอก Webhook URL');
+        return;
+    }
+    
+    const testResult = document.getElementById('webhookTestResult');
+    testResult.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> กำลังทดสอบ webhook...</div>';
+    
+    const testData = {
+        webhook_url: webhookUrl,
+        subject: subject,
+        body_text: bodyText
+    };
+    
+    fetch('/admin/notifications/test-webhook', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(testData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            testResult.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> <strong>Webhook ทดสอบสำเร็จ!</strong>
+                    <br><small>Status Code: ${data.status_code}</small>
+                    <div class="mt-2">
+                        <small><strong>Message:</strong> ${data.details.message}</small><br>
+                        <small><strong>Details ที่ส่ง:</strong></small>
+                        <pre class="small mt-1 bg-light p-2 rounded">${JSON.stringify(data.details.details_sent, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+        } else {
+            testResult.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>เกิดข้อผิดพลาด:</strong> ${data.message}
+                    ${data.status_code ? `<br><small>Status Code: ${data.status_code}</small>` : ''}
+                    ${data.response_body ? `<br><small>Response: ${data.response_body}</small>` : ''}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Webhook test error:', error);
+        testResult.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> เกิดข้อผิดพลาดในการทดสอบ webhook</div>';
+    });
+}
+
+// เพิ่มฟังก์ชันสำหรับแสดงตัวอย่างการใช้งาน body_text
+function showBodyTextExample() {
+    const bodyTextExamples = `
+ตัวอย่างการใช้งาน Body Text สำหรับ Webhook:
+
+1. รูปแบบ Key: Value (แยกด้วย Enter):
+Server: Production
+Status: Running
+Uptime: 24 days
+CPU Usage: 45%
+
+2. รูปแบบ JSON:
+{
+  "Server": "Production",
+  "Status": "Running", 
+  "Uptime": "24 days",
+  "CPU Usage": "45%"
+}
+
+3. ข้อความธรรมดา:
+ระบบทำงานปกติ กรุณาตรวจสอบสถานะเซิร์ฟเวอร์
+    `;
+    
+    alert(bodyTextExamples);
+}
+
+// เพิ่ม event listener สำหรับปุ่มแสดงตัวอย่าง
+document.addEventListener('DOMContentLoaded', function() {
+    // เพิ่มปุ่มแสดงตัวอย่างใน body_text field
+    const bodyTextContainer = document.querySelector('label[for="body_text"]').parentNode;
+    if (bodyTextContainer) {
+        const exampleButton = document.createElement('button');
+        exampleButton.type = 'button';
+        exampleButton.className = 'btn btn-sm btn-outline-info mt-1';
+        exampleButton.innerHTML = '<i class="bi bi-info-circle"></i> ดูตัวอย่าง';
+        exampleButton.onclick = showBodyTextExample;
+        bodyTextContainer.appendChild(exampleButton);
+    }
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+    if (tinyMCEInitialized && tinymce.get('body_html')) {
+        tinymce.get('body_html').save();
+    }
+});
+
+// Start auto-save when user starts typing
+document.addEventListener('input', function(e) {
+    if (e.target.matches('#subject, #body_text, textarea, input[type="text"]')) {
+        startAutoSave();
+    }
+});
+
+// Load draft on page load
+window.addEventListener('load', function() {
+    loadFromLocalStorage();
+});
+
 </script>
 
 @endpush

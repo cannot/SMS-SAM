@@ -32,6 +32,7 @@ class Notification extends Model
         'failure_reason',
         'api_key_id',
         'created_by',
+        'webhook_url',
     ];
 
     protected $casts = [
@@ -378,6 +379,10 @@ class Notification extends Model
             $this->update([
                 'status' => $stats['failed'] > 0 ? 'failed' : 'sent',
                 'sent_at' => now(),
+            ]);
+        }else{
+            $this->update([
+                'status' => 'queued',
             ]);
         }
     }

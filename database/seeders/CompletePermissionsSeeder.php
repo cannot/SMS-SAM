@@ -7,24 +7,21 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 /**
- * Complete Permissions Seeder for Smart Notification System
+ * Complete Permissions Seeder for Smart Notification System (Updated)
  * 
  * รวมการสร้าง permissions, roles และการกำหนดสิทธิ์ทั้งหมดในไฟล์เดียว
  * สำหรับระบบ Smart Notification System ที่พัฒนาด้วย Laravel
  * 
- * Features covered:
- * - User Management (การจัดการผู้ใช้)
- * - Notification Management (การจัดการการแจ้งเตือน)
- * - Template Management (การจัดการเทมเพลต)
- * - Group Management (การจัดการกลุ่ม)
- * - API Management (การจัดการ API)
- * - System Configuration (การตั้งค่าระบบ)
- * - Reports & Analytics (รายงานและสถิติ)
- * - LDAP Integration (การเชื่อมต่อ LDAP)
+ * Updated Features:
+ * - Web Interface Permissions (WEB Guard)
+ * - API Permissions (API Guard) 
+ * - API Key Management Permissions
+ * - Route-based Permission Mapping
+ * - Complete Role Assignments
  * 
  * @author Smart Notification Team
- * @version 1.0
- * @since 2025-06-23
+ * @version 2.0
+ * @since 2025-06-25
  */
 class CompletePermissionsSeeder extends Seeder
 {
@@ -36,10 +33,11 @@ class CompletePermissionsSeeder extends Seeder
         // Clear Laravel permission cache
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        $this->command->info('🚀 Starting Complete Permissions Seeder...');
+        $this->command->info('🚀 Starting Complete Permissions Seeder v2.0...');
         
         // Create all permissions
-        $this->createPermissions();
+        $this->createWebPermissions();
+        $this->createApiPermissions();
         
         // Create all roles
         $this->createRoles();
@@ -52,13 +50,13 @@ class CompletePermissionsSeeder extends Seeder
     }
 
     /**
-     * Create all permissions for the Smart Notification System
+     * Create WEB interface permissions (guard_name = 'web')
      */
-    private function createPermissions(): void
+    private function createWebPermissions(): void
     {
-        $this->command->info('📝 Creating permissions...');
+        $this->command->info('📝 Creating WEB permissions...');
 
-        $permissions = [
+        $webPermissions = [
             // ===========================================
             // USER MANAGEMENT PERMISSIONS (การจัดการผู้ใช้)
             // ===========================================
@@ -109,6 +107,41 @@ class CompletePermissionsSeeder extends Seeder
                 'guard_name' => 'web',
                 'display_name' => 'นำเข้าผู้ใช้',
                 'description' => 'นำเข้าข้อมูลผู้ใช้จากไฟล์',
+                'category' => 'User Management'
+            ],
+            [
+                'name' => 'manage-user-roles',
+                'guard_name' => 'web',
+                'display_name' => 'จัดการบทบาทผู้ใช้',
+                'description' => 'กำหนดและจัดการบทบาทของผู้ใช้',
+                'category' => 'User Management'
+            ],
+            [
+                'name' => 'manage-user-permissions',
+                'guard_name' => 'web',
+                'display_name' => 'จัดการสิทธิ์ผู้ใช้',
+                'description' => 'กำหนดและจัดการสิทธิ์ของผู้ใช้',
+                'category' => 'User Management'
+            ],
+            [
+                'name' => 'view-user-permissions',
+                'guard_name' => 'web',
+                'display_name' => 'ดูสิทธิ์ผู้ใช้',
+                'description' => 'ดูสิทธิ์ของผู้ใช้',
+                'category' => 'User Management'
+            ],
+            [
+                'name' => 'assign-user-permissions',
+                'guard_name' => 'web',
+                'display_name' => 'กำหนดสิทธิ์ผู้ใช้',
+                'description' => 'กำหนดสิทธิ์ให้ผู้ใช้',
+                'category' => 'User Management'
+            ],
+            [
+                'name' => 'manage-user-preferences',
+                'guard_name' => 'web',
+                'display_name' => 'จัดการค่าตั้งผู้ใช้',
+                'description' => 'จัดการการตั้งค่าผู้ใช้',
                 'category' => 'User Management'
             ],
 
@@ -179,6 +212,13 @@ class CompletePermissionsSeeder extends Seeder
                 'category' => 'Notification Management'
             ],
             [
+                'name' => 'manage-notifications',
+                'guard_name' => 'web',
+                'display_name' => 'จัดการการแจ้งเตือน',
+                'description' => 'จัดการการแจ้งเตือนทั่วไป',
+                'category' => 'Notification Management'
+            ],
+            [
                 'name' => 'bulk-notification-actions',
                 'guard_name' => 'web',
                 'display_name' => 'การดำเนินการแบบกลุ่ม',
@@ -197,6 +237,13 @@ class CompletePermissionsSeeder extends Seeder
                 'guard_name' => 'web',
                 'display_name' => 'เก็บถาวรการแจ้งเตือน',
                 'description' => 'เก็บถาวรและกู้คืนการแจ้งเตือน',
+                'category' => 'Notification Management'
+            ],
+            [
+                'name' => 'schedule-notifications',
+                'guard_name' => 'web',
+                'display_name' => 'กำหนดเวลาการแจ้งเตือน',
+                'description' => 'กำหนดเวลาส่งการแจ้งเตือน',
                 'category' => 'Notification Management'
             ],
 
@@ -262,7 +309,7 @@ class CompletePermissionsSeeder extends Seeder
                 'display_name' => 'ดูกลุ่ม',
                 'description' => 'ดูกลุ่มการแจ้งเตือน',
                 'category' => 'Group Management'
-            ],
+            ], 
             [
                 'name' => 'create-notification-groups',
                 'guard_name' => 'web',
@@ -303,29 +350,6 @@ class CompletePermissionsSeeder extends Seeder
                 'guard_name' => 'web',
                 'display_name' => 'ส่งออกกลุ่ม',
                 'description' => 'ส่งออกข้อมูลกลุ่มและสมาชิก',
-                'category' => 'Group Management'
-            ],
-            [
-                'name' => 'create-groups',
-                'guard_name' => 'web',
-                'display_name' => 'สร้างกลุ่ม',
-                'description' => 'สร้างกลุ่มการแจ้งเตือนใหม่',
-                'category' => 'Group Management'
-            ],
-            
-            [
-                'name' => 'edit-groups',
-                'guard_name' => 'web',
-                'display_name' => 'แก้ไขกลุ่ม',
-                'description' => 'แก้ไขกลุ่มการแจ้งเตือน',
-                'category' => 'Group Management'
-            ],
-            
-            [
-                'name' => 'delete-groups',
-                'guard_name' => 'web',
-                'display_name' => 'ลบกลุ่ม',
-                'description' => 'ลบกลุ่มการแจ้งเตือน',
                 'category' => 'Group Management'
             ],
 
@@ -379,6 +403,20 @@ class CompletePermissionsSeeder extends Seeder
                 'guard_name' => 'web',
                 'display_name' => 'จัดการ Rate Limits',
                 'description' => 'จัดการ Rate Limiting สำหรับ API',
+                'category' => 'API Management'
+            ],
+            [
+                'name' => 'manage-api-keys',
+                'guard_name' => 'web',
+                'display_name' => 'จัดการ API Keys',
+                'description' => 'จัดการ API Keys ทั่วไป',
+                'category' => 'API Management'
+            ],
+            [
+                'name' => 'view-api-usage-reports',
+                'guard_name' => 'web',
+                'display_name' => 'ดูรายงาน API',
+                'description' => 'ดูรายงานการใช้งาน API',
                 'category' => 'API Management'
             ],
 
@@ -462,6 +500,34 @@ class CompletePermissionsSeeder extends Seeder
                 'description' => 'ดูตารางสิทธิ์ (Permission Matrix)',
                 'category' => 'Roles & Permissions'
             ],
+            [
+                'name' => 'export-permissions',
+                'guard_name' => 'web',
+                'display_name' => 'ส่งออกสิทธิ์',
+                'description' => 'ส่งออกข้อมูลสิทธิ์',
+                'category' => 'Roles & Permissions'
+            ],
+            [
+                'name' => 'import-permissions',
+                'guard_name' => 'web',
+                'display_name' => 'นำเข้าสิทธิ์',
+                'description' => 'นำเข้าข้อมูลสิทธิ์',
+                'category' => 'Roles & Permissions'
+            ],
+            [
+                'name' => 'export-roles',
+                'guard_name' => 'web',
+                'display_name' => 'ส่งออกบทบาท',
+                'description' => 'ส่งออกข้อมูลบทบาท',
+                'category' => 'Roles & Permissions'
+            ],
+            [
+                'name' => 'import-roles',
+                'guard_name' => 'web',
+                'display_name' => 'นำเข้าบทบาท',
+                'description' => 'นำเข้าข้อมูลบทบาท',
+                'category' => 'Roles & Permissions'
+            ],
 
             // ===========================================
             // REPORTS & ANALYTICS PERMISSIONS (รายงานและสถิติ)
@@ -540,6 +606,13 @@ class CompletePermissionsSeeder extends Seeder
                 'description' => 'ส่งออก Log files',
                 'category' => 'Logging & Monitoring'
             ],
+            [
+                'name' => 'delete-activity-logs',
+                'guard_name' => 'web',
+                'display_name' => 'ลบประวัติกิจกรรม',
+                'description' => 'ลบประวัติการใช้งาน',
+                'category' => 'Logging & Monitoring'
+            ],
 
             // ===========================================
             // SYSTEM CONFIGURATION PERMISSIONS (การตั้งค่าระบบ)
@@ -580,9 +653,16 @@ class CompletePermissionsSeeder extends Seeder
                 'category' => 'System Configuration'
             ],
             [
-                'name' => 'system-settings',
+                'name' => 'manage-system',
                 'guard_name' => 'web',
-                'display_name' => 'ตั้งค่าระบบ',
+                'display_name' => 'จัดการระบบ',
+                'description' => 'จัดการระบบทั่วไป',
+                'category' => 'System Configuration'
+            ],
+            [
+                'name' => 'manage-system-settings',
+                'guard_name' => 'web',
+                'display_name' => 'จัดการการตั้งค่าระบบ',
                 'description' => 'จัดการการตั้งค่าระบบทั่วไป',
                 'category' => 'System Configuration'
             ],
@@ -652,8 +732,8 @@ class CompletePermissionsSeeder extends Seeder
             ],
         ];
 
-        // Create all permissions
-        foreach ($permissions as $permissionData) {
+        // Create all web permissions
+        foreach ($webPermissions as $permissionData) {
             Permission::updateOrCreate(
                 [
                     'name' => $permissionData['name'],
@@ -663,7 +743,374 @@ class CompletePermissionsSeeder extends Seeder
             );
         }
 
-        $this->command->info("  ✅ Created " . count($permissions) . " permissions");
+        $this->command->info("  ✅ Created " . count($webPermissions) . " WEB permissions");
+    }
+
+    /**
+     * Create API permissions (guard_name = 'api')
+     */
+    private function createApiPermissions(): void
+    {
+        $this->command->info('🔑 Creating API permissions...');
+
+        $apiPermissions = [
+            // ===========================================
+            // NOTIFICATION API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:send-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'ส่งการแจ้งเตือนผ่าน API',
+                'description' => 'อนุญาตให้ส่งการแจ้งเตือนผ่าน API endpoint',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:send-bulk-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'ส่งการแจ้งเตือนหลายรายการ',
+                'description' => 'อนุญาตให้ส่งการแจ้งเตือนหลายรายการพร้อมกัน',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:schedule-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'กำหนดเวลาการแจ้งเตือน',
+                'description' => 'อนุญาตให้กำหนดเวลาส่งการแจ้งเตือนผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:check-notification-status',
+                'guard_name' => 'api',
+                'display_name' => 'ตรวจสอบสถานะการแจ้งเตือน',
+                'description' => 'อนุญาตให้ตรวจสอบสถานะการส่งการแจ้งเตือน',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-notification-history',
+                'guard_name' => 'api',
+                'display_name' => 'ดูประวัติการแจ้งเตือน',
+                'description' => 'อนุญาตให้ดูประวัติการแจ้งเตือนที่ส่งแล้ว',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:cancel-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'ยกเลิกการแจ้งเตือน',
+                'description' => 'อนุญาตให้ยกเลิกการแจ้งเตือนที่กำหนดไว้',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:retry-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'ส่งการแจ้งเตือนซ้ำ',
+                'description' => 'อนุญาตให้ส่งการแจ้งเตือนที่ล้มเหลวซ้ำ',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:validate-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'ตรวจสอบการแจ้งเตือน',
+                'description' => 'อนุญาตให้ตรวจสอบความถูกต้องของการแจ้งเตือน',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:preview-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'ดูตัวอย่างการแจ้งเตือน',
+                'description' => 'อนุญาตให้ดูตัวอย่างการแจ้งเตือนก่อนส่ง',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // USER/GROUP API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:view-users',
+                'guard_name' => 'api',
+                'display_name' => 'ดูรายการผู้ใช้ผ่าน API',
+                'description' => 'อนุญาตให้ดูรายการผู้ใช้จาก LDAP ผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:search-users',
+                'guard_name' => 'api',
+                'display_name' => 'ค้นหาผู้ใช้ผ่าน API',
+                'description' => 'อนุญาตให้ค้นหาผู้ใช้ผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-user-details',
+                'guard_name' => 'api',
+                'display_name' => 'ดูรายละเอียดผู้ใช้',
+                'description' => 'อนุญาตให้ดูรายละเอียดผู้ใช้รายบุคคล',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:manage-user-preferences',
+                'guard_name' => 'api',
+                'display_name' => 'จัดการค่าตั้งผู้ใช้',
+                'description' => 'อนุญาตให้จัดการการตั้งค่าผู้ใช้ผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:sync-users',
+                'guard_name' => 'api',
+                'display_name' => 'ซิงค์ผู้ใช้',
+                'description' => 'อนุญาตให้ซิงค์ข้อมูลผู้ใช้จาก LDAP',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-groups',
+                'guard_name' => 'api',
+                'display_name' => 'ดูรายการกลุ่มผ่าน API',
+                'description' => 'อนุญาตให้ดูรายการกลุ่มการแจ้งเตือนผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:manage-groups',
+                'guard_name' => 'api',
+                'display_name' => 'จัดการกลุ่มผ่าน API',
+                'description' => 'อนุญาตให้สร้างและจัดการกลุ่มการแจ้งเตือนผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:manage-group-members',
+                'guard_name' => 'api',
+                'display_name' => 'จัดการสมาชิกกลุ่ม',
+                'description' => 'อนุญาตให้จัดการสมาชิกในกลุ่มผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:sync-groups',
+                'guard_name' => 'api',
+                'display_name' => 'ซิงค์กลุ่ม',
+                'description' => 'อนุญาตให้ซิงค์สมาชิกกลุ่มจาก LDAP',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // TEMPLATE API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:view-templates',
+                'guard_name' => 'api',
+                'display_name' => 'ดูเทมเพลตผ่าน API',
+                'description' => 'อนุญาตให้ดูรายการเทมเพลตการแจ้งเตือนผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:use-templates',
+                'guard_name' => 'api',
+                'display_name' => 'ใช้เทมเพลตผ่าน API',
+                'description' => 'อนุญาตให้ใช้เทมเพลตในการส่งการแจ้งเตือนผ่าน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:render-templates',
+                'guard_name' => 'api',
+                'display_name' => 'แปลงเทมเพลต',
+                'description' => 'อนุญาตให้แปลงเทมเพลตเป็นข้อความ',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:preview-templates',
+                'guard_name' => 'api',
+                'display_name' => 'ดูตัวอย่างเทมเพลต',
+                'description' => 'อนุญาตให้ดูตัวอย่างเทมเพลตพร้อมข้อมูล',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // DELIVERY TRACKING API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:track-delivery',
+                'guard_name' => 'api',
+                'display_name' => 'ติดตามการส่ง',
+                'description' => 'อนุญาตให้ติดตามสถานะการส่งการแจ้งเตือน',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-delivery-logs',
+                'guard_name' => 'api',
+                'display_name' => 'ดู Delivery Logs',
+                'description' => 'อนุญาตให้ดู logs การส่งการแจ้งเตือน',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:receive-webhooks',
+                'guard_name' => 'api',
+                'display_name' => 'รับ Webhooks',
+                'description' => 'อนุญาตให้รับข้อมูลจาก webhooks',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-delivery-stats',
+                'guard_name' => 'api',
+                'display_name' => 'ดูสถิติการส่ง',
+                'description' => 'อนุญาตให้ดูสถิติการส่งการแจ้งเตือน',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // LDAP API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:ldap-users',
+                'guard_name' => 'api',
+                'display_name' => 'ดูผู้ใช้ LDAP',
+                'description' => 'อนุญาตให้ดูรายการผู้ใช้จาก LDAP',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:ldap-groups',
+                'guard_name' => 'api',
+                'display_name' => 'ดูกลุ่ม LDAP',
+                'description' => 'อนุญาตให้ดูรายการกลุ่มจาก LDAP',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:ldap-sync',
+                'guard_name' => 'api',
+                'display_name' => 'ซิงค์ LDAP',
+                'description' => 'อนุญาตให้ซิงค์ข้อมูลจาก LDAP',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:ldap-test',
+                'guard_name' => 'api',
+                'display_name' => 'ทดสอบ LDAP',
+                'description' => 'อนุญาตให้ทดสอบการเชื่อมต่อ LDAP',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // SYSTEM API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:health-check',
+                'guard_name' => 'api',
+                'display_name' => 'ตรวจสอบสถานะระบบ',
+                'description' => 'อนุญาตให้ตรวจสอบสถานะการทำงานของระบบ',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-system-info',
+                'guard_name' => 'api',
+                'display_name' => 'ดูข้อมูลระบบ',
+                'description' => 'อนุญาตให้ดูข้อมูลระบบ',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-statistics',
+                'guard_name' => 'api',
+                'display_name' => 'ดูสถิติการใช้งาน',
+                'description' => 'อนุญาตให้ดูสถิติการใช้งาน API',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:view-queue-status',
+                'guard_name' => 'api',
+                'display_name' => 'ดูสถานะ Queue',
+                'description' => 'อนุญาตให้ดูสถานะระบบ Queue',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // WEBHOOK API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:handle-teams-webhooks',
+                'guard_name' => 'api',
+                'display_name' => 'จัดการ Teams Webhooks',
+                'description' => 'อนุญาตให้จัดการ webhooks จาก Teams',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:handle-email-webhooks',
+                'guard_name' => 'api',
+                'display_name' => 'จัดการ Email Webhooks',
+                'description' => 'อนุญาตให้จัดการ webhooks จาก Email',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:handle-delivery-webhooks',
+                'guard_name' => 'api',
+                'display_name' => 'จัดการ Delivery Webhooks',
+                'description' => 'อนุญาตให้จัดการ webhooks การส่ง',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // AUTHENTICATION API PERMISSIONS
+            // ===========================================
+            [
+                'name' => 'api:validate-key',
+                'guard_name' => 'api',
+                'display_name' => 'ตรวจสอบ API Key',
+                'description' => 'อนุญาตให้ตรวจสอบความถูกต้องของ API Key',
+                'category' => 'API Endpoints'
+            ],
+            [
+                'name' => 'api:get-key-info',
+                'guard_name' => 'api',
+                'display_name' => 'ดูข้อมูล API Key',
+                'description' => 'อนุญาตให้ดูข้อมูลของ API Key',
+                'category' => 'API Endpoints'
+            ],
+
+            // ===========================================
+            // SPECIAL API PERMISSIONS (สิทธิ์พิเศษ)
+            // ===========================================
+            [
+                'name' => 'api:unlimited-rate',
+                'guard_name' => 'api',
+                'display_name' => 'ไม่จำกัด Rate Limit',
+                'description' => 'ไม่มีข้อจำกัดเรื่อง Rate Limiting (ใช้สำหรับระบบสำคัญ)',
+                'category' => 'Special Permissions'
+            ],
+            [
+                'name' => 'api:priority-queue',
+                'guard_name' => 'api',
+                'display_name' => 'คิวความสำคัญสูง',
+                'description' => 'ส่งการแจ้งเตือนผ่านคิวความสำคัญสูง',
+                'category' => 'Special Permissions'
+            ],
+            [
+                'name' => 'api:emergency-notifications',
+                'guard_name' => 'api',
+                'display_name' => 'การแจ้งเตือนฉุกเฉิน',
+                'description' => 'ส่งการแจ้งเตือนฉุกเฉินที่ข้ามระบบควบคุมปกติ',
+                'category' => 'Special Permissions'
+            ],
+            [
+                'name' => 'api:bypass-validation',
+                'guard_name' => 'api',
+                'display_name' => 'ข้าม Validation',
+                'description' => 'ข้ามการตรวจสอบข้อมูลสำหรับระบบที่เชื่อถือได้',
+                'category' => 'Special Permissions'
+            ],
+            [
+                'name' => 'api:admin-access',
+                'guard_name' => 'api',
+                'display_name' => 'สิทธิ์ Admin',
+                'description' => 'สิทธิ์ระดับ Admin สำหรับ API',
+                'category' => 'Special Permissions'
+            ],
+        ];
+
+        // Create all API permissions
+        foreach ($apiPermissions as $permissionData) {
+            Permission::updateOrCreate(
+                [
+                    'name' => $permissionData['name'],
+                    'guard_name' => $permissionData['guard_name']
+                ],
+                $permissionData
+            );
+        }
+
+        $this->command->info("  ✅ Created " . count($apiPermissions) . " API permissions");
     }
 
     /**
@@ -745,6 +1192,16 @@ class CompletePermissionsSeeder extends Seeder
             ],
 
             // ===========================================
+            // SYSTEM ADMIN ROLE (ผู้ดูแลระบบเทคนิค)
+            // ===========================================
+            [
+                'name' => 'system-admin',
+                'guard_name' => 'web',
+                'display_name' => 'ผู้ดูแลระบบเทคนิค',
+                'description' => 'ผู้ดูแลระบบด้านเทคนิค สามารถจัดการการตั้งค่าระบบ LDAP และบำรุงรักษาระบบ'
+            ],
+
+            // ===========================================
             // BASIC USER ROLE (ผู้ใช้ทั่วไป)
             // ===========================================
             [
@@ -762,16 +1219,6 @@ class CompletePermissionsSeeder extends Seeder
                 'guard_name' => 'web',
                 'display_name' => 'ผู้ใช้งาน API',
                 'description' => 'ผู้ใช้สำหรับระบบภายนอกที่เรียกใช้งาน API เพื่อส่งการแจ้งเตือน'
-            ],
-
-            // ===========================================
-            // SYSTEM ADMIN ROLE (ผู้ดูแลระบบเทคนิค)
-            // ===========================================
-            [
-                'name' => 'system-admin',
-                'guard_name' => 'web',
-                'display_name' => 'ผู้ดูแลระบบเทคนิค',
-                'description' => 'ผู้ดูแลระบบด้านเทคนิค สามารถจัดการการตั้งค่าระบบ LDAP และบำรุงรักษาระบบ'
             ],
         ];
 
@@ -797,21 +1244,24 @@ class CompletePermissionsSeeder extends Seeder
         $this->command->info('🔗 Assigning permissions to roles...');
 
         // ===========================================
-        // SUPER ADMIN - ทุกสิทธิ์ในระบบ
+        // SUPER ADMIN - ทุกสิทธิ์ในระบบ (WEB only)
         // ===========================================
         $superAdmin = Role::where('name', 'super-admin')->first();
-        $superAdmin->syncPermissions(Permission::all());
-        $this->command->info("  ✅ Super Admin: " . Permission::count() . " permissions (ALL)");
+        $allWebPermissions = Permission::where('guard_name', 'web')->pluck('name')->toArray();
+        $superAdmin->syncPermissions($allWebPermissions);
+        $this->command->info("  ✅ Super Admin: " . count($allWebPermissions) . " permissions (ALL WEB)");
 
         // ===========================================
         // ADMIN - ทุกสิทธิ์ยกเว้นการจัดการ roles/permissions
         // ===========================================
         $admin = Role::where('name', 'admin')->first();
-        $adminPermissions = Permission::whereNotIn('name', [
-            'view-roles', 'create-roles', 'edit-roles', 'delete-roles',
-            'view-permissions', 'create-permissions', 'edit-permissions', 'delete-permissions',
-            'assign-roles', 'assign-permissions', 'view-permission-matrix'
-        ])->pluck('name')->toArray();
+        $adminPermissions = Permission::where('guard_name', 'web')
+            ->whereNotIn('name', [
+                'view-roles', 'create-roles', 'edit-roles', 'delete-roles',
+                'view-permissions', 'create-permissions', 'edit-permissions', 'delete-permissions',
+                'assign-roles', 'assign-permissions', 'view-permission-matrix'
+            ])
+            ->pluck('name')->toArray();
         $admin->syncPermissions($adminPermissions);
         $this->command->info("  ✅ Admin: " . count($adminPermissions) . " permissions");
 
@@ -824,9 +1274,10 @@ class CompletePermissionsSeeder extends Seeder
             'view-dashboard',
             
             // Notification Management (Full)
-            'view-all-notifications', 'create-notifications', 'edit-notifications', 
-            'delete-notifications', 'send-notifications', 'cancel-notifications',
-            'resend-notifications', 'duplicate-notifications', 'bulk-notification-actions',
+            'view-all-notifications', 'view-received-notifications', 'create-notifications', 
+            'edit-notifications', 'delete-notifications', 'send-notifications', 
+            'cancel-notifications', 'resend-notifications', 'duplicate-notifications', 
+            'manage-notifications', 'bulk-notification-actions', 'schedule-notifications',
             
             // Template Management (Full)
             'view-notification-templates', 'create-notification-templates',
@@ -841,9 +1292,11 @@ class CompletePermissionsSeeder extends Seeder
             // API Management (Full)
             'view-api-keys', 'create-api-keys', 'edit-api-keys', 'delete-api-keys',
             'regenerate-api-keys', 'view-api-usage', 'manage-api-rate-limits',
+            'manage-api-keys', 'view-api-usage-reports',
             
             // Reports & Analytics
-            'view-reports', 'view-notification-analytics', 'export-reports', 'export-notifications',
+            'view-reports', 'view-notification-analytics', 'export-reports', 
+            'export-notifications', 'export-own-notifications',
             
             // Logging & Monitoring
             'view-notification-logs', 'view-activity-logs', 'view-api-logs', 'export-logs',
@@ -869,9 +1322,10 @@ class CompletePermissionsSeeder extends Seeder
             'view-dashboard',
             
             // Notification Management (No delete)
-            'view-all-notifications', 'create-notifications', 'edit-notifications',
-            'send-notifications', 'cancel-notifications', 'resend-notifications',
-            'duplicate-notifications', 'bulk-notification-actions',
+            'view-all-notifications', 'view-received-notifications', 'create-notifications', 
+            'edit-notifications', 'send-notifications', 'cancel-notifications', 
+            'resend-notifications', 'duplicate-notifications', 'bulk-notification-actions',
+            'schedule-notifications',
             
             // Template Management (No delete)
             'view-notification-templates', 'create-notification-templates',
@@ -883,6 +1337,7 @@ class CompletePermissionsSeeder extends Seeder
             
             // Reports & Analytics (Limited)
             'view-reports', 'view-notification-analytics', 'export-reports',
+            'export-own-notifications',
             
             // Logging (View only)
             'view-notification-logs', 'view-activity-logs',
@@ -907,9 +1362,11 @@ class CompletePermissionsSeeder extends Seeder
             // API Management (Full)
             'view-api-keys', 'create-api-keys', 'edit-api-keys', 'delete-api-keys',
             'regenerate-api-keys', 'view-api-usage', 'manage-api-rate-limits',
+            'manage-api-keys', 'view-api-usage-reports',
             
             // Notification (Basic for testing)
-            'view-all-notifications', 'create-notifications', 'send-notifications',
+            'view-all-notifications', 'view-received-notifications', 'create-notifications', 
+            'send-notifications',
             
             // Logging (API focused)
             'view-api-logs', 'view-notification-logs', 'export-logs',
@@ -939,7 +1396,8 @@ class CompletePermissionsSeeder extends Seeder
             
             // User Management (Full)
             'view-users', 'create-users', 'edit-users', 'delete-users', 'manage-users',
-            'export-users', 'import-users',
+            'export-users', 'import-users', 'manage-user-roles', 'manage-user-permissions',
+            'view-user-permissions', 'assign-user-permissions', 'manage-user-preferences',
             
             // Group Management (Full)
             'view-notification-groups', 'create-notification-groups',
@@ -959,7 +1417,7 @@ class CompletePermissionsSeeder extends Seeder
             'view-activity-logs', 'export-logs',
             
             // Notifications (View for user management)
-            'view-all-notifications',
+            'view-all-notifications', 'view-received-notifications',
         ];
         $userManager->syncPermissions($userManagerPermissions);
         $this->command->info("  ✅ User Manager: " . count($userManagerPermissions) . " permissions");
@@ -973,8 +1431,8 @@ class CompletePermissionsSeeder extends Seeder
             'view-dashboard',
             
             // View permissions for troubleshooting
-            'view-users', 'view-all-notifications', 'view-notification-groups',
-            'view-notification-templates', 'view-api-keys',
+            'view-users', 'view-all-notifications', 'view-received-notifications', 
+            'view-notification-groups', 'view-notification-templates', 'view-api-keys',
             
             // Logging (Full access for troubleshooting)
             'view-notification-logs', 'view-system-logs', 'view-activity-logs',
@@ -991,6 +1449,9 @@ class CompletePermissionsSeeder extends Seeder
             
             // Basic sync operations
             'sync-groups', 'sync-ldap-users',
+            
+            // Issue reporting
+            'report-notification-issues',
         ];
         $itSupport->syncPermissions($itSupportPermissions);
         $this->command->info("  ✅ IT Support: " . count($itSupportPermissions) . " permissions");
@@ -1004,8 +1465,8 @@ class CompletePermissionsSeeder extends Seeder
             'view-dashboard',
             
             // System Configuration (Full)
-            'system-settings', 'system-maintenance', 'manage-notification-settings',
-            'view-system-health', 'test-notification-services',
+            'manage-system', 'manage-system-settings', 'system-maintenance', 
+            'manage-notification-settings', 'view-system-health', 'test-notification-services',
             
             // LDAP Management (Full)
             'manage-ldap', 'sync-ldap-users', 'test-ldap-connection', 'view-ldap-logs',
@@ -1018,7 +1479,8 @@ class CompletePermissionsSeeder extends Seeder
             'view-failed-jobs', 'retry-failed-jobs',
             
             // View access for system understanding
-            'view-users', 'view-all-notifications', 'view-api-keys', 'view-api-usage',
+            'view-users', 'view-all-notifications', 'view-received-notifications', 
+            'view-api-keys', 'view-api-usage',
             
             // Sync operations
             'sync-groups', 'sync-ldap-users',
@@ -1056,7 +1518,8 @@ class CompletePermissionsSeeder extends Seeder
         $apiUser = Role::where('name', 'api-user')->first();
         $apiUserPermissions = [
             // API operations
-            'create-notifications', 'view-all-notifications', 'view-notification-logs',
+            'create-notifications', 'view-all-notifications', 'view-received-notifications', 
+            'view-notification-logs',
             
             // Group management for API
             'view-notification-groups', 'view-users',
@@ -1074,9 +1537,13 @@ class CompletePermissionsSeeder extends Seeder
         $this->command->info('📊 Summary:');
         $this->command->info('==========================================');
         
+        $totalWebPermissions = Permission::where('guard_name', 'web')->count();
+        $totalApiPermissions = Permission::where('guard_name', 'api')->count();
         $totalPermissions = Permission::count();
         $totalRoles = Role::count();
         
+        $this->command->info("Total WEB Permissions: {$totalWebPermissions}");
+        $this->command->info("Total API Permissions: {$totalApiPermissions}");
         $this->command->info("Total Permissions: {$totalPermissions}");
         $this->command->info("Total Roles: {$totalRoles}");
         $this->command->info('');
@@ -1089,15 +1556,30 @@ class CompletePermissionsSeeder extends Seeder
         }
         
         $this->command->info('');
-        $this->command->info('📋 Permission Categories:');
-        $categories = Permission::select('category')
+        $this->command->info('📋 Permission Categories (WEB):');
+        $webCategories = Permission::where('guard_name', 'web')
+            ->select('category')
             ->distinct()
             ->pluck('category')
             ->filter()
             ->sort();
             
-        foreach ($categories as $category) {
-            $count = Permission::where('category', $category)->count();
+        foreach ($webCategories as $category) {
+            $count = Permission::where('guard_name', 'web')->where('category', $category)->count();
+            $this->command->info("  • {$category}: {$count} permissions");
+        }
+
+        $this->command->info('');
+        $this->command->info('📋 Permission Categories (API):');
+        $apiCategories = Permission::where('guard_name', 'api')
+            ->select('category')
+            ->distinct()
+            ->pluck('category')
+            ->filter()
+            ->sort();
+            
+        foreach ($apiCategories as $category) {
+            $count = Permission::where('guard_name', 'api')->where('category', $category)->count();
             $this->command->info("  • {$category}: {$count} permissions");
         }
         
@@ -1106,7 +1588,15 @@ class CompletePermissionsSeeder extends Seeder
         $this->command->info('');
         $this->command->info('Next steps:');
         $this->command->info('1. Run: php artisan db:seed --class=DefaultUserSeeder');
-        $this->command->info('2. Assign roles to users');
-        $this->command->info('3. Test permissions in the application');
+        $this->command->info('2. Create API Keys and assign API permissions');
+        $this->command->info('3. Assign web roles to users');
+        $this->command->info('4. Test both web and API permissions');
+        
+        $this->command->info('');
+        $this->command->info('🔑 API Permission Usage:');
+        $this->command->info('- API Keys can be assigned permissions with guard_name = "api"');
+        $this->command->info('- Web users get permissions with guard_name = "web"');
+        $this->command->info('- Use ApiKey->hasPermission("api:send-notifications") for API validation');
+        $this->command->info('- Use auth()->user()->can("view-notifications") for web validation');
     }
 }

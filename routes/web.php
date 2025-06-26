@@ -510,6 +510,9 @@ Route::middleware(['auth', 'web'])->group(function () {
         // Test notification
         Route::post('/send-test', [AdminNotificationController::class, 'sendTest'])->name('send-test');
 
+        Route::post('/test-webhook', [AdminNotificationController::class, 'testWebhook'])
+        ->name('test-webhook');
+
     });
 
     // ===========================================

@@ -34,7 +34,7 @@ return new class extends Migration
             $table->integer('delivered_count')->default(0);
             $table->integer('failed_count')->default(0);
             $table->text('failure_reason')->nullable();
-            $table->string('api_key_id')->nullable(); // If sent via API
+            $table->integer('api_key_id')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->timestamps();
             
