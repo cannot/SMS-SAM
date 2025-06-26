@@ -200,7 +200,7 @@
                             <dt class="col-sm-5">Delivery Time:</dt>
                             <dd class="col-sm-7">
                                 @php
-                                    $deliveryTime = $notificationLog->delivered_at->diffInSeconds($notificationLog->created_at);
+                                    $deliveryTime = abs($notificationLog->delivered_at->diffInSeconds($notificationLog->created_at));
                                 @endphp
                                 <span class="badge badge-{{ $deliveryTime < 5 ? 'success' : ($deliveryTime < 30 ? 'warning' : 'danger') }}">
                                     {{ $deliveryTime }}s

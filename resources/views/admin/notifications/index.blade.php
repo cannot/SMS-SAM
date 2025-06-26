@@ -2,311 +2,385 @@
 
 @section('title', 'จัดการการแจ้งเตือนทั้งหมด (Admin)')
 
+@section('styles')
+<style>
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 5px;
+    }
+    .priority-urgent { color: #dc3545; font-weight: bold; }
+    .priority-high { color: #fd7e14; font-weight: bold; }
+    .priority-medium { color: #ffc107; font-weight: bold; }
+    .priority-normal { color: #17a2b8; }
+    .priority-low { color: #28a745; }
+    
+    .progress-mini {
+        height: 4px;
+        background-color: #e9ecef;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .progress-mini .progress-bar {
+        height: 100%;
+    }
+    
+    .table th {
+        border-top: none;
+        font-weight: 600;
+        background-color: #f8f9fa;
+    }
+    .table-hover tbody tr:hover {
+        background-color: #f5f5f5;
+    }
+    
+    .btn-group-sm .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .text-truncate-custom {
+        max-width: 200px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
+@endsection
+
 @section('content')
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i class="bi bi-shield-exclamation"></i> จัดการการแจ้งเตือนทั้งหมด</h1>
-    <div class="btn-toolbar mb-2 mb-md-0">
-        <div class="btn-group me-2">
-            <a href="{{ route('admin.notifications.create') }}" class="btn btn-primary">
-                <i class="bi bi-plus-circle"></i> สร้างการแจ้งเตือนใหม่
-            </a>
-            <a href="{{ route('admin.notifications.analytics') }}" class="btn btn-outline-info">
-                <i class="bi bi-graph-up"></i> สถิติ
-            </a>
-        </div>
-    </div>
-</div>
-
-<!-- Admin Dashboard Stats -->
-<div class="row mb-4">
-    <div class="col-md-2">
-        <div class="card bg-primary text-white">
-            <div class="card-body text-center">
-                <h3>{{ $notifications->total() }}</h3>
-                <small>ทั้งหมด</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="card bg-secondary text-white">
-            <div class="card-body text-center">
-                @php $draftCount = \App\Models\Notification::where('status', 'draft')->count(); @endphp
-                <h3>{{ $draftCount }}</h3>
-                <small>ร่าง</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="card bg-warning text-white">
-            <div class="card-body text-center">
-                @php $scheduledCount = \App\Models\Notification::where('status', 'scheduled')->count(); @endphp
-                <h3>{{ $scheduledCount }}</h3>
-                <small>กำหนดการ</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="card bg-info text-white">
-            <div class="card-body text-center">
-                @php $processingCount = \App\Models\Notification::whereIn('status', ['queued', 'processing'])->count(); @endphp
-                <h3>{{ $processingCount }}</h3>
-                <small>กำลังส่ง</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="card bg-success text-white">
-            <div class="card-body text-center">
-                @php $sentCount = \App\Models\Notification::where('status', 'sent')->count(); @endphp
-                <h3>{{ $sentCount }}</h3>
-                <small>ส่งแล้ว</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="card bg-danger text-white">
-            <div class="card-body text-center">
-                @php $failedCount = \App\Models\Notification::where('status', 'failed')->count(); @endphp
-                <h3>{{ $failedCount }}</h3>
-                <small>ล้มเหลว</small>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Admin Filters -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h6 class="mb-0"><i class="bi bi-funnel"></i> ตัวกรองขั้นสูง (Admin)</h6>
-    </div>
-    <div class="card-body">
-        <form method="GET" action="{{ route('admin.notifications.index') }}" class="row g-3">
-            <div class="col-md-2">
-                <label for="status" class="form-label">สถานะ</label>
-                <select name="status" id="status" class="form-select">
-                    <option value="">ทั้งหมด</option>
-                    @foreach($priorities as $priority)
-                        <option value="{{ $priority }}" {{ request('priority') == $priority ? 'selected' : '' }}>
-                            {{ ucfirst($priority) }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label for="template" class="form-label">เทมเพลต</label>
-                <select name="template" id="template" class="form-select">
-                    <option value="">ทั้งหมด</option>
-                    @foreach($templates as $template)
-                        <option value="{{ $template->id }}" {{ request('template') == $template->id ? 'selected' : '' }}>
-                            {{ $template->name }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label for="creator" class="form-label">ผู้สร้าง</label>
-                <select name="creator" id="creator" class="form-select">
-                    <option value="">ทั้งหมด</option>
-                    {{-- @foreach($creators as $creator)
-                        <option value="{{ $creator->id }}" {{ request('creator') == $creator->id ? 'selected' : '' }}>
-                            {{ $creator->display_name }}
-                        </option>
-                    @endforeach --}}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label for="search" class="form-label">ค้นหา</label>
-                <input type="text" name="search" id="search" class="form-control" placeholder="หัวข้อ หรือ UUID" value="{{ request('search') }}">
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <div class="btn-group w-100">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-funnel"></i> กรอง
-                    </button>
-                    <a href="{{ route('admin.notifications.index') }}" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle"></i> ล้าง
-                    </a>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">ช่วงวันที่</label>
-                <div class="row">
-                    <div class="col">
-                        <input type="date" name="date_from" class="form-control" value="{{ request('date_from') }}" placeholder="จาก">
-                    </div>
-                    <div class="col">
-                        <input type="date" name="date_to" class="form-control" value="{{ request('date_to') }}" placeholder="ถึง">
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">การดำเนินการ</label>
-                <div class="btn-group w-100">
-                    <button type="button" class="btn btn-outline-info" onclick="exportNotifications()">
-                        <i class="bi bi-download"></i> Export
-                    </button>
-                    <button type="button" class="btn btn-outline-warning" onclick="bulkActions()">
-                        <i class="bi bi-check2-square"></i> Bulk Actions
-                    </button>
-                </div>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Admin Notifications List -->
-<div class="row">
-    @forelse($notifications as $notification)
-        <div class="col-12 mb-3">
-            <div class="card notification-card priority-{{ $notification->priority }}">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-1">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="selected_notifications[]" 
-                                    value="{{ $notification->id }}" id="notification_{{ $notification->id }}">
-                            </div>
-                        </div>
-                        <div class="col-md-7">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="status-indicator bg-{{ $notification->status_badge_class }} me-2"></span>
-                                <h6 class="mb-0">{{ $notification->subject }}</h6>
-                                <span class="badge bg-{{ $notification->priority_badge_class }} ms-2">
-                                    {{ $notification->priority_text }}
-                                </span>
-                                <span class="badge bg-{{ $notification->status_badge_class }} ms-2">
-                                    {{ $notification->status_text }}
-                                </span>
-                            </div>
-                            
-                            <div class="text-muted small mb-2">
-                                <i class="bi bi-person"></i> สร้างโดย: {{ $notification->creator->display_name ?? 'System' }} |
-                                <i class="bi bi-calendar"></i> {{ $notification->created_at->format('d/m/Y H:i') }} |
-                                <i class="bi bi-envelope"></i> {{ $notification->total_recipients }} ผู้รับ
-                                @if($notification->template)
-                                    | <i class="bi bi-file-text"></i> {{ $notification->template->name }}
-                                @endif
-                                @if($notification->api_key_id)
-                                    | <i class="bi bi-code"></i> API
-                                @endif
-                            </div>
-                            
-                            <div class="d-flex gap-1 mb-2">
-                                @foreach($notification->channels as $channel)
-                                    <span class="badge bg-secondary">
-                                        @if($channel == 'email')
-                                            <i class="bi bi-envelope"></i> Email
-                                        @elseif($channel == 'teams')
-                                            <i class="bi bi-microsoft-teams"></i> Teams
-                                        @endif
-                                    </span>
-                                @endforeach
-                            </div>
-                            
-                            <!-- Admin-specific delivery progress -->
-                            @if($notification->total_recipients > 0)
-                                <div class="progress mb-2" style="height: 6px;">
-                                    @php
-                                        $successRate = ($notification->delivered_count / $notification->total_recipients) * 100;
-                                        $failureRate = ($notification->failed_count / $notification->total_recipients) * 100;
-                                        $pendingRate = 100 - $successRate - $failureRate;
-                                    @endphp
-                                    <div class="progress-bar bg-success" style="width: {{ $successRate }}%"></div>
-                                    <div class="progress-bar bg-danger" style="width: {{ $failureRate }}%"></div>
-                                    <div class="progress-bar bg-warning" style="width: {{ $pendingRate }}%"></div>
-                                </div>
-                                <small class="text-muted">
-                                    ส่งสำเร็จ {{ $notification->delivered_count }}/{{ $notification->total_recipients }}
-                                    @if($notification->failed_count > 0)
-                                        | ล้มเหลว {{ $notification->failed_count }}
-                                    @endif
-                                    | อัตราสำเร็จ {{ number_format($successRate, 1) }}%
-                                </small>
-                            @endif
-                        </div>
-                        <div class="col-md-4 text-end">
-                            <div class="btn-group" role="group">
-                                <a href="{{ route('admin.notifications.show', $notification->uuid) }}" 
-                                   class="btn btn-outline-primary btn-sm">
-                                    <i class="bi bi-eye"></i> ดู
-                                </a>
-                                @if($notification->status == 'draft')
-                                    <a href="{{ route('admin.notifications.edit', $notification->uuid) }}" 
-                                       class="btn btn-outline-secondary btn-sm">
-                                        <i class="bi bi-pencil"></i> แก้ไข
-                                    </a>
-                                @endif
-                                @if($notification->status == 'scheduled')
-                                    <form method="POST" action="{{ route('admin.notifications.cancel', $notification->uuid) }}" class="d-inline">
-                                        @csrf
-                                        <button type="submit" class="btn btn-outline-warning btn-sm" 
-                                                onclick="return confirm('ยกเลิกการแจ้งเตือนนี้?')">
-                                            <i class="bi bi-x-circle"></i> ยกเลิก
-                                        </button>
-                                    </form>
-                                @endif
-                                <div class="btn-group">
-                                    <button type="button" class="btn btn-outline-info btn-sm dropdown-toggle" 
-                                            data-bs-toggle="dropdown">
-                                        <i class="bi bi-three-dots"></i>
-                                    </button>
-                                    <ul class="dropdown-menu">
-                                        <li>
-                                            <form method="POST" action="{{ route('admin.notifications.duplicate', $notification->uuid) }}" class="d-inline">
-                                                @csrf
-                                                <button type="submit" class="dropdown-item">
-                                                    <i class="bi bi-files"></i> ทำสำเนา
-                                                </button>
-                                            </form>
-                                        </li>
-                                        <li><hr class="dropdown-divider"></li>
-                                        <li><a class="dropdown-item" href="#" onclick="viewLogs('{{ $notification->uuid }}')">
-                                            <i class="bi bi-list-ul"></i> ดู Logs
-                                        </a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="resendFailed('{{ $notification->uuid }}')">
-                                            <i class="bi bi-arrow-clockwise"></i> ส่งใหม่ (ล้มเหลว)
-                                        </a></li>
-                                        @if(in_array($notification->status, ['draft', 'failed', 'cancelled']))
-                                        <li><hr class="dropdown-divider"></li>
-                                        <li>
-                                            <form method="POST" action="{{ route('admin.notifications.destroy', $notification->uuid) }}" class="d-inline">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="dropdown-item text-danger" 
-                                                        onclick="return confirm('ลบการแจ้งเตือนนี้? การกระทำนี้ไม่สามารถยกเลิกได้')">
-                                                    <i class="bi bi-trash"></i> ลบ
-                                                </button>
-                                            </form>
-                                        </li>
-                                        @endif
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    @empty
-        <div class="col-12">
-            <div class="text-center py-5">
-                <i class="bi bi-shield-exclamation display-1 text-muted"></i>
-                <h4 class="text-muted">ไม่พบการแจ้งเตือน</h4>
-                <p class="text-muted">ยังไม่มีการแจ้งเตือนในระบบ หรือลองปรับตัวกรอง</p>
+<div class="container-fluid px-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">
+            <i class="fas fa-shield-alt me-2"></i> 
+            จัดการการแจ้งเตือนทั้งหมด
+        </h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <div class="btn-group me-2">
                 <a href="{{ route('admin.notifications.create') }}" class="btn btn-primary">
-                    <i class="bi bi-plus-circle"></i> สร้างการแจ้งเตือนแรก
+                    <i class="fas fa-plus-circle"></i> สร้างใหม่
+                </a>
+                <a href="{{ route('admin.notifications.analytics') }}" class="btn btn-outline-info">
+                    <i class="fas fa-chart-line"></i> สถิติ
                 </a>
             </div>
         </div>
-    @endforelse
-</div>
-
-<!-- Pagination -->
-@if($notifications->hasPages())
-    <div class="d-flex justify-content-center">
-        {{ $notifications->appends(request()->query())->links() }}
     </div>
-@endif
+
+    <!-- Quick Stats -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-2">
+                            <h4 class="text-primary">{{ $notifications->total() }}</h4>
+                            <small class="text-muted">ทั้งหมด</small>
+                        </div>
+                        <div class="col-md-2">
+                            @php $draftCount = \App\Models\Notification::where('status', 'draft')->count(); @endphp
+                            <h4 class="text-secondary">{{ $draftCount }}</h4>
+                            <small class="text-muted">ร่าง</small>
+                        </div>
+                        <div class="col-md-2">
+                            @php $scheduledCount = \App\Models\Notification::where('status', 'scheduled')->count(); @endphp
+                            <h4 class="text-warning">{{ $scheduledCount }}</h4>
+                            <small class="text-muted">กำหนดการ</small>
+                        </div>
+                        <div class="col-md-2">
+                            @php $processingCount = \App\Models\Notification::whereIn('status', ['queued', 'processing'])->count(); @endphp
+                            <h4 class="text-info">{{ $processingCount }}</h4>
+                            <small class="text-muted">กำลังส่ง</small>
+                        </div>
+                        <div class="col-md-2">
+                            @php $sentCount = \App\Models\Notification::where('status', 'sent')->count(); @endphp
+                            <h4 class="text-success">{{ $sentCount }}</h4>
+                            <small class="text-muted">ส่งแล้ว</small>
+                        </div>
+                        <div class="col-md-2">
+                            @php $failedCount = \App\Models\Notification::where('status', 'failed')->count(); @endphp
+                            <h4 class="text-danger">{{ $failedCount }}</h4>
+                            <small class="text-muted">ล้มเหลว</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0">
+                <i class="fas fa-filter me-2"></i> 
+                ตัวกรอง
+            </h6>
+        </div>
+        <div class="card-body">
+            <form method="GET" action="{{ route('admin.notifications.index') }}" class="row g-3">
+                <div class="col-md-2">
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">สถานะทั้งหมด</option>
+                        <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>ร่าง</option>
+                        <option value="queued" {{ request('status') == 'queued' ? 'selected' : '' }}>รอส่ง</option>
+                        <option value="scheduled" {{ request('status') == 'scheduled' ? 'selected' : '' }}>กำหนดการ</option>
+                        <option value="processing" {{ request('status') == 'processing' ? 'selected' : '' }}>กำลังส่ง</option>
+                        <option value="sent" {{ request('status') == 'sent' ? 'selected' : '' }}>ส่งแล้ว</option>
+                        <option value="failed" {{ request('status') == 'failed' ? 'selected' : '' }}>ล้มเหลว</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select name="priority" class="form-select form-select-sm">
+                        <option value="">ความสำคัญทั้งหมด</option>
+                        @foreach($priorities as $priority)
+                            <option value="{{ $priority }}" {{ request('priority') == $priority ? 'selected' : '' }}>
+                                {{ ucfirst($priority) }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select name="channel" class="form-select form-select-sm">
+                        <option value="">ช่องทางทั้งหมด</option>
+                        <option value="email" {{ request('channel') == 'email' ? 'selected' : '' }}>อีเมล</option>
+                        <option value="teams" {{ request('channel') == 'teams' ? 'selected' : '' }}>Teams</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" name="search" class="form-control form-control-sm" 
+                           placeholder="ค้นหาหัวข้อหรือ UUID..." value="{{ request('search') }}">
+                </div>
+                <div class="col-md-3">
+                    <div class="btn-group w-100">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="fas fa-search"></i> ค้นหา
+                        </button>
+                        <a href="{{ route('admin.notifications.index') }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-times"></i> ล้าง
+                        </a>
+                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkActions()">
+                            <i class="fas fa-check-square"></i> Bulk
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notifications Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <input type="checkbox" id="selectAll" class="form-check-input me-2" onchange="toggleSelectAll()">
+                <strong>รายการการแจ้งเตือน</strong>
+                <span class="text-muted ms-2">({{ $notifications->count() }} จาก {{ $notifications->total() }} รายการ)</span>
+            </div>
+            <div id="bulkActions" class="d-none">
+                <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-warning" onclick="bulkResend()">
+                        <i class="fas fa-redo"></i> ส่งใหม่
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="bulkCancel()">
+                        <i class="fas fa-times"></i> ยกเลิก
+                    </button>
+                    <button type="button" class="btn btn-outline-info" onclick="bulkExport()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th width="40">#</th>
+                            <th width="200">หัวข้อ</th>
+                            <th width="100">สถานะ</th>
+                            <th width="80">ความสำคัญ</th>
+                            <th width="100">ช่องทาง</th>
+                            <th width="80">ผู้รับ</th>
+                            <th width="120">ความคืบหน้า</th>
+                            <th width="120">วันที่สร้าง</th>
+                            <th width="100">ผู้สร้าง</th>
+                            <th width="120">การกระทำ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($notifications as $notification)
+                            <tr>
+                                <td>
+                                    <input type="checkbox" class="form-check-input notification-checkbox" 
+                                           value="{{ $notification->id }}" onchange="updateBulkActions()">
+                                </td>
+                                <td>
+                                    <div class="text-truncate-custom" title="{{ $notification->subject }}">
+                                        <span class="status-dot bg-{{ $notification->getStatusColor() }}"></span>
+                                        <strong>{{ $notification->subject }}</strong>
+                                    </div>
+                                    @if($notification->template)
+                                        <small class="text-muted d-block">
+                                            <i class="fas fa-file-text"></i> {{ $notification->template->name }}
+                                        </small>
+                                    @endif
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ $notification->getStatusColor() }}">
+                                        {{ $notification->getStatusText() }}
+                                    </span>
+                                    @if($notification->status === 'processing')
+                                        <div class="spinner-border spinner-border-sm ms-1" role="status"></div>
+                                    @endif
+                                </td>
+                                <td>
+                                    <span class="priority-{{ $notification->priority }}">
+                                        {{ ucfirst($notification->priority) }}
+                                    </span>
+                                </td>
+                                <td>
+                                    @foreach($notification->channels as $channel)
+                                        <span class="badge bg-secondary me-1">
+                                            <i class="fas fa-{{ $channel === 'email' ? 'envelope' : 'users' }}"></i>
+                                        </span>
+                                    @endforeach
+                                </td>
+                                <td class="text-center">
+                                    <strong>{{ $notification->logs->count() }}</strong>
+                                </td>
+                                <td>
+                                    @if($notification->logs->count() > 0)
+                                        @php
+                                            $totalLogs = $notification->logs->count();
+                                            $sentLogs = $notification->logs->whereIn('status', ['sent', 'delivered'])->count();
+                                            $failedLogs = $notification->logs->where('status', 'failed')->count();
+                                            $pendingLogs = $notification->logs->where('status', 'pending')->count();
+                                            
+                                            $successRate = ($sentLogs / $totalLogs) * 100;
+                                            $failureRate = ($failedLogs / $totalLogs) * 100;
+                                            $pendingRate = ($pendingLogs / $totalLogs) * 100;
+                                        @endphp
+                                        <div class="progress-mini mb-1">
+                                            <div class="progress-bar bg-success" style="width: {{ $successRate }}%"></div>
+                                            <div class="progress-bar bg-danger" style="width: {{ $failureRate }}%"></div>
+                                            <div class="progress-bar bg-warning" style="width: {{ $pendingRate }}%"></div>
+                                        </div>
+                                        <small class="text-muted">
+                                            {{ $sentLogs }}/{{ $totalLogs }}
+                                            @if($failedLogs > 0)
+                                                <span class="text-danger">({{ $failedLogs }} ล้มเหลว)</span>
+                                            @endif
+                                        </small>
+                                    @else
+                                        <span class="text-muted">-</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div>{{ $notification->created_at->format('d/m/Y') }}</div>
+                                    <small class="text-muted">{{ $notification->created_at->format('H:i') }}</small>
+                                </td>
+                                <td>
+                                    <div class="text-truncate-custom">
+                                        {{ $notification->creator->display_name ?? $notification->creator->username ?? 'System' }}
+                                    </div>
+                                    @if($notification->api_key_id)
+                                        <small class="text-muted">
+                                            <i class="fas fa-robot"></i> API
+                                        </small>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <a href="{{ route('admin.notifications.show', $notification->uuid) }}" 
+                                           class="btn btn-outline-primary" title="ดูรายละเอียด">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        
+                                        @if($notification->logs->where('status', 'failed')->count() > 0)
+                                            <form method="POST" action="{{ route('admin.notifications.resend', $notification->uuid) }}" class="d-inline">
+                                                @csrf
+                                                <button type="submit" class="btn btn-outline-warning" 
+                                                        title="ส่งใหม่" onclick="return confirm('ส่งใหม่?')">
+                                                    <i class="fas fa-redo"></i>
+                                                </button>
+                                            </form>
+                                        @endif
+                                        
+                                        @if($notification->canBeCancelled())
+                                            <form method="POST" action="{{ route('admin.notifications.cancel', $notification->uuid) }}" class="d-inline">
+                                                @csrf
+                                                <button type="submit" class="btn btn-outline-danger" 
+                                                        title="ยกเลิก" onclick="return confirm('ยกเลิก?')">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </form>
+                                        @endif
+                                        
+                                        <div class="btn-group">
+                                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" 
+                                                    data-bs-toggle="dropdown" title="เพิ่มเติม">
+                                                <i class="fas fa-ellipsis-v"></i>
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                <li>
+                                                    <a class="dropdown-item" href="{{ route('admin.notifications.logs', $notification->uuid) }}">
+                                                        <i class="fas fa-list me-2"></i> ดู Logs
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item" href="{{ route('admin.notifications.preview', $notification->uuid) }}">
+                                                        <i class="fas fa-eye me-2"></i> ดูตัวอย่าง
+                                                    </a>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                @if(in_array($notification->status, ['draft', 'failed', 'cancelled']))
+                                                    <li>
+                                                        <form method="POST" action="{{ route('admin.notifications.destroy', $notification->uuid) }}" class="d-inline">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="dropdown-item text-danger" 
+                                                                    onclick="return confirm('ลบการแจ้งเตือนนี้?')">
+                                                                <i class="fas fa-trash me-2"></i> ลบ
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                @endif
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="10" class="text-center py-4">
+                                    <div class="text-muted">
+                                        <i class="fas fa-bell-slash fa-2x mb-2"></i>
+                                        <h5>ไม่พบการแจ้งเตือน</h5>
+                                        <p>ยังไม่มีการแจ้งเตือนในระบบ หรือลองปรับตัวกรอง</p>
+                                        <a href="{{ route('admin.notifications.create') }}" class="btn btn-primary">
+                                            <i class="fas fa-plus-circle"></i> สร้างการแจ้งเตือนแรก
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Pagination -->
+        @if($notifications->hasPages())
+            <div class="card-footer">
+                <div class="d-flex justify-content-center">
+                    {{ $notifications->appends(request()->query())->links() }}
+                </div>
+            </div>
+        @endif
+    </div>
+</div>
 
 <!-- Bulk Actions Modal -->
 <div class="modal fade" id="bulkActionsModal" tabindex="-1">
@@ -317,17 +391,17 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <p>เลือกแล้ว <span id="selectedCount">0</span> รายการ</p>
                 <div class="mb-3">
                     <label class="form-label">เลือกการดำเนินการ:</label>
                     <select class="form-select" id="bulkAction">
                         <option value="">-- เลือกการดำเนินการ --</option>
+                        <option value="resend">ส่งใหม่ (เฉพาะที่ล้มเหลว)</option>
                         <option value="cancel">ยกเลิกการส่ง</option>
-                        <option value="resend">ส่งใหม่</option>
-                        <option value="delete">ลบ</option>
                         <option value="export">Export ข้อมูล</option>
+                        <option value="delete">ลบ (เฉพาะร่าง/ล้มเหลว)</option>
                     </select>
                 </div>
-                <div id="selectedCount" class="text-muted"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
@@ -336,127 +410,133 @@
         </div>
     </div>
 </div>
-
 @endsection
 
-@push('scripts')
+@section('scripts')
 <script>
 // Auto-submit filter form on select change
-document.querySelectorAll('#status, #priority, #template, #creator').forEach(select => {
+document.querySelectorAll('select[name="status"], select[name="priority"], select[name="channel"]').forEach(select => {
     select.addEventListener('change', function() {
         this.closest('form').submit();
     });
 });
 
-// Select all checkboxes
-function selectAll() {
-    const checkboxes = document.querySelectorAll('input[name="selected_notifications[]"]');
-    const selectAllCheckbox = document.querySelector('#selectAll');
+// Toggle select all
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.notification-checkbox');
     
     checkboxes.forEach(checkbox => {
-        checkbox.checked = selectAllCheckbox.checked;
+        checkbox.checked = selectAll.checked;
     });
+    
+    updateBulkActions();
+}
+
+// Update bulk actions visibility
+function updateBulkActions() {
+    const selected = document.querySelectorAll('.notification-checkbox:checked');
+    const bulkActions = document.getElementById('bulkActions');
+    
+    if (selected.length > 0) {
+        bulkActions.classList.remove('d-none');
+    } else {
+        bulkActions.classList.add('d-none');
+    }
 }
 
 // Bulk actions
 function bulkActions() {
-    const selected = document.querySelectorAll('input[name="selected_notifications[]"]:checked');
+    const selected = document.querySelectorAll('.notification-checkbox:checked');
     
     if (selected.length === 0) {
-        alert('กรุณาเลือกการแจ้งเตือนที่ต้องการดำเนินการ');
+        alert('กรุณาเลือกการแจ้งเตือน');
         return;
     }
     
-    document.getElementById('selectedCount').textContent = `เลือกแล้ว ${selected.length} รายการ`;
+    document.getElementById('selectedCount').textContent = selected.length;
     const modal = new bootstrap.Modal(document.getElementById('bulkActionsModal'));
     modal.show();
 }
 
+function bulkResend() {
+    const selected = Array.from(document.querySelectorAll('.notification-checkbox:checked')).map(cb => cb.value);
+    if (selected.length === 0) {
+        alert('กรุณาเลือกการแจ้งเตือน');
+        return;
+    }
+    if (!confirm(`ส่งใหม่ ${selected.length} รายการ?`)) return;
+    performBulkAction('resend', selected);
+}
+
+function bulkCancel() {
+    const selected = Array.from(document.querySelectorAll('.notification-checkbox:checked')).map(cb => cb.value);
+    if (selected.length === 0) {
+        alert('กรุณาเลือกการแจ้งเตือน');
+        return;
+    }
+    if (!confirm(`ยกเลิก ${selected.length} รายการ?`)) return;
+    performBulkAction('cancel', selected);
+}
+
+function bulkExport() {
+    const selected = Array.from(document.querySelectorAll('.notification-checkbox:checked')).map(cb => cb.value);
+    if (selected.length === 0) {
+        alert('กรุณาเลือกการแจ้งเตือน');
+        return;
+    }
+    const params = new URLSearchParams();
+    params.append('ids', selected.join(','));
+    window.open(`{{ route('admin.notifications.export') }}?${params.toString()}`, '_blank');
+}
+
 function executeBulkAction() {
     const action = document.getElementById('bulkAction').value;
-    const selected = Array.from(document.querySelectorAll('input[name="selected_notifications[]"]:checked'))
-                          .map(cb => cb.value);
+    const selected = Array.from(document.querySelectorAll('.notification-checkbox:checked')).map(cb => cb.value);
     
     if (!action) {
         alert('กรุณาเลือกการดำเนินการ');
         return;
     }
     
-    if (!confirm(`คุณแน่ใจหรือไม่ที่จะ ${action} การแจ้งเตือน ${selected.length} รายการ?`)) {
-        return;
-    }
+    if (!confirm(`ดำเนินการ ${selected.length} รายการ?`)) return;
     
-    // Send bulk action request
-    fetch(`{{ route('admin.notifications.index') }}/bulk-action`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': window.App.csrfToken
-        },
-        body: JSON.stringify({
-            action: action,
-            notifications: selected
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            window.AppFunctions.showNotification(data.message, 'success');
-            location.reload();
-        } else {
-            window.AppFunctions.showNotification(data.message, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Bulk action error:', error);
-        window.AppFunctions.showNotification('เกิดข้อผิดพลาด', 'error');
-    });
-    
+    performBulkAction(action, selected);
     bootstrap.Modal.getInstance(document.getElementById('bulkActionsModal')).hide();
 }
 
-function exportNotifications() {
-    const params = new URLSearchParams(window.location.search);
-    window.open(`{{ route('admin.notifications.index') }}/export?${params.toString()}`, '_blank');
-}
-
-function viewLogs(uuid) {
-    window.open(`{{ route('admin.notifications.index') }}/${uuid}/logs`, '_blank');
-}
-
-function resendFailed(uuid) {
-    if (!confirm('ส่งการแจ้งเตือนใหม่สำหรับผู้รับที่ล้มเหลว?')) {
-        return;
-    }
-    
-    fetch(`{{ route('admin.notifications.index') }}/${uuid}/resend-failed`, {
+function performBulkAction(action, notifications) {
+    fetch(`{{ route('admin.notifications.bulk-action') }}`, {
         method: 'POST',
         headers: {
-            'X-CSRF-TOKEN': window.App.csrfToken
-        }
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({
+            action: action,
+            notifications: notifications
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            window.AppFunctions.showNotification('ส่งใหม่เรียบร้อย', 'success');
+            alert(data.message);
+            location.reload();
         } else {
-            window.AppFunctions.showNotification(data.message, 'error');
+            alert('เกิดข้อผิดพลาด: ' + data.message);
         }
     })
     .catch(error => {
-        console.error('Resend error:', error);
-        window.AppFunctions.showNotification('เกิดข้อผิดพลาด', 'error');
+        console.error('Error:', error);
+        alert('เกิดข้อผิดพลาด');
     });
 }
 
-// Real-time stats update
+// Auto refresh for processing notifications
 setInterval(() => {
-    fetch('{{ route('admin.notifications.statistics') }}')
-        .then(response => response.json())
-        .then(data => {
-            // Update dashboard stats if needed
-        })
-        .catch(error => console.log('Stats update failed:', error));
-}, 30000); // Update every 30 seconds
+    if (document.querySelector('.spinner-border')) {
+        location.reload();
+    }
+}, 30000);
 </script>
-@endpush
+@endsection

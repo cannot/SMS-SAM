@@ -226,9 +226,7 @@
                 <button type="button" class="btn btn-outline-secondary" onclick="selectAllLogs()">
                     <i class="fas fa-check-square"></i> Select All
                 </button>
-                <button type="button" class="btn btn-outline-warning" onclick="retrySelected()" id="retryBtn" disabled>
-                    <i class="fas fa-redo"></i> Retry Selected
-                </button>
+                
             </div>
         </div>
 
@@ -320,7 +318,7 @@
                                     <td>
                                         @if($log->delivered_at && $log->created_at)
                                             @php
-                                                $deliveryTime = $log->delivered_at->diffInSeconds($log->created_at);
+                                                $deliveryTime = abs($log->delivered_at->diffInSeconds($log->created_at));
                                             @endphp
                                             <span class="badge badge-{{ $deliveryTime < 5 ? 'success' : ($deliveryTime < 30 ? 'warning' : 'danger') }}">
                                                 {{ $deliveryTime }}s
@@ -347,12 +345,7 @@
                                     </td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
-                                            @if($log->status == 'failed')
-                                                <button class="btn btn-outline-warning" 
-                                                        onclick="retryLog({{ $log->id }})" title="Retry">
-                                                    <i class="fas fa-redo"></i>
-                                                </button>
-                                            @endif
+                                            
                                             <button class="btn btn-outline-info" 
                                                     onclick="showLogDetails({{ $log->id }})" title="Details">
                                                 <i class="fas fa-info"></i>
@@ -524,63 +517,6 @@ function selectAllLogs() {
     toggleSelectAll();
 }
 
-function retrySelected() {
-    const selected = Array.from(document.querySelectorAll('.log-checkbox:checked'))
-                         .map(cb => cb.value);
-    
-    if (selected.length === 0) return;
-    
-    if (confirm(`Are you sure you want to retry ${selected.length} failed deliveries?`)) {
-        // Implementation for bulk retry
-        fetch('{{ route("admin.notifications.bulk-retry") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
-            },
-            body: JSON.stringify({
-                notification_id: {{ $notification->id }},
-                log_ids: selected
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast('Retry initiated for selected logs', 'success');
-                setTimeout(() => window.location.reload(), 2000);
-            } else {
-                showToast('Error: ' + data.message, 'error');
-            }
-        })
-        .catch(error => {
-            showToast('Error occurred during retry', 'error');
-        });
-    }
-}
-
-function retryLog(logId) {
-    if (confirm('Are you sure you want to retry this delivery?')) {
-        fetch(`{{ route("admin.notifications.retry-log", "") }}/${logId}`, {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast('Retry initiated', 'success');
-                setTimeout(() => window.location.reload(), 2000);
-            } else {
-                showToast('Error: ' + data.message, 'error');
-            }
-        })
-        .catch(error => {
-            showToast('Error occurred during retry', 'error');
-        });
-    }
-}
-
 function showErrorDetails(errorMessage, recipient) {
     document.getElementById('errorRecipient').textContent = recipient;
     document.getElementById('errorMessage').textContent = errorMessage;
@@ -588,16 +524,6 @@ function showErrorDetails(errorMessage, recipient) {
 }
 
 function showLogDetails(logId) {
-    // Load log details via AJAX
-    fetch(`{{ route("admin.notifications.log-details", "") }}/${logId}`)
-        .then(response => response.text())
-        .then(html => {
-            document.getElementById('logDetailsContent').innerHTML = html;
-            $('#logModal').modal('show');
-        })
-        .catch(error => {
-            showToast('Error loading log details', 'error');
-        });
 }
 
 function copyErrorToClipboard() {

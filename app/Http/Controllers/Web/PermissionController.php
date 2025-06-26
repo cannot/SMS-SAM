@@ -44,6 +44,8 @@ class PermissionController extends Controller
 
             $permissions = $query->paginate(30)->appends($request->query());
 
+            // dd($permissions);
+
             // Group permissions by category for better display
             $groupedPermissions = $permissions->getCollection()->groupBy(function($permission) {
                 return explode('-', $permission->name)[0];
@@ -55,6 +57,8 @@ class PermissionController extends Controller
                 ->orderBy('category')
                 ->pluck('category')
                 ->filter();
+
+            // dd($categories);
 
             // Statistics
             $stats = [

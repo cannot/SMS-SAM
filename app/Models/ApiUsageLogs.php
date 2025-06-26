@@ -10,6 +10,8 @@ class ApiUsageLogs extends Model
 {
     use HasFactory;
 
+    public $timestamps = false;
+
     protected $fillable = [
         'api_key_id',
         'notification_id',
@@ -30,9 +32,6 @@ class ApiUsageLogs extends Model
         'response_data' => 'array',
         'created_at' => 'datetime',
     ];
-
-    // Disable updated_at since this is a log table
-    public $timestamps = false;
     
     // Only use created_at
     protected $dates = ['created_at'];

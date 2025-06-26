@@ -346,14 +346,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // User search
-    const userSearchInput = document.getElementById('userSearch');
-    if (userSearchInput) {
-        let searchTimeout;
-        userSearchInput.addEventListener('input', function() {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(searchUsers, 300);
-        });
-    }
+    // const userSearchInput = document.getElementById('userSearch');
+    // if (userSearchInput) {
+    //     let searchTimeout;
+    //     userSearchInput.addEventListener('input', function() {
+    //         clearTimeout(searchTimeout);
+    //         searchTimeout = setTimeout(searchUsers, 300);
+    //     });
+    // }
 
     updatePreview();
 });

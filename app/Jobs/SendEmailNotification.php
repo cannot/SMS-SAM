@@ -115,6 +115,6 @@ class SendEmailNotification implements ShouldQueue
 
     protected function updateNotificationStats()
     {
-        $this->notificationLog->notification->updateDeliveryStats();
+        $this->notificationLog->notification->updateDeliveryCounters();
     }
 }

@@ -2,30 +2,31 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Hash;
-use Carbon\Carbon;
-use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Activitylog\LogOptions;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Spatie\Permission\Models\Permission;
+use Illuminate\Support\Str;
 
 class ApiKey extends Model
 {
-    use HasFactory, LogsActivity;
+    use SoftDeletes, HasUuids;
 
     protected $fillable = [
         'name',
         'description',
         'key_hash',
+        'key_value', // ชั่วคราว สำหรับแสดงผลครั้งแรก
         'is_active',
         'rate_limit_per_minute',
+        'rate_limit_per_hour',
+        'rate_limit_per_day',
         'usage_count',
         'last_used_at',
         'expires_at',
-        'permissions',
-        'ip_whitelist',
+        'permissions', // JSON array (เก่า - deprecated)
+        'allowed_ips',
+        'metadata',
         'assigned_to',
         'created_by',
         'auto_notifications',
@@ -39,306 +40,380 @@ class ApiKey extends Model
     ];
 
     protected $casts = [
-        'permissions' => 'array',
-        'ip_whitelist' => 'array',
         'is_active' => 'boolean',
         'auto_notifications' => 'boolean',
-        'last_used_at' => 'datetime',
         'expires_at' => 'datetime',
+        'last_used_at' => 'datetime',
         'status_changed_at' => 'datetime',
         'regenerated_at' => 'datetime',
         'usage_reset_at' => 'datetime',
+        'permissions' => 'array', // deprecated - ใช้ relationship แทน
+        'allowed_ips' => 'array',
+        'metadata' => 'array',
     ];
 
     protected $hidden = [
         'key_hash',
+        'key_value', // ซ่อน API key value ไม่ให้แสดงใน JSON response
     ];
 
     protected $appends = [
-        'status',
+        'display_key',
         'is_expired',
-        'days_until_expiry',
-        'usage_percentage',
-        'masked_key',
+        'is_valid',
     ];
 
-    // ===================================
-    // RELATIONSHIPS
-    // ===================================
+    // ===========================================
+    // UUID GENERATION
+    // ===========================================
+    
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($model) {
+            if (empty($model->uuid)) {
+                $model->uuid = Str::uuid();
+            }
+        });
+    }
 
-    /**
-     * The user who created this API key
-     */
-    public function createdBy(): BelongsTo
+    public function getRouteKeyName()
+    {
+        return 'uuid'; // ใช้ UUID แทน ID ใน routes
+    }
+
+    // ===========================================
+    // RELATIONSHIPS
+    // ===========================================
+
+    public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /**
-     * The user assigned to this API key
-     */
-    public function assignedTo(): BelongsTo
+    public function assignedTo()
     {
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
-    /**
-     * User who last changed the status
-     */
-    public function statusChangedBy(): BelongsTo
+    public function statusChangedBy()
     {
         return $this->belongsTo(User::class, 'status_changed_by');
     }
 
-    /**
-     * User who regenerated the key
-     */
-    public function regeneratedBy(): BelongsTo
+    public function regeneratedBy()
     {
         return $this->belongsTo(User::class, 'regenerated_by');
     }
 
-    /**
-     * User who reset the usage
-     */
-    public function usageResetBy(): BelongsTo
+    public function usageResetBy()
     {
         return $this->belongsTo(User::class, 'usage_reset_by');
     }
 
     /**
-     * Notifications created using this API key
+     * API Key สามารถมีหลาย Permissions (many-to-many)
+     * เฉพาะ permissions ที่เป็น guard_name = 'api' เท่านั้น
      */
-    public function notifications(): HasMany
+    public function apiPermissions()
     {
-        return $this->hasMany(Notification::class, 'api_key_id');
+        return $this->belongsToMany(Permission::class, 'api_key_permissions')
+                    ->where('guard_name', 'api')
+                    ->withTimestamps();
+    }
+
+    // Backward compatibility - ใช้ relationship ใหม่
+    public function permissions()
+    {
+        return $this->apiPermissions();
+    }
+
+    public function usageLogs()
+    {
+        return $this->hasMany(ApiUsageLog::class);
+    }
+
+    public function events()
+    {
+        return $this->hasMany(ApiKeyEvent::class);
+    }
+
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    // ===========================================
+    // ACCESSORS & MUTATORS
+    // ===========================================
+
+    /**
+     * แสดง API Key ในรูปแบบที่ซ่อนส่วนกลาง
+     */
+    public function getDisplayKeyAttribute(): string
+    {
+        if (!$this->key_hash && !$this->key_value) {
+            return 'Key not generated';
+        }
+        
+        // ถ้ามี key_value (ครั้งแรกหลังสร้าง) ให้แสดงเต็ม
+        if ($this->key_value) {
+            return $this->key_value;
+        }
+        
+        // ถ้าไม่มี ให้แสดงแบบซ่อน
+        $prefix = 'sns_';
+        $suffix = substr($this->key_hash, -4);
+        return $prefix . str_repeat('*', 28) . '_' . $suffix;
     }
 
     /**
-     * Usage logs for this API key
+     * ตรวจสอบว่า API Key หมดอายุหรือยัง
      */
-    public function usageLogs(): HasMany
+    public function getIsExpiredAttribute(): bool
     {
-        return $this->hasMany(ApiUsageLogs::class, 'api_key_id');
+        return $this->expires_at && $this->expires_at->isPast();
     }
 
-    // ===================================
+    /**
+     * ตรวจสอบว่า API Key ใช้งานได้หรือไม่
+     */
+    public function getIsValidAttribute(): bool
+    {
+        return $this->is_active && !$this->is_expired && !$this->trashed();
+    }
+
+    /**
+     * Hash API key เมื่อ set key_value
+     */
+    public function setKeyValueAttribute($value)
+    {
+        if ($value) {
+            $this->attributes['key_value'] = $value;
+            $this->attributes['key_hash'] = hash('sha256', $value);
+        }
+    }
+
+    // ===========================================
     // SCOPES
-    // ===================================
+    // ===========================================
 
-    /**
-     * Scope for active API keys
-     */
     public function scopeActive($query)
     {
         return $query->where('is_active', true)
-                    ->where(function($q) {
+                    ->where(function ($q) {
                         $q->whereNull('expires_at')
                           ->orWhere('expires_at', '>', now());
                     });
     }
 
-    /**
-     * Scope for inactive API keys
-     */
-    public function scopeInactive($query)
-    {
-        return $query->where('is_active', false);
-    }
-
-    /**
-     * Scope for expired API keys
-     */
     public function scopeExpired($query)
     {
-        return $query->where('expires_at', '<=', now());
+        return $query->whereNotNull('expires_at')
+                    ->where('expires_at', '<=', now());
+    }
+
+    public function scopeByPermission($query, string $permissionName)
+    {
+        return $query->whereHas('apiPermissions', function ($q) use ($permissionName) {
+            $q->where('name', $permissionName);
+        });
+    }
+
+    public function scopeUsedInLastDays($query, int $days = 30)
+    {
+        return $query->where('last_used_at', '>=', now()->subDays($days));
+    }
+
+    // ===========================================
+    // PERMISSION METHODS
+    // ===========================================
+
+    /**
+     * ตรวจสอบว่า API Key มีสิทธิ์ตามที่กำหนดหรือไม่
+     */
+    public function hasPermission(string $permissionName): bool
+    {
+        return $this->apiPermissions()->where('name', $permissionName)->exists();
     }
 
     /**
-     * Scope for API keys expiring soon
+     * ตรวจสอบว่า API Key มีสิทธิ์อย่างใดอย่างหนึ่งในรายการหรือไม่
      */
-    public function scopeExpiringSoon($query, $days = 30)
+    public function hasAnyPermission(array $permissions): bool
     {
-        return $query->where('expires_at', '>', now())
-                    ->where('expires_at', '<=', now()->addDays($days));
+        return $this->apiPermissions()->whereIn('name', $permissions)->exists();
     }
 
     /**
-     * Scope for API keys assigned to a user
+     * ตรวจสอบว่า API Key มีสิทธิ์ทั้งหมดในรายการหรือไม่
      */
-    public function scopeAssignedTo($query, $userId)
+    public function hasAllPermissions(array $permissions): bool
     {
-        return $query->where('assigned_to', $userId);
+        return $this->apiPermissions()->whereIn('name', $permissions)->count() === count($permissions);
     }
 
     /**
-     * Scope for API keys created by a user
+     * เพิ่มสิทธิ์ให้กับ API Key
      */
-    public function scopeCreatedBy($query, $userId)
+    public function givePermissionTo(string|Permission $permission): self
     {
-        return $query->where('created_by', $userId);
-    }
-
-    // ===================================
-    // ACCESSORS
-    // ===================================
-
-    /**
-     * Get the status of the API key
-     */
-    public function getStatusAttribute(): string
-    {
-        if (!$this->is_active) {
-            return 'inactive';
+        if (is_string($permission)) {
+            $permission = Permission::where('name', $permission)
+                                   ->where('guard_name', 'api')
+                                   ->firstOrFail();
         }
 
-        if ($this->expires_at && $this->expires_at <= now()) {
-            return 'expired';
-        }
-
-        if ($this->expires_at && $this->expires_at <= now()->addDays(30)) {
-            return 'expiring_soon';
-        }
-
-        return 'active';
+        $this->apiPermissions()->syncWithoutDetaching([$permission->id]);
+        
+        // Log event
+        $this->logEvent('permission_added', "Permission '{$permission->name}' added", null, [
+            'permission_id' => $permission->id,
+            'permission_name' => $permission->name
+        ]);
+        
+        return $this;
     }
 
     /**
-     * Check if API key is expired
+     * ลบสิทธิ์ออกจาก API Key
      */
-    public function getIsExpiredAttribute(): bool
+    public function revokePermissionTo(string|Permission $permission): self
     {
-        return $this->expires_at && $this->expires_at <= now();
-    }
-
-    /**
-     * Get days until expiry
-     */
-    public function getDaysUntilExpiryAttribute(): ?int
-    {
-        if (!$this->expires_at) {
-            return null;
+        if (is_string($permission)) {
+            $permission = Permission::where('name', $permission)
+                                   ->where('guard_name', 'api')
+                                   ->firstOrFail();
         }
 
-        $days = now()->diffInDays($this->expires_at, false);
-        return $days < 0 ? 0 : $days;
+        $this->apiPermissions()->detach($permission->id);
+        
+        // Log event
+        $this->logEvent('permission_removed', "Permission '{$permission->name}' removed", [
+            'permission_id' => $permission->id,
+            'permission_name' => $permission->name
+        ], null);
+        
+        return $this;
     }
 
     /**
-     * Get usage percentage of rate limit
+     * กำหนดสิทธิ์ใหม่ทั้งหมด (ลบเก่าและเพิ่มใหม่)
      */
-    public function getUsagePercentageAttribute(): float
+    public function syncPermissions(array $permissions): self
     {
-        if ($this->rate_limit_per_minute === 0) {
-            return 0;
+        $oldPermissions = $this->apiPermissions()->pluck('name')->toArray();
+        
+        $permissionIds = Permission::where('guard_name', 'api')
+                                  ->whereIn('name', $permissions)
+                                  ->pluck('id')
+                                  ->toArray();
+
+        $this->apiPermissions()->sync($permissionIds);
+        
+        // Log event
+        $this->logEvent('permissions_synced', 'Permissions synchronized', [
+            'old_permissions' => $oldPermissions
+        ], [
+            'new_permissions' => $permissions
+        ]);
+        
+        return $this;
+    }
+
+    // ===========================================
+    // RATE LIMITING METHODS
+    // ===========================================
+
+    /**
+     * ตรวจสอบว่าเกิน Rate Limit หรือไม่
+     */
+    public function isRateLimited(string $period = 'minute'): bool
+    {
+        $usageCount = $this->getUsageCount($period);
+        $limit = $this->getRateLimit($period);
+
+        return $usageCount >= $limit;
+    }
+
+    /**
+     * ดึงจำนวนการใช้งานในช่วงเวลาที่กำหนด
+     */
+    public function getUsageCount(string $period = 'minute'): int
+    {
+        $startTime = match($period) {
+            'minute' => now()->startOfMinute(),
+            'hour' => now()->startOfHour(),
+            'day' => now()->startOfDay(),
+            default => now()->startOfMinute(),
+        };
+
+        return $this->usageLogs()
+                   ->where('created_at', '>=', $startTime)
+                   ->count();
+    }
+
+    /**
+     * ดึงค่า Rate Limit ตามช่วงเวลา
+     */
+    public function getRateLimit(string $period = 'minute'): int
+    {
+        return match($period) {
+            'minute' => $this->rate_limit_per_minute,
+            'hour' => $this->rate_limit_per_hour,
+            'day' => $this->rate_limit_per_day,
+            default => $this->rate_limit_per_minute,
+        };
+    }
+
+    /**
+     * ตรวจสอบว่า IP address ได้รับอนุญาตหรือไม่
+     */
+    public function isIpAllowed(string $ipAddress): bool
+    {
+        if (empty($this->allowed_ips)) {
+            return true; // ถ้าไม่มีการจำกัด IP ให้อนุญาตทั้งหมด
         }
 
-        $currentMinuteUsage = $this->usageLogs()
-            ->where('created_at', '>=', now()->startOfMinute())
-            ->count();
-
-        return round(($currentMinuteUsage / $this->rate_limit_per_minute) * 100, 2);
-    }
-
-    /**
-     * Get masked API key for display
-     */
-    public function getMaskedKeyAttribute(): string
-    {
-        return 'sns_' . str_repeat('*', 28) . '_****';
-    }
-
-    // ===================================
-    // METHODS
-    // ===================================
-
-    /**
-     * Verify if a given key matches this API key
-     */
-    public function verifyKey(string $key): bool
-    {
-        return Hash::check($key, $this->key_hash);
-    }
-
-    /**
-     * Check if API key has permission
-     */
-    public function hasPermission(string $permission): bool
-    {
-        if (!$this->permissions) {
-            return false;
+        foreach ($this->allowed_ips as $allowedIp) {
+            if ($this->ipMatches($ipAddress, $allowedIp)) {
+                return true;
+            }
         }
 
-        return in_array($permission, $this->permissions);
+        return false;
     }
 
     /**
-     * Check if IP is whitelisted
+     * ตรวจสอบว่า IP ตรงกับ pattern ที่กำหนดหรือไม่
+     * รองรับ CIDR notation (เช่น 192.168.1.0/24)
      */
-    public function isIpWhitelisted(string $ip): bool
+    private function ipMatches(string $ip, string $pattern): bool
     {
-        if (!$this->ip_whitelist || empty($this->ip_whitelist)) {
-            return true; // No whitelist means all IPs are allowed
+        if ($ip === $pattern) {
+            return true;
         }
 
-        return in_array($ip, $this->ip_whitelist);
+        // ตรวจสอบ CIDR notation
+        if (strpos($pattern, '/') !== false) {
+            [$subnet, $bits] = explode('/', $pattern);
+            $ip = ip2long($ip);
+            $subnet = ip2long($subnet);
+            $mask = -1 << (32 - (int)$bits);
+            
+            return ($ip & $mask) === ($subnet & $mask);
+        }
+
+        return false;
     }
 
-    /**
-     * Check if API key can be used
-     */
-    public function canBeUsed(string $ip = null, string $permission = null): array
-    {
-        $errors = [];
-
-        // Check if active
-        if (!$this->is_active) {
-            $errors[] = 'API key is inactive';
-        }
-
-        // Check if expired
-        if ($this->is_expired) {
-            $errors[] = 'API key has expired';
-        }
-
-        // Check IP whitelist
-        if ($ip && !$this->isIpWhitelisted($ip)) {
-            $errors[] = 'IP address not whitelisted';
-        }
-
-        // Check permission
-        if ($permission && !$this->hasPermission($permission)) {
-            $errors[] = 'Insufficient permissions';
-        }
-
-        return [
-            'can_use' => empty($errors),
-            'errors' => $errors
-        ];
-    }
+    // ===========================================
+    // UTILITY METHODS
+    // ===========================================
 
     /**
-     * Check rate limit
-     */
-    public function checkRateLimit(): array
-    {
-        $currentMinuteUsage = $this->usageLogs()
-            ->where('created_at', '>=', now()->startOfMinute())
-            ->count();
-
-        $limitExceeded = $currentMinuteUsage >= $this->rate_limit_per_minute;
-
-        return [
-            'limit_exceeded' => $limitExceeded,
-            'current_usage' => $currentMinuteUsage,
-            'limit' => $this->rate_limit_per_minute,
-            'remaining' => max(0, $this->rate_limit_per_minute - $currentMinuteUsage),
-            'reset_time' => now()->addMinute()->startOfMinute()
-        ];
-    }
-
-    /**
-     * Increment usage count
+     * เพิ่มจำนวนการใช้งาน
      */
     public function incrementUsage(): void
     {
@@ -347,112 +422,107 @@ class ApiKey extends Model
     }
 
     /**
-     * Get usage statistics
+     * รีเซ็ตการใช้งาน
      */
-    public function getUsageStats(): array
+    public function resetUsage(User $performedBy = null): void
     {
-        $baseQuery = $this->usageLogs();
+        $this->update([
+            'usage_count' => 0,
+            'usage_reset_at' => now(),
+            'usage_reset_by' => $performedBy?->id,
+        ]);
 
-        return [
-            'total_requests' => $this->usage_count,
-            'requests_today' => $baseQuery->whereDate('created_at', today())->count(),
-            'requests_this_week' => $baseQuery->whereBetween('created_at', [
-                now()->startOfWeek(), 
-                now()->endOfWeek()
-            ])->count(),
-            'requests_this_month' => $baseQuery->whereMonth('created_at', now()->month)->count(),
-            'average_response_time' => $baseQuery->avg('response_time') ?: 0,
-            'success_rate' => $this->getSuccessRate(),
-            'last_used' => $this->last_used_at?->diffForHumans(),
-        ];
+        $this->logEvent('usage_reset', 'Usage count reset to 0', [
+            'old_usage_count' => $this->usage_count
+        ], [
+            'new_usage_count' => 0
+        ], $performedBy);
     }
 
     /**
-     * Get success rate percentage
+     * Regenerate API Key
      */
-    public function getSuccessRate(): float
+    public function regenerate(User $performedBy = null): string
     {
-        $totalRequests = $this->usage_count;
-        if ($totalRequests === 0) {
-            return 100;
-        }
+        $newKeyValue = self::generateKeyValue();
+        
+        $this->update([
+            'key_value' => $newKeyValue, // ชั่วคราว สำหรับแสดงผล
+            'regenerated_at' => now(),
+            'regenerated_by' => $performedBy?->id,
+        ]);
 
-        $successfulRequests = $this->usageLogs()
-            ->where('response_code', '<', 400)
-            ->count();
+        $this->logEvent('regenerated', 'API Key regenerated', null, [
+            'regenerated_at' => $this->regenerated_at
+        ], $performedBy);
 
-        return round(($successfulRequests / $totalRequests) * 100, 2);
+        return $newKeyValue;
     }
 
     /**
-     * Get recent activity
+     * Clear key_value หลังจากแสดงผลแล้ว
      */
-    public function getRecentActivity(int $limit = 10): \Illuminate\Database\Eloquent\Collection
+    public function clearKeyValue(): void
     {
-        return $this->usageLogs()
-            ->with('notification')
-            ->latest()
-            ->limit($limit)
-            ->get();
+        $this->update(['key_value' => null]);
     }
 
     /**
-     * Get error logs
+     * เปลี่ยนสถานะ
      */
-    public function getErrorLogs(int $days = 7): \Illuminate\Database\Eloquent\Collection
+    public function toggleStatus(User $performedBy = null): void
     {
-        return $this->usageLogs()
-            ->where('response_code', '>=', 400)
-            ->whereDate('created_at', '>=', now()->subDays($days))
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $oldStatus = $this->is_active;
+        $newStatus = !$oldStatus;
+        
+        $this->update([
+            'is_active' => $newStatus,
+            'status_changed_at' => now(),
+            'status_changed_by' => $performedBy?->id,
+        ]);
+
+        $this->logEvent(
+            $newStatus ? 'activated' : 'deactivated',
+            $newStatus ? 'API Key activated' : 'API Key deactivated',
+            ['is_active' => $oldStatus],
+            ['is_active' => $newStatus],
+            $performedBy
+        );
     }
 
     /**
-     * Get top endpoints
+     * บันทึก Event
      */
-    public function getTopEndpoints(int $limit = 10): \Illuminate\Support\Collection
+    public function logEvent(string $eventType, string $description, ?array $oldValues = null, ?array $newValues = null, ?User $performedBy = null): void
     {
-        return $this->usageLogs()
-            ->selectRaw('endpoint, method, COUNT(*) as count')
-            ->groupBy('endpoint', 'method')
-            ->orderByDesc('count')
-            ->limit($limit)
-            ->get();
+        $this->events()->create([
+            'event_type' => $eventType,
+            'description' => $description,
+            'old_values' => $oldValues,
+            'new_values' => $newValues,
+            'performed_by' => $performedBy?->id ?? auth()->id(),
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+        ]);
     }
 
-    // ===================================
-    // ACTIVITY LOG CONFIGURATION
-    // ===================================
-
-    public function getActivitylogOptions(): LogOptions
+    /**
+     * สร้าง API Key value ใหม่
+     */
+    public static function generateKeyValue(): string
     {
-        return LogOptions::defaults()
-            ->logOnly([
-                'name',
-                'description',
-                'is_active',
-                'rate_limit_per_minute',
-                'permissions',
-                'ip_whitelist',
-                'assigned_to',
-                'expires_at'
-            ])
-            ->logOnlyDirty()
-            ->dontSubmitEmptyLogs();
+        return 'sns_' . Str::random(32) . '_' . time();
     }
 
-    // ===================================
-    // BOOT METHOD
-    // ===================================
-
-    protected static function boot()
+    /**
+     * ตรวจสอบ API Key จาก value
+     */
+    public static function findByKey(string $keyValue): ?self
     {
-        parent::boot();
-
-        // Auto-delete related usage logs when API key is deleted
-        static::deleting(function (ApiKey $apiKey) {
-            $apiKey->usageLogs()->delete();
-        });
+        $keyHash = hash('sha256', $keyValue);
+        
+        return self::where('key_hash', $keyHash)
+                   ->active()
+                   ->first();
     }
 }

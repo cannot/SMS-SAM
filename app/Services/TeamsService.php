@@ -20,11 +20,44 @@ class TeamsService
         $this->tenantId = config('services.teams.tenant_id');
     }
 
+    /**
+     * Get user by email (fix the return type issue)
+     */
     public function getUserByEmail($email)
     {
-        // ใช้ findTeamsUser() ที่มีอยู่แล้ว
-        $user = \App\Models\User::where('email', $email)->first();
-        return $user ? $this->findTeamsUser($user) : null;
+        try {
+            Log::info('Looking up Teams user by email', ['email' => $email]);
+            
+            $user = \App\Models\User::where('email', $email)->first();
+            if (!$user) {
+                Log::warning('User not found in database', ['email' => $email]);
+                return null;
+            }
+
+            // Get Teams user object
+            $teamsUser = $this->getTeamsUserObject($email);
+            if (!$teamsUser) {
+                Log::warning('User not found in Teams directory', ['email' => $email]);
+                return null;
+            }
+
+            // Return a simple object with the Teams user ID
+            return (object) [
+                'id' => $teamsUser['id'],
+                'email' => $teamsUser['mail'] ?? $teamsUser['userPrincipalName'],
+                'displayName' => $teamsUser['displayName'],
+                'getId' => function() use ($teamsUser) {
+                    return $teamsUser['id'];
+                }
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('getUserByEmail failed', [
+                'email' => $email,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
     /**
@@ -33,6 +66,11 @@ class TeamsService
     public function sendDirectMessage($userId, $body, $cardTemplate = null)
     {
         try {
+            Log::info('Attempting to send Teams direct message', [
+                'user_id' => $userId,
+                'has_card' => !empty($cardTemplate)
+            ]);
+
             $token = $this->getAccessToken();
             if (!$token) {
                 throw new \Exception('No access token available');
@@ -92,22 +130,24 @@ class TeamsService
                     'chat_id' => $chatId
                 ];
             } else {
+                $errorBody = $response->body();
                 Log::error('Teams direct message failed', [
                     'user_id' => $userId,
                     'status' => $response->status(),
-                    'response' => $response->body()
+                    'response' => $errorBody
                 ]);
 
                 return [
                     'success' => false,
-                    'error' => 'Failed to send Teams message: ' . $response->body()
+                    'error' => 'Failed to send Teams message: ' . $errorBody
                 ];
             }
 
         } catch (\Exception $e) {
             Log::error('Teams direct message exception', [
                 'user_id' => $userId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return [
@@ -118,58 +158,72 @@ class TeamsService
     }
 
     /**
-     * Get or create chat with user
+     * Get or create chat with user - Fixed version
      */
     private function getOrCreateChatWithUser($userId, $token)
     {
         try {
+            Log::info('Getting or creating chat with user', ['user_id' => $userId]);
+            
             $httpClient = $this->getHttpClient();
             
-            // Try to find existing chat first
-            $response = $httpClient
+            // Get current user's ID (app identity)
+            $meResponse = $httpClient
                 ->withToken($token)
-                ->get("https://graph.microsoft.com/v1.0/me/chats", [
-                    '$filter' => "chatType eq 'oneOnOne'",
-                    '$expand' => 'members'
-                ]);
+                ->get("https://graph.microsoft.com/v1.0/me");
 
-            if ($response->successful()) {
-                $chats = $response->json()['value'];
-                
-                // Look for existing chat with this user
-                foreach ($chats as $chat) {
-                    $members = $chat['members'] ?? [];
-                    foreach ($members as $member) {
-                        if (isset($member['userId']) && $member['userId'] === $userId) {
-                            return $chat['id'];
-                        }
-                    }
-                }
+            if (!$meResponse->successful()) {
+                Log::error('Failed to get app user identity', [
+                    'status' => $meResponse->status(),
+                    'response' => $meResponse->body()
+                ]);
+                return null;
             }
 
-            // Create new chat if not found
+            $appUserId = $meResponse->json()['id'];
+            Log::info('App user ID obtained', ['app_user_id' => $appUserId]);
+
+            // Create new chat directly (don't try to find existing)
+            $createChatData = [
+                'chatType' => 'oneOnOne',
+                'members' => [
+                    [
+                        '@odata.type' => '#microsoft.graph.aadUserConversationMember',
+                        'userId' => $appUserId,
+                        'roles' => ['owner']
+                    ],
+                    [
+                        '@odata.type' => '#microsoft.graph.aadUserConversationMember',
+                        'userId' => $userId,
+                        'roles' => ['owner']
+                    ]
+                ]
+            ];
+
+            Log::info('Creating new chat', ['data' => $createChatData]);
+
             $createResponse = $httpClient
                 ->withToken($token)
-                ->post("https://graph.microsoft.com/v1.0/chats", [
-                    'chatType' => 'oneOnOne',
-                    'members' => [
-                        [
-                            '@odata.type' => '#microsoft.graph.aadUserConversationMember',
-                            'userId' => $userId
-                        ]
-                    ]
-                ]);
+                ->post("https://graph.microsoft.com/v1.0/chats", $createChatData);
 
             if ($createResponse->successful()) {
-                return $createResponse->json()['id'];
+                $chatId = $createResponse->json()['id'];
+                Log::info('Chat created successfully', ['chat_id' => $chatId]);
+                return $chatId;
+            } else {
+                $errorBody = $createResponse->body();
+                Log::error('Failed to create chat', [
+                    'status' => $createResponse->status(),
+                    'response' => $errorBody
+                ]);
+                return null;
             }
-
-            return null;
 
         } catch (\Exception $e) {
             Log::error('Failed to get/create chat with user', [
                 'user_id' => $userId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return null;
         }
@@ -198,8 +252,7 @@ class TeamsService
                     'wrap' => true,
                     'spacing' => 'Medium'
                 ]
-            ],
-            'actions' => []
+            ]
         ];
 
         // Add timestamp
@@ -314,8 +367,11 @@ class TeamsService
     public function getTeamsUserObject($email)
     {
         try {
+            Log::info('Looking up Teams user object', ['email' => $email]);
+            
             $token = $this->getAccessToken();
             if (!$token) {
+                Log::error('No access token for Teams user lookup');
                 return null;
             }
 
@@ -332,8 +388,18 @@ class TeamsService
             if ($response->successful()) {
                 $users = $response->json()['value'];
                 if (!empty($users)) {
+                    Log::info('Teams user found', [
+                        'email' => $email,
+                        'user_id' => $users[0]['id']
+                    ]);
                     return $users[0]; // Return first match
                 }
+            } else {
+                Log::error('Teams user lookup API failed', [
+                    'email' => $email,
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
             }
 
             Log::warning('Teams user not found', ['email' => $email]);
@@ -349,64 +415,7 @@ class TeamsService
     }
 
     /**
-     * Send notification with retry logic
-     */
-    public function sendNotificationWithRetry($userId, $subject, $body, $priority = 'normal', $maxRetries = 3)
-    {
-        $attempt = 0;
-        $lastError = null;
-
-        while ($attempt < $maxRetries) {
-            $attempt++;
-            
-            try {
-                // Create appropriate card based on priority
-                $card = $this->createPriorityAdaptiveCard($subject, $body, $priority);
-                
-                // Send message
-                $result = $this->sendDirectMessage($userId, $body, $card);
-                
-                if ($result['success']) {
-                    Log::info('Teams notification sent successfully', [
-                        'user_id' => $userId,
-                        'attempt' => $attempt,
-                        'priority' => $priority
-                    ]);
-                    return $result;
-                }
-                
-                $lastError = $result['error'];
-                
-            } catch (\Exception $e) {
-                $lastError = $e->getMessage();
-            }
-
-            if ($attempt < $maxRetries) {
-                // Wait before retry (exponential backoff)
-                $waitTime = pow(2, $attempt - 1) * 5; // 5, 10, 20 seconds
-                sleep($waitTime);
-                
-                Log::warning("Teams notification attempt {$attempt} failed, retrying in {$waitTime}s", [
-                    'user_id' => $userId,
-                    'error' => $lastError
-                ]);
-            }
-        }
-
-        // All attempts failed
-        Log::error("Teams notification failed after {$maxRetries} attempts", [
-            'user_id' => $userId,
-            'last_error' => $lastError
-        ]);
-
-        return [
-            'success' => false,
-            'error' => "Failed after {$maxRetries} attempts: {$lastError}"
-        ];
-    }
-
-    /**
-     * Send Teams message directly (for test notifications)
+     * Send Teams message directly (for test notifications) - Fixed version
      */
     public function sendDirect(array $teamsData)
     {
@@ -420,7 +429,8 @@ class TeamsService
             if (!$this->isConfigured()) {
                 return [
                     'success' => false, 
-                    'error' => 'Teams integration not configured. Please check configuration in admin panel.'
+                    'error' => 'Teams integration not configured. Please check configuration in admin panel.',
+                    'method' => 'config_check'
                 ];
             }
 
@@ -430,32 +440,71 @@ class TeamsService
             if (!$token) {
                 return [
                     'success' => false, 
-                    'error' => 'Failed to obtain Teams access token. Please check Teams app configuration.'
+                    'error' => 'Failed to obtain Teams access token. Please check Teams app configuration.',
+                    'method' => 'token_check'
+                ];
+            }
+
+            // Get Teams user
+            $user = $teamsData['user'];
+            $teamsUser = $this->getUserByEmail($user->email);
+            
+            if (!$teamsUser) {
+                return [
+                    'success' => false, 
+                    'error' => "User {$user->email} not found in Teams directory",
+                    'method' => 'user_lookup'
                 ];
             }
 
             // Send message based on delivery method
             if ($teamsData['delivery_method'] === 'direct') {
-                $result = $this->sendDirectMessage($teamsData['user'], $teamsData['subject'], $teamsData['message']);
+                // Create adaptive card
+                $priority = $teamsData['priority'] ?? 'normal';
+                $card = $this->createPriorityAdaptiveCard(
+                    $teamsData['subject'], 
+                    $teamsData['message'], 
+                    $priority
+                );
+                
+                $result = $this->sendDirectMessage(
+                    $teamsUser->getId(), 
+                    $teamsData['message'], 
+                    $card
+                );
             } else {
-                $result = $this->sendChannelMessage($teamsData['subject'], $teamsData['message']);
+                $result = $this->sendChannelMessage(
+                    $teamsData['subject'], 
+                    $teamsData['message']
+                );
             }
 
-            return [
-                'success' => true, 
-                'result' => $result,
-                'message' => 'Teams message sent successfully'
-            ];
+            if ($result['success']) {
+                return [
+                    'success' => true, 
+                    'result' => $result,
+                    'message' => 'Teams message sent successfully',
+                    'method' => 'direct_message'
+                ];
+            } else {
+                return [
+                    'success' => false, 
+                    'error' => $result['error'],
+                    'method' => 'send_message'
+                ];
+            }
 
         } catch (\Exception $e) {
             Log::error('Teams direct send failed', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'user' => $teamsData['user']->username ?? 'unknown'
             ]);
 
             return [
                 'success' => false, 
-                'error' => $this->getUserFriendlyError($e->getMessage())
+                'error' => $this->getUserFriendlyError($e->getMessage()),
+                'method' => 'exception'
             ];
         }
     }
@@ -465,13 +514,22 @@ class TeamsService
      */
     private function isConfigured()
     {
-        return !empty($this->clientId) && 
-               !empty($this->clientSecret) && 
-               !empty($this->tenantId);
+        $configured = !empty($this->clientId) && 
+                     !empty($this->clientSecret) && 
+                     !empty($this->tenantId);
+        
+        Log::info('Teams configuration check', [
+            'configured' => $configured,
+            'has_client_id' => !empty($this->clientId),
+            'has_client_secret' => !empty($this->clientSecret),
+            'has_tenant_id' => !empty($this->tenantId)
+        ]);
+        
+        return $configured;
     }
 
     /**
-     * Get access token with SSL handling for development
+     * Get access token with enhanced error handling
      */
     private function getAccessToken()
     {
@@ -485,7 +543,10 @@ class TeamsService
                 return $token;
             }
 
-            Log::info('Requesting new Teams access token');
+            Log::info('Requesting new Teams access token', [
+                'tenant_id' => $this->tenantId,
+                'client_id' => substr($this->clientId, 0, 8) . '...'
+            ]);
 
             // Prepare HTTP client with SSL configuration
             $httpClient = Http::timeout(30);
@@ -501,14 +562,6 @@ class TeamsService
                 ]);
                 
                 Log::info('SSL verification disabled for development environment');
-            } else {
-                // Production: Use proper SSL certificate path
-                $caPath = config('services.teams.ca_bundle_path');
-                if ($caPath && file_exists($caPath)) {
-                    $httpClient = $httpClient->withOptions([
-                        'verify' => $caPath
-                    ]);
-                }
             }
 
             // Request token
@@ -529,7 +582,10 @@ class TeamsService
                 // Cache token (expires 5 minutes before actual expiry)
                 Cache::put($cacheKey, $token, $expiresIn - 300);
                 
-                Log::info('Teams access token obtained successfully');
+                Log::info('Teams access token obtained successfully', [
+                    'expires_in' => $expiresIn,
+                    'token_length' => strlen($token)
+                ]);
                 return $token;
             } else {
                 Log::error('Teams token request failed', [
@@ -540,67 +596,11 @@ class TeamsService
             }
 
         } catch (\Exception $e) {
-            Log::error('Teams Access Token Error: ' . $e->getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Send direct message to user
-     */
-    private function sendDirectMessagex($user, $subject, $message)
-    {
-        try {
-            $token = $this->getAccessToken();
-            if (!$token) {
-                throw new \Exception('No access token available');
-            }
-
-            // Find user in Teams
-            $teamsUserId = $this->findTeamsUser($user);
-            if (!$teamsUserId) {
-                throw new \Exception('User not found in Teams directory');
-            }
-
-            // Create chat message
-            $httpClient = $this->getHttpClient();
-            
-            $response = $httpClient
-                ->withToken($token)
-                ->post("https://graph.microsoft.com/v1.0/chats", [
-                    'chatType' => 'oneOnOne',
-                    'members' => [
-                        [
-                            '@odata.type' => '#microsoft.graph.aadUserConversationMember',
-                            'userId' => $teamsUserId
-                        ]
-                    ]
-                ]);
-
-            if ($response->successful()) {
-                $chatId = $response->json()['id'];
-                
-                // Send message to chat
-                $messageResponse = $httpClient
-                    ->withToken($token)
-                    ->post("https://graph.microsoft.com/v1.0/chats/{$chatId}/messages", [
-                        'body' => [
-                            'contentType' => 'html',
-                            'content' => "<h3>{$subject}</h3><p>{$message}</p>"
-                        ]
-                    ]);
-
-                return $messageResponse->successful();
-            }
-
-            return false;
-
-        } catch (\Exception $e) {
-            Log::error('Teams direct message failed', [
+            Log::error('Teams Access Token Error', [
                 'error' => $e->getMessage(),
-                'user' => $user->username
+                'trace' => $e->getTraceAsString()
             ]);
-            return false;
+            return null;
         }
     }
 
@@ -633,51 +633,19 @@ class TeamsService
                     ]
                 ]);
 
-            return $response->successful();
+            return [
+                'success' => $response->successful(),
+                'response' => $response->json()
+            ];
 
         } catch (\Exception $e) {
             Log::error('Teams channel message failed', [
                 'error' => $e->getMessage()
             ]);
-            return false;
-        }
-    }
-
-    /**
-     * Find user in Teams directory
-     */
-    private function findTeamsUser($user)
-    {
-        try {
-            $token = $this->getAccessToken();
-            if (!$token) {
-                return null;
-            }
-
-            // Try to find user by email
-            $httpClient = $this->getHttpClient();
-            
-            $response = $httpClient
-                ->withToken($token)
-                ->get("https://graph.microsoft.com/v1.0/users", [
-                    '$filter' => "mail eq '{$user->email}' or userPrincipalName eq '{$user->email}'"
-                ]);
-
-            if ($response->successful()) {
-                $users = $response->json()['value'];
-                if (!empty($users)) {
-                    return $users[0]['id'];
-                }
-            }
-
-            return null;
-
-        } catch (\Exception $e) {
-            Log::error('Teams user lookup failed', [
-                'error' => $e->getMessage(),
-                'user_email' => $user->email
-            ]);
-            return null;
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
         }
     }
 
@@ -730,6 +698,10 @@ class TeamsService
             return 'Teams integration not configured. Please contact administrator.';
         }
 
+        if (strpos($error, 'not found in Teams directory') !== false) {
+            return 'User not found in Microsoft Teams directory. Please ensure user has Teams access.';
+        }
+
         return 'Teams service temporarily unavailable. Please try again later.';
     }
 
@@ -757,11 +729,26 @@ class TeamsService
                 ];
             }
 
-            return [
-                'success' => true,
-                'message' => 'Teams connection successful',
-                'token_length' => strlen($token)
-            ];
+            // Test API call
+            $httpClient = $this->getHttpClient();
+            $response = $httpClient
+                ->withToken($token)
+                ->get("https://graph.microsoft.com/v1.0/me");
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'message' => 'Teams connection successful',
+                    'token_length' => strlen($token),
+                    'app_info' => $response->json()
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'error' => 'API test failed',
+                    'details' => $response->body()
+                ];
+            }
 
         } catch (\Exception $e) {
             return [
@@ -770,23 +757,5 @@ class TeamsService
                 'details' => 'Connection test failed'
             ];
         }
-    }
-
-    /**
-     * Mock Teams service for development/testing
-     */
-    public function mockSend(array $teamsData)
-    {
-        Log::info('Mock Teams message sent', [
-            'user' => $teamsData['user']->username ?? 'unknown',
-            'subject' => $teamsData['subject'] ?? 'No subject',
-            'delivery_method' => $teamsData['delivery_method'] ?? 'direct'
-        ]);
-
-        return [
-            'success' => true,
-            'result' => 'mock_sent',
-            'message' => 'Mock Teams message sent (development mode)'
-        ];
     }
 }

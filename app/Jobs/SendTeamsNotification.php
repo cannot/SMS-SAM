@@ -27,6 +27,11 @@ class SendTeamsNotification implements ShouldQueue
     public function handle(TeamsService $teamsService)
     {
         try {
+            Log::info('Processing Teams notification job', [
+                'log_id' => $this->notificationLog->id,
+                'recipient' => $this->notificationLog->recipient_email
+            ]);
+
             $notification = $this->notificationLog->notification;
             
             // Check if user preferences allow Teams notifications
@@ -42,51 +47,78 @@ class SendTeamsNotification implements ShouldQueue
             $teamsUser = $teamsService->getUserByEmail($this->notificationLog->recipient_email);
             
             if (!$teamsUser) {
-                $this->fail(new \Exception('Teams user not found'));
+                $this->fail(new \Exception('Teams user not found for email: ' . $this->notificationLog->recipient_email));
                 return;
             }
 
-            // Prepare message content
+            // Prepare message content with variable replacement
             $subject = $notification->subject;
             $body = $notification->body_html ?? $notification->body_text ?? '';
 
-            // Replace variables if template is used
-            if ($notification->template && !empty($notification->variables)) {
-                $subject = $notification->template->renderSubject($notification->variables);
-                $body = $notification->template->renderBodyHtml($notification->variables) ?? 
-                       $notification->template->renderBodyText($notification->variables);
+            // Replace variables
+            $variables = $notification->getTemplateVariables();
+            
+            // Add recipient-specific variables
+            $variables['recipient_name'] = $this->notificationLog->recipient_name ?? 'User';
+            $variables['recipient_email'] = $this->notificationLog->recipient_email;
+            
+            // Replace variables in content
+            foreach ($variables as $key => $value) {
+                $placeholder = '{{' . $key . '}}';
+                $subject = str_replace($placeholder, $value, $subject);
+                $body = str_replace($placeholder, $value, $body);
             }
 
-            // Create Adaptive Card if template has card configuration
+            // Create Adaptive Card
             $cardTemplate = null;
-            if ($notification->template && $notification->template->teams_card_template) {
+            if ($notification->template && !empty($notification->template->teams_card_template)) {
                 $cardTemplate = $this->renderCardTemplate(
                     $notification->template->teams_card_template,
-                    $notification->variables ?? []
+                    $variables
                 );
             } else {
-                // Create basic adaptive card
-                $cardTemplate = $teamsService->createAdaptiveCard($subject, $body);
+                // Create priority-based adaptive card
+                $priority = $notification->priority ?? 'normal';
+                $cardTemplate = $teamsService->createPriorityAdaptiveCard($subject, $body, $priority);
             }
 
-            // Send Teams message
-            $result = $teamsService->sendDirectMessage(
-                $teamsUser->getId(),
-                $body,
-                $cardTemplate
-            );
+            // Prepare Teams data
+            $teamsData = [
+                'user' => (object) ['email' => $this->notificationLog->recipient_email],
+                'subject' => $subject,
+                'message' => $body,
+                'priority' => $notification->priority ?? 'normal',
+                'delivery_method' => 'direct',
+                'variables' => $variables
+            ];
+
+            // Send Teams message using sendDirect method
+            $result = $teamsService->sendDirect($teamsData);
 
             if ($result['success']) {
-                $this->notificationLog->markAsSent($result);
+                $this->notificationLog->update([
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                    'response_data' => $result
+                ]);
+                
+                Log::info('Teams notification sent successfully', [
+                    'log_id' => $this->notificationLog->id,
+                    'recipient' => $this->notificationLog->recipient_email,
+                    'method' => $result['method'] ?? 'unknown'
+                ]);
+                
                 $this->updateNotificationStats();
             } else {
-                $this->fail(new \Exception($result['error']));
+                $this->fail(new \Exception($result['error'] ?? 'Unknown Teams sending error'));
             }
 
         } catch (\Exception $e) {
-            Log::error('SendTeamsNotification Job Failed: ' . $e->getMessage(), [
+            Log::error('SendTeamsNotification Job Failed', [
                 'notification_log_id' => $this->notificationLog->id,
-                'recipient' => $this->notificationLog->recipient_email
+                'recipient' => $this->notificationLog->recipient_email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             
             $this->fail($e);
@@ -95,46 +127,116 @@ class SendTeamsNotification implements ShouldQueue
 
     public function failed(\Throwable $exception)
     {
-        $this->notificationLog->markAsFailed($exception->getMessage(), false);
+        Log::error('SendTeamsNotification Job Failed Permanently', [
+            'notification_log_id' => $this->notificationLog->id,
+            'recipient' => $this->notificationLog->recipient_email,
+            'error' => $exception->getMessage(),
+            'attempts' => $this->attempts
+        ]);
+
+        $this->notificationLog->update([
+            'status' => 'failed',
+            'error_message' => $exception->getMessage(),
+            'retry_count' => $this->attempts
+        ]);
+        
         $this->updateNotificationStats();
     }
 
     protected function shouldSendTeamsMessage()
     {
-        $user = \App\Models\User::where('email', $this->notificationLog->recipient_email)->first();
-        
-        if (!$user || !$user->preferences) {
+        try {
+            $user = \App\Models\User::where('email', $this->notificationLog->recipient_email)->first();
+            
+            if (!$user) {
+                Log::info('User not found in database, allowing Teams notification', [
+                    'email' => $this->notificationLog->recipient_email
+                ]);
+                return true;
+            }
+
+            if (!$user->preferences) {
+                Log::info('User has no preferences, allowing Teams notification', [
+                    'email' => $this->notificationLog->recipient_email
+                ]);
+                return true;
+            }
+
+            // Check if Teams notifications are enabled
+            if (!$user->preferences->enable_teams) {
+                Log::info('Teams notifications disabled for user', [
+                    'email' => $this->notificationLog->recipient_email
+                ]);
+                return false;
+            }
+
+            // Check priority threshold
+            $notification = $this->notificationLog->notification;
+            if (!$user->preferences->shouldReceivePriority($notification->priority)) {
+                Log::info('Notification priority below user threshold', [
+                    'email' => $this->notificationLog->recipient_email,
+                    'notification_priority' => $notification->priority,
+                    'user_min_priority' => $user->preferences->min_priority
+                ]);
+                return false;
+            }
+
+            // Check quiet hours
+            if ($user->preferences->isQuietTime()) {
+                // Allow urgent notifications during quiet hours if override is enabled
+                if ($notification->priority === 'urgent' && $user->preferences->override_high_priority) {
+                    Log::info('Allowing urgent notification during quiet hours', [
+                        'email' => $this->notificationLog->recipient_email
+                    ]);
+                    return true;
+                }
+                
+                Log::info('User in quiet hours, skipping notification', [
+                    'email' => $this->notificationLog->recipient_email
+                ]);
+                return false;
+            }
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('Error checking user preferences for Teams notification', [
+                'email' => $this->notificationLog->recipient_email,
+                'error' => $e->getMessage()
+            ]);
+            // Default to allow if there's an error checking preferences
             return true;
         }
-
-        if (!$user->preferences->allowsTeamsNotifications()) {
-            return false;
-        }
-
-        if ($user->preferences->isInQuietHours()) {
-            return false;
-        }
-
-        if (!$user->preferences->allowsWeekendNotifications()) {
-            return false;
-        }
-
-        return true;
     }
 
     protected function renderCardTemplate($template, $variables)
     {
-        $jsonString = json_encode($template);
-        
-        foreach ($variables as $key => $value) {
-            $jsonString = str_replace("{{" . $key . "}}", $value, $jsonString);
+        try {
+            $jsonString = json_encode($template);
+            
+            foreach ($variables as $key => $value) {
+                $jsonString = str_replace("{{" . $key . "}}", $value, $jsonString);
+            }
+            
+            return json_decode($jsonString, true);
+        } catch (\Exception $e) {
+            Log::error('Error rendering card template', [
+                'error' => $e->getMessage(),
+                'template' => $template
+            ]);
+            return null;
         }
-        
-        return json_decode($jsonString, true);
     }
 
     protected function updateNotificationStats()
     {
-        $this->notificationLog->notification->updateDeliveryStats();
+        try {
+            $this->notificationLog->notification->updateDeliveryCounters();
+        } catch (\Exception $e) {
+            Log::error('Error updating notification stats', [
+                'notification_log_id' => $this->notificationLog->id,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

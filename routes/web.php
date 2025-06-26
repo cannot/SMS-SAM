@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\V1\UserController as ApiUserController;
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Http;
+use App\Services\TeamsService;
 
 /*
 |--------------------------------------------------------------------------
@@ -436,26 +438,78 @@ Route::middleware(['auth', 'web'])->group(function () {
         Route::post('update-preferences', [UserNotificationController::class, 'update-preferences'])->name('update-preferences');
         Route::get('export', [UserNotificationController::class, 'export'])->name('export');
         Route::get('unread-count', [UserNotificationController::class, 'unreadCount'])->name('unread-count');
+
+        Route::get('/', [UserNotificationController::class, 'index'])->name('index');
+        Route::get('/{uuid}', [UserNotificationController::class, 'show'])->name('show');
+        Route::get('/{uuid}/preview', [UserNotificationController::class, 'preview'])->name('preview');
+
     });
 
     Route::prefix('admin/notifications')->name('admin.notifications.')->group(function () {
-        Route::get('/', [AdminNotificationController::class, 'index'])->name('index')->middleware('can:manage-notifications');
-        Route::get('create', [AdminNotificationController::class, 'create'])->name('create')->middleware('can:manage-notifications');
-        Route::post('/', [AdminNotificationController::class, 'store'])->name('store')->middleware('can:manage-notifications');
-        Route::get('{uuid}', [AdminNotificationController::class, 'show'])->name('show')->middleware('can:manage-notifications');
-        Route::get('{uuid}/edit', [AdminNotificationController::class, 'edit'])->name('edit')->middleware('can:manage-notifications');
-        Route::put('{uuid}', [AdminNotificationController::class, 'update'])->name('update')->middleware('can:manage-notifications');
-        Route::delete('{uuid}', [AdminNotificationController::class, 'destroy'])->name('destroy')->middleware('can:manage-notifications');
+        // Route::get('/', [AdminNotificationController::class, 'index'])->name('index')->middleware('can:manage-notifications');
+        // Route::get('create', [AdminNotificationController::class, 'create'])->name('create')->middleware('can:manage-notifications');
+        // Route::post('/', [AdminNotificationController::class, 'store'])->name('store')->middleware('can:manage-notifications');
+        // Route::get('{uuid}', [AdminNotificationController::class, 'show'])->name('show')->middleware('can:manage-notifications');
+        // Route::get('{uuid}/edit', [AdminNotificationController::class, 'edit'])->name('edit')->middleware('can:manage-notifications');
+        // Route::put('{uuid}', [AdminNotificationController::class, 'update'])->name('update')->middleware('can:manage-notifications');
+        // Route::delete('{uuid}', [AdminNotificationController::class, 'destroy'])->name('destroy')->middleware('can:manage-notifications');
+        // Route::get('logs', [AdminNotificationController::class, 'logs'])->name('logs')->middleware('can:manage-notifications');
 
-        // Additional admin actions
-        Route::post('test', [AdminNotificationController::class, 'sendTest'])->name('test')->middleware('can:manage-notifications');
-        Route::post('{uuid}/cancel', [AdminNotificationController::class, 'cancel'])->name('cancel')->middleware('can:manage-notifications');
-        Route::post('{uuid}/duplicate', [AdminNotificationController::class, 'duplicate'])->name('duplicate')->middleware('can:manage-notifications');
-        Route::post('template-preview', [AdminNotificationController::class, 'templatePreview'])->name('template-preview')->middleware('can:manage-notifications');
+        // // New resend routes
+        // Route::post('/{uuid}/resend', [AdminNotificationController::class, 'resend'])->name('resend');
+        // Route::post('/{uuid}/logs/{log}/resend', [AdminNotificationController::class, 'resendLog'])->name('resend-log');
+        // Route::get('/{uuid}/preview', [AdminNotificationController::class, 'preview'])->name('preview');
 
+        // // Additional admin actions
+        // Route::post('test', [AdminNotificationController::class, 'sendTest'])->name('test')->middleware('can:manage-notifications');
+        // Route::post('{uuid}/cancel', [AdminNotificationController::class, 'cancel'])->name('cancel')->middleware('can:manage-notifications');
+        // Route::post('{uuid}/duplicate', [AdminNotificationController::class, 'duplicate'])->name('duplicate')->middleware('can:manage-notifications');
+        // Route::post('template-preview', [AdminNotificationController::class, 'templatePreview'])->name('template-preview')->middleware('can:manage-notifications');
+
+        // // Analytics
+        // Route::get('analytics/dashboard', [AdminNotificationController::class, 'analytics'])->name('analytics')->middleware('can:manage-notifications');
+        // Route::get('statistics', [AdminNotificationController::class, 'statistics'])->name('statistics')->middleware('can:manage-notifications');
+
+        // Route::post('/{uuid}/cancel', [AdminNotificationController::class, 'cancel'])->name('cancel');
+        // Route::post('/{uuid}/retry', [AdminNotificationController::class, 'retry'])->name('retry');
+
+        // Main CRUD routes
+        Route::get('/', [AdminNotificationController::class, 'index'])->name('index');
+        Route::get('/create', [AdminNotificationController::class, 'create'])->name('create');
+        Route::post('/', [AdminNotificationController::class, 'store'])->name('store');
+        Route::get('/{uuid}', [AdminNotificationController::class, 'show'])->name('show');
+        Route::get('/{uuid}/edit', [AdminNotificationController::class, 'edit'])->name('edit');
+        Route::put('/{uuid}', [AdminNotificationController::class, 'update'])->name('update');
+        Route::delete('/{uuid}', [AdminNotificationController::class, 'destroy'])->name('destroy');
+        
+        // Resend routes
+        Route::post('/{uuid}/resend', [AdminNotificationController::class, 'resend'])->name('resend');
+        Route::post('/{uuid}/logs/{log}/resend', [AdminNotificationController::class, 'resendLog'])->name('resend-log');
+        
+        // Action routes
+        Route::post('/{uuid}/cancel', [AdminNotificationController::class, 'cancel'])->name('cancel');
+        Route::post('/{uuid}/duplicate', [AdminNotificationController::class, 'duplicate'])->name('duplicate');
+        
+        // Preview and logs
+        Route::get('/{uuid}/preview', [AdminNotificationController::class, 'preview'])->name('preview');
+        Route::get('/{uuid}/logs', [AdminNotificationController::class, 'logs'])->name('logs');
+        
+        // Bulk actions
+        Route::post('/bulk-action', [AdminNotificationController::class, 'bulkAction'])->name('bulk-action');
+        
+        // Export and stats
+        Route::get('/export', [AdminNotificationController::class, 'export'])->name('export');
+        Route::get('/stats', [AdminNotificationController::class, 'stats'])->name('stats');
+        
         // Analytics
-        Route::get('analytics/dashboard', [AdminNotificationController::class, 'analytics'])->name('analytics')->middleware('can:manage-notifications');
-        Route::get('statistics', [AdminNotificationController::class, 'statistics'])->name('statistics')->middleware('can:manage-notifications');
+        Route::get('/analytics', [AdminNotificationController::class, 'analytics'])->name('analytics');
+        
+        // Template preview
+        Route::post('/template-preview', [AdminNotificationController::class, 'templatePreview'])->name('template-preview');
+        
+        // Test notification
+        Route::post('/send-test', [AdminNotificationController::class, 'sendTest'])->name('send-test');
+
     });
 
     // ===========================================
@@ -532,10 +586,12 @@ Route::middleware(['auth', 'web'])->group(function () {
             Route::delete('/{apiKey}', [ApiKeyController::class, 'destroy'])->name('destroy');
 
             // API Key actions
-            Route::post('/{apiKey}/regenerate', [ApiKeyController::class, 'regenerate'])->name('regenerate');
+            Route::post('/{apiKey}/regenerate', [ApiKeyController::class, 'regenerate'])->name('regenerate')->middleware('permission:regenerate-api-keys');
             Route::post('/{apiKey}/toggle-status', [ApiKeyController::class, 'toggleStatus'])->name('toggle-status');
             Route::get('/{apiKey}/usage-stats', [ApiKeyController::class, 'usageStats'])->name('usage-stats');
             Route::get('/{apiKey}/usage-history', [ApiKeyController::class, 'usageHistory'])->name('usage-history');
+            Route::get('/{apiKey}/usage', [ApiKeyController::class, 'usage'])->name('usage');
+            Route::get('/{apiKey}/audit', [ApiKeyController::class, 'audit'])->name('audit');
             Route::post('/{apiKey}/reset-usage', [ApiKeyController::class, 'resetUsage'])->name('reset-usage');
             Route::get('/export/csv', [ApiKeyController::class, 'export'])->name('export');
 
@@ -645,3 +701,99 @@ if (app()->environment('production')) {
         Route::get('/roles/export/csv', [RoleController::class, 'export'])->name('roles.export.cached');
     });
 }
+
+// Debug routes (only in development)
+if (app()->environment(['local', 'development'])) {
+    
+    Route::prefix('debug')->group(function () {
+        
+        // 1. Check Teams configuration
+        Route::get('/teams-config', function() {
+            return response()->json([
+                'has_client_id' => !empty(config('services.teams.client_id')),
+                'has_client_secret' => !empty(config('services.teams.client_secret')),
+                'has_tenant_id' => !empty(config('services.teams.tenant_id')),
+                'use_mock' => env('USE_MOCK_TEAMS', false),
+                'environment' => app()->environment(),
+                'client_id_preview' => config('services.teams.client_id') ? 
+                    substr(config('services.teams.client_id'), 0, 8) . '...' : null,
+            ]);
+        });
+        
+        Route::get('/curl-test', function() {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'http://httpbin.org/ip');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            return response()->json([
+                'curl_test' => $response ? 'OK' : 'Failed',
+                'http_code' => $httpCode,
+                'error' => $error,
+                'response' => $response
+            ]);
+        });
+    });
+}
+
+// Add this to routes/web.php in the debug group
+
+Route::post('/teams-send-test', function(Request $request) {
+    try {
+        $userEmail = $request->input('user_email', 'panwad@sam.or.th');
+        $subject = $request->input('subject', 'Test Message from API');
+        $message = $request->input('message', 'This is a test message from Postman');
+        $priority = $request->input('priority', 'normal');
+        
+        // Create a mock user object
+        $user = (object) [
+            'email' => $userEmail,
+            'username' => explode('@', $userEmail)[0],
+            'display_name' => 'Test User'
+        ];
+        
+        // Prepare Teams data
+        $teamsData = [
+            'user' => $user,
+            'subject' => $subject,
+            'message' => $message,
+            'priority' => $priority,
+            'delivery_method' => 'direct',
+            'variables' => [
+                'recipient_name' => 'Test User',
+                'recipient_email' => $userEmail,
+                'notification_title' => $subject,
+                'content' => $message
+            ]
+        ];
+        
+        // Get Teams Service
+        $teamsService = app(TeamsService::class);
+        $serviceClass = get_class($teamsService);
+        
+        // Send message
+        $result = $teamsService->sendDirect($teamsData);
+        
+        return response()->json([
+            'request_data' => $teamsData,
+            'service_class' => $serviceClass,
+            'is_mock' => $serviceClass === 'App\Services\MockTeamsService',
+            'result' => $result,
+            'timestamp' => now()
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});

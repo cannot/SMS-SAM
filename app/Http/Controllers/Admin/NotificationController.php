@@ -10,8 +10,12 @@ use App\Models\NotificationLog;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Services\LdapService;
+use App\Jobs\SendEmailNotification;
+use App\Jobs\SendTeamsNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 
 class NotificationController extends Controller
@@ -42,7 +46,7 @@ class NotificationController extends Controller
         }
 
         if ($request->filled('group_id')) {
-            $query->where('group_id', $request->group_id);
+            $query->where('notification_group_id', $request->group_id);
         }
 
         if ($request->filled('channel')) {
@@ -73,14 +77,16 @@ class NotificationController extends Controller
             $query->whereDate('scheduled_at', '<=', $request->scheduled_to);
         }
 
-        // Search in title and content
+        // Search in subject and body
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('title', 'LIKE', "%{$search}%")
-                  ->orWhere('content', 'LIKE', "%{$search}%")
+                $q->where('subject', 'LIKE', "%{$search}%")
+                  ->orWhere('body_text', 'LIKE', "%{$search}%")
+                  ->orWhere('body_html', 'LIKE', "%{$search}%")
+                  ->orWhere('uuid', 'LIKE', "%{$search}%")
                   ->orWhereHas('template', function($tq) use ($search) {
-                      $tq->where('display_name', 'LIKE', "%{$search}%");
+                      $tq->where('name', 'LIKE', "%{$search}%");
                   });
             });
         }
@@ -96,15 +102,15 @@ class NotificationController extends Controller
         $templates = NotificationTemplate::orderBy('name')->get();
         $groups = NotificationGroup::orderBy('name')->get();
         $users = User::orderBy('display_name')->get();
-        $statuses = Notification::distinct()->pluck('status');
-        $priorities = ['low', 'normal', 'high', 'urgent'];
+        $statuses = ['draft', 'queued', 'scheduled', 'processing', 'sent', 'failed', 'cancelled'];
+        $priorities = ['low', 'medium', 'normal', 'high', 'urgent'];
         $channels = ['teams', 'email'];
 
         // Statistics for dashboard cards
         $stats = [
             'total' => Notification::count(),
             'sent' => Notification::where('status', 'sent')->count(),
-            'pending' => Notification::where('status', 'pending')->count(),
+            'pending' => Notification::whereIn('status', ['queued', 'processing'])->count(),
             'failed' => Notification::where('status', 'failed')->count(),
             'today' => Notification::whereDate('created_at', today())->count(),
         ];
@@ -121,32 +127,31 @@ class NotificationController extends Controller
     public function create(Request $request)
     {
         $templates = NotificationTemplate::orderBy('name')->get();
-        // $groups = NotificationGroup::with('users')->orderBy('name')->get();
         $groups = NotificationGroup::with('users')
-                               ->withCount('users')  // เพิ่มบรรทัดนี้
+                               ->withCount('users')
                                ->orderBy('name')
                                ->get();
-        // dd($groups);
 
-        $users = User::where('is_active',true)->take(10)->get();//$this->ldapService->getAllUsers();
+        $users = User::where('is_active', true)->take(10)->get();
         $channels = ['teams', 'email'];
-        $priorities = ['low', 'normal', 'high', 'urgent'];
+        $priorities = ['low', 'medium', 'normal', 'high', 'urgent'];
 
         // Initialize selectedTemplate as null
         $selectedTemplate = null;
         
-        // Check if template_id is provided in the request (for pre-filling from a template)
+        // Check if template_id is provided in the request
         if ($request->filled('template_id')) {
             $selectedTemplate = NotificationTemplate::find($request->template_id);
         }
 
         $templateVariables = [
-            'name' => '{{name}}',
-            'email' => '{{email}}',
-            'department' => '{{department}}',
-            'date' => '{{date}}',
-            'time' => '{{time}}',
-            'title' => '{{title}}'
+            'recipient_name' => '{{recipient_name}}',
+            'recipient_email' => '{{recipient_email}}',
+            'notification_title' => '{{notification_title}}',
+            'content' => '{{content}}',
+            'additional_info' => '{{additional_info}}',
+            'created_by_name' => '{{created_by_name}}',
+            'notification_created_at' => '{{notification_created_at}}'
         ];
 
         return view('admin.notifications.create', compact(
@@ -157,120 +162,72 @@ class NotificationController extends Controller
     /**
      * Store a newly created notification
      */
-    // public function store(Request $request)
-    // {
-    //     $request->validate([
-    //         'template_id' => 'nullable|exists:notification_templates,id',
-    //         'title' => 'required|string|max:255',
-    //         'content' => 'required|string',
-    //         'channels' => 'required|array|min:1',
-    //         'channels.*' => 'in:teams,email',
-    //         'priority' => 'required|in:low,normal,high,urgent',
-    //         'recipients' => 'required',
-    //         'scheduled_at' => 'nullable|date|after:now',
-    //         'data' => 'nullable|json'
-    //     ]);
-
-    //     try {
-    //         DB::beginTransaction();
-
-    //         // Prepare recipients
-    //         $recipients = $this->prepareRecipients($request->recipients);
-
-    //         $notification = Notification::create([
-    //             'template_id' => $request->template_id,
-    //             'title' => $request->title,
-    //             'content' => $request->content,
-    //             'channels' => $request->channels,
-    //             'priority' => $request->priority,
-    //             'recipients' => $recipients,
-    //             'scheduled_at' => $request->scheduled_at,
-    //             'data' => $request->data ? json_decode($request->data, true) : null,
-    //             'status' => $request->scheduled_at ? 'scheduled' : 'pending',
-    //             'created_by' => auth()->id()
-    //         ]);
-
-    //         // If not scheduled, queue immediately
-    //         if (!$request->scheduled_at) {
-    //             $this->notificationService->processNotification($notification);
-    //         }
-
-    //         DB::commit();
-
-    //         return redirect()->route('admin.notifications.show', $notification)
-    //                        ->with('success', 'Notification created successfully!');
-
-    //     } catch (\Exception $e) {
-    //         DB::rollback();
-    //         return back()->withInput()->withErrors(['error' => 'Failed to create notification: ' . $e->getMessage()]);
-    //     }
-    // }
-    /**
-     * Store a newly created notification
-     */
     public function store(Request $request)
     {
         $request->validate([
             'template_id' => 'nullable|exists:notification_templates,id',
-            'subject' => 'required|string|max:255',                    // ✅ เปลี่ยนจาก title
-            'body_html' => 'nullable|string',                          // ✅ เพิ่ม body_html
-            'body_text' => 'nullable|string',                          // ✅ เพิ่ม body_text
+            'subject' => 'required|string|max:255',
+            'body_html' => 'nullable|string',
+            'body_text' => 'nullable|string',
             'channels' => 'required|array|min:1',
             'channels.*' => 'in:teams,email',
-            'priority' => 'required|in:low,normal,high,urgent',
-            'recipient_type' => 'required|in:manual,groups,all_users', // ✅ เพิ่ม recipient_type
-            'recipients' => 'required_if:recipient_type,manual',       // ✅ ปรับ validation
-            'recipient_groups' => 'nullable|array',                    // ✅ เพิ่ม recipient_groups
+            'priority' => 'required|in:low,medium,normal,high,urgent',
+            'recipient_type' => 'required|in:manual,groups,all_users',
+            'recipients' => 'required_if:recipient_type,manual',
+            'recipient_groups' => 'nullable|array',
             'recipient_groups.*' => 'exists:notification_groups,id',
             'scheduled_at' => 'nullable|date|after:now',
-            'variables' => 'nullable|array'                            // ✅ เปลี่ยนจาก data
+            'variables' => 'nullable|array'
         ]);
 
         try {
             DB::beginTransaction();
 
-            // ✅ Prepare recipients ตาม recipient_type
+            // Prepare recipients
             $recipients = $this->prepareRecipients($request);
 
-            // ✅ Generate UUID
+            // Generate UUID
             $uuid = \Illuminate\Support\Str::uuid();
 
             $notification = Notification::create([
-                'uuid' => $uuid,                                        // ✅ เพิ่ม uuid
+                'uuid' => $uuid,
                 'template_id' => $request->template_id,
-                'subject' => $request->subject,                         // ✅ เปลี่ยนจาก title
-                'body_html' => $request->body_html,                     // ✅ เพิ่มใหม่
-                'body_text' => $request->body_text,                     // ✅ เพิ่มใหม่
+                'subject' => $request->subject,
+                'body_html' => $request->body_html,
+                'body_text' => $request->body_text,
                 'channels' => $request->channels,
                 'priority' => $request->priority,
-                'recipients' => $recipients['recipients'],              // ✅ ปรับโครงสร้าง
-                'recipient_groups' => $recipients['recipient_groups'],  // ✅ เพิ่มใหม่
-                'variables' => $request->variables,                     // ✅ เปลี่ยนจาก data
+                'recipients' => $recipients['recipients'],
+                'recipient_groups' => $recipients['recipient_groups'],
+                'variables' => $request->variables,
                 'scheduled_at' => $request->scheduled_at,
                 'status' => $request->scheduled_at ? 'scheduled' : 'queued',
                 'created_by' => auth()->id()
             ]);
 
             // If not scheduled, queue immediately
-            // if (!$request->scheduled_at) {
-            //     $this->notificationService->processNotification($notification);
-            // }
+            if (!$request->scheduled_at) {
+                $this->notificationService->processNotification($notification);
+            }
 
             DB::commit();
 
-            // return redirect()->route('admin.notifications.show', $notification)
-            //             ->with('success', 'Notification created successfully!');
             return redirect()->route('admin.notifications.show', $notification->uuid)
                ->with('success', 'Notification created successfully!');
 
         } catch (\Exception $e) {
             DB::rollback();
+            Log::error('Notification creation failed', [
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id(),
+                'request_data' => $request->all()
+            ]);
             return back()->withInput()->withErrors(['error' => 'Failed to create notification: ' . $e->getMessage()]);
         }
     }
 
     /**
-     * ✅ ปรับ prepareRecipients ให้ทำงานกับ form ใหม่
+     * Prepare recipients based on type
      */
     private function prepareRecipients($request)
     {
@@ -279,7 +236,6 @@ class NotificationController extends Controller
 
         switch ($request->recipient_type) {
             case 'manual':
-                // Parse recipients from textarea (comma or newline separated)
                 if ($request->recipients) {
                     if (is_array($request->recipients)) {
                         $recipients = $request->recipients;
@@ -299,10 +255,9 @@ class NotificationController extends Controller
                 break;
                 
             case 'all_users':
-                // Get all active users
-                $recipients = \App\Models\User::where('is_active', true)
-                                            ->pluck('email')
-                                            ->toArray();
+                $recipients = User::where('is_active', true)
+                                ->pluck('email')
+                                ->toArray();
                 break;
         }
 
@@ -313,12 +268,21 @@ class NotificationController extends Controller
     }
 
     /**
-     * Display the specified notification with detailed information
+     * Display the specified notification
      */
     public function show($uuid)
     {
         $notification = Notification::where('uuid', $uuid)->firstOrFail();
-        $notification->load(['template', 'group', 'creator', 'logs.user']);
+        $notification->load(['template', 'group', 'creator', 'logs']);
+
+        // Update delivery counters first
+        $notification->updateDeliveryCounters();
+        
+        // Refresh notification to get updated data
+        $notification->refresh();
+
+        // Render content with variables for display
+        $renderedContent = $this->renderNotificationContent($notification);
 
         // Delivery statistics
         $deliveryStats = $notification->logs->groupBy('status')->map->count();
@@ -327,21 +291,24 @@ class NotificationController extends Controller
         $channelStats = $notification->logs->groupBy('channel')->map->count();
         
         // Recent logs (last 50)
-        $recentLogs = $notification->logs()->with('user')
-                                          ->orderBy('created_at', 'desc')
-                                          ->limit(50)
-                                          ->get();
+        $recentLogs = $notification->logs()
+                                  ->orderBy('created_at', 'desc')
+                                  ->limit(50)
+                                  ->get();
 
         // Performance metrics
         $metrics = [
             'total_recipients' => $notification->logs->count(),
             'delivery_rate' => $notification->logs->count() > 0 
-                ? round(($notification->logs->where('status', 'delivered')->count() / $notification->logs->count()) * 100, 2)
+                ? round(($notification->logs->whereIn('status', ['sent', 'delivered'])->count() / $notification->logs->count()) * 100, 2)
                 : 0,
-            'avg_delivery_time' => $notification->logs->where('status', 'delivered')
-                ->where('delivered_at', '!=', null)
+            'avg_delivery_time' => $notification->logs->whereIn('status', ['sent', 'delivered'])
+                ->filter(function($log) {
+                    return $log->delivered_at || $log->sent_at;
+                })
                 ->avg(function($log) {
-                    return $log->delivered_at->diffInSeconds($log->created_at);
+                    $endTime = $log->delivered_at ?? $log->sent_at;
+                    return $endTime ? abs($endTime->diffInSeconds($log->created_at)) : 0;
                 }),
             'failure_rate' => $notification->logs->count() > 0
                 ? round(($notification->logs->where('status', 'failed')->count() / $notification->logs->count()) * 100, 2)
@@ -349,8 +316,451 @@ class NotificationController extends Controller
         ];
 
         return view('admin.notifications.show', compact(
-            'notification', 'deliveryStats', 'channelStats', 'recentLogs', 'metrics'
+            'notification', 'deliveryStats', 'channelStats', 'recentLogs', 'metrics', 'renderedContent'
         ));
+    }
+
+    /**
+     * Render notification content with variables replaced
+     */
+    private function renderNotificationContent($notification)
+    {
+        $variables = $notification->getTemplateVariables();
+        
+        // Get the base content
+        $subject = $notification->subject;
+        $bodyHtml = $notification->body_html;
+        $bodyText = $notification->body_text;
+        
+        // Replace variables in content
+        foreach ($variables as $key => $value) {
+            $placeholder = '{{' . $key . '}}';
+            $subject = str_replace($placeholder, $value, $subject);
+            $bodyHtml = str_replace($placeholder, $value, $bodyHtml);
+            $bodyText = str_replace($placeholder, $value, $bodyText);
+        }
+        
+        return [
+            'subject' => $subject,
+            'body_html' => $bodyHtml,
+            'body_text' => $bodyText,
+            'variables' => $variables
+        ];
+    }
+
+    /**
+     * Resend failed notifications
+     */
+    public function resend($uuid)
+    {
+        $notification = Notification::where('uuid', $uuid)->firstOrFail();
+        
+        try {
+            // Check if notification can be resent
+            if (!in_array($notification->status, ['failed', 'sent'])) {
+                return back()->withErrors(['error' => 'Only failed or completed notifications can be resent.']);
+            }
+
+            // Get failed logs
+            $failedLogs = $notification->logs()->where('status', 'failed')->get();
+            
+            if ($failedLogs->isEmpty()) {
+                return back()->withErrors(['error' => 'No failed deliveries found to resend.']);
+            }
+
+            // Reset failed logs to pending for retry
+            foreach ($failedLogs as $log) {
+                $log->update([
+                    'status' => 'pending',
+                    'retry_count' => 0,
+                    'error_message' => null,
+                    'next_retry_at' => null
+                ]);
+            }
+
+            // Update notification status
+            $notification->update([
+                'status' => 'processing',
+                'failure_reason' => null
+            ]);
+
+            // Re-queue the notification
+            $this->notificationService->queueNotification($notification);
+
+            return back()->with('success', "Resending {$failedLogs->count()} failed notifications.");
+
+        } catch (\Exception $e) {
+            Log::error('Resend failed', [
+                'notification_uuid' => $uuid,
+                'error' => $e->getMessage()
+            ]);
+            return back()->withErrors(['error' => 'Failed to resend notifications: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Resend specific log entry
+     */
+    public function resendLog($uuid, NotificationLog $log)
+    {
+        $notification = Notification::where('uuid', $uuid)->firstOrFail();
+        
+        try {
+            if ($log->notification_id !== $notification->id) {
+                return back()->withErrors(['error' => 'Invalid notification log.']);
+            }
+
+            if ($log->status !== 'failed') {
+                return back()->withErrors(['error' => 'Only failed notifications can be resent.']);
+            }
+
+            // Reset log to pending
+            $log->update([
+                'status' => 'pending',
+                'retry_count' => 0,
+                'error_message' => null,
+                'next_retry_at' => null
+            ]);
+
+            // Queue single notification
+            $delay = $this->notificationService->calculateDelay($notification->priority);
+            $queueName = $this->notificationService->getQueueName($notification->priority);
+            
+            switch ($log->channel) {
+                case 'email':
+                    SendEmailNotification::dispatch($log)
+                        ->delay($delay)
+                        ->onQueue($queueName);
+                    break;
+                    
+                case 'teams':
+                    SendTeamsNotification::dispatch($log)
+                        ->delay($delay)
+                        ->onQueue($queueName);
+                    break;
+            }
+
+            return back()->with('success', 'Notification queued for resending.');
+
+        } catch (\Exception $e) {
+            Log::error('Resend log failed', [
+                'notification_uuid' => $uuid,
+                'log_id' => $log->id,
+                'error' => $e->getMessage()
+            ]);
+            return back()->withErrors(['error' => 'Failed to resend notification: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Cancel a scheduled notification
+     */
+    public function cancel($uuid)
+    {
+        $notification = Notification::where('uuid', $uuid)->firstOrFail();
+        
+        if (!$notification->canBeCancelled()) {
+            return back()->withErrors(['error' => 'This notification cannot be cancelled.']);
+        }
+
+        $notification->cancel();
+
+        return back()->with('success', 'Notification cancelled successfully.');
+    }
+
+    /**
+     * Get notification statistics for real-time updates
+     */
+    public function stats()
+    {
+        $stats = [
+            'total' => Notification::count(),
+            'draft' => Notification::where('status', 'draft')->count(),
+            'scheduled' => Notification::where('status', 'scheduled')->count(),
+            'processing' => Notification::whereIn('status', ['queued', 'processing'])->count(),
+            'sent' => Notification::where('status', 'sent')->count(),
+            'failed' => Notification::where('status', 'failed')->count(),
+        ];
+
+        return response()->json($stats);
+    }
+
+    /**
+     * Handle bulk actions
+     */
+    public function bulkAction(Request $request)
+    {
+        $request->validate([
+            'action' => 'required|in:resend,cancel,export,delete',
+            'notifications' => 'required|array|min:1',
+            'notifications.*' => 'exists:notifications,id'
+        ]);
+
+        try {
+            $notifications = Notification::whereIn('id', $request->notifications)->get();
+            $results = [];
+
+            switch ($request->action) {
+                case 'resend':
+                    $results = $this->bulkResend($notifications);
+                    break;
+                case 'cancel':
+                    $results = $this->bulkCancel($notifications);
+                    break;
+                case 'delete':
+                    $results = $this->bulkDelete($notifications);
+                    break;
+                case 'export':
+                    return $this->bulkExport($notifications);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $results['message'],
+                'details' => $results['details'] ?? null
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Bulk action failed', [
+                'action' => $request->action,
+                'notifications' => $request->notifications,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Bulk action failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk resend notifications
+     */
+    private function bulkResend($notifications)
+    {
+        $resent = 0;
+        $failed = 0;
+
+        foreach ($notifications as $notification) {
+            try {
+                $failedLogs = $notification->logs()->where('status', 'failed')->get();
+                
+                if ($failedLogs->count() > 0) {
+                    foreach ($failedLogs as $log) {
+                        $log->update([
+                            'status' => 'pending',
+                            'retry_count' => 0,
+                            'error_message' => null,
+                            'next_retry_at' => null
+                        ]);
+                    }
+                    
+                    $notification->update(['status' => 'processing']);
+                    $this->notificationService->queueNotification($notification);
+                    $resent++;
+                }
+            } catch (\Exception $e) {
+                $failed++;
+                Log::error('Bulk resend failed for notification', [
+                    'notification_id' => $notification->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return [
+            'message' => "Resent {$resent} notifications" . ($failed > 0 ? ", {$failed} failed" : ""),
+            'details' => ['resent' => $resent, 'failed' => $failed]
+        ];
+    }
+
+    /**
+     * Bulk cancel notifications
+     */
+    private function bulkCancel($notifications)
+    {
+        $cancelled = 0;
+        $failed = 0;
+
+        foreach ($notifications as $notification) {
+            try {
+                if ($notification->canBeCancelled()) {
+                    $notification->cancel();
+                    $cancelled++;
+                }
+            } catch (\Exception $e) {
+                $failed++;
+                Log::error('Bulk cancel failed for notification', [
+                    'notification_id' => $notification->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return [
+            'message' => "Cancelled {$cancelled} notifications" . ($failed > 0 ? ", {$failed} failed" : ""),
+            'details' => ['cancelled' => $cancelled, 'failed' => $failed]
+        ];
+    }
+
+    /**
+     * Bulk delete notifications
+     */
+    private function bulkDelete($notifications)
+    {
+        $deleted = 0;
+        $failed = 0;
+
+        foreach ($notifications as $notification) {
+            try {
+                if (in_array($notification->status, ['draft', 'failed', 'cancelled'])) {
+                    $notification->logs()->delete();
+                    $notification->delete();
+                    $deleted++;
+                }
+            } catch (\Exception $e) {
+                $failed++;
+                Log::error('Bulk delete failed for notification', [
+                    'notification_id' => $notification->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return [
+            'message' => "Deleted {$deleted} notifications" . ($failed > 0 ? ", {$failed} failed" : ""),
+            'details' => ['deleted' => $deleted, 'failed' => $failed]
+        ];
+    }
+
+    /**
+     * Export notifications
+     */
+    public function export(Request $request)
+    {
+        try {
+            $query = Notification::with(['template', 'creator', 'logs']);
+
+            // Apply filters if provided
+            if ($request->filled('ids')) {
+                $ids = explode(',', $request->ids);
+                $query->whereIn('id', $ids);
+            } else {
+                // Apply same filters as index
+                if ($request->filled('status')) {
+                    $query->where('status', $request->status);
+                }
+                // Add other filters...
+            }
+
+            $notifications = $query->get();
+
+            // Generate CSV
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="notifications_' . date('Y-m-d_H-i-s') . '.csv"',
+            ];
+
+            $callback = function() use ($notifications) {
+                $file = fopen('php://output', 'w');
+                
+                // Headers
+                fputcsv($file, [
+                    'UUID', 'Subject', 'Status', 'Priority', 'Channels', 
+                    'Recipients Count', 'Created At', 'Created By', 'Template'
+                ]);
+
+                // Data
+                foreach ($notifications as $notification) {
+                    fputcsv($file, [
+                        $notification->uuid,
+                        $notification->subject,
+                        $notification->status,
+                        $notification->priority,
+                        implode(', ', $notification->channels),
+                        $notification->logs->count(),
+                        $notification->created_at->format('Y-m-d H:i:s'),
+                        $notification->creator->display_name ?? 'System',
+                        $notification->template->name ?? 'N/A'
+                    ]);
+                }
+
+                fclose($file);
+            };
+
+            return response()->stream($callback, 200, $headers);
+
+        } catch (\Exception $e) {
+            Log::error('Export failed', [
+                'error' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
+
+            return back()->withErrors(['error' => 'Export failed: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Display detailed logs for a notification
+     */
+    public function logs($uuid, Request $request)
+    {
+        $notification = Notification::where('uuid', $uuid)->firstOrFail();
+        $query = $notification->logs();
+
+        // Apply filters
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('channel')) {
+            $query->where('channel', $request->channel);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('recipient_email', 'LIKE', "%{$search}%")
+                  ->orWhere('recipient_name', 'LIKE', "%{$search}%")
+                  ->orWhere('error_message', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $logs = $query->orderBy('created_at', 'desc')->paginate(50)->appends($request->all());
+
+        // Summary statistics
+        $summary = [
+            'total' => $notification->logs->count(),
+            'delivered' => $notification->logs->whereIn('status', ['sent', 'delivered'])->count(),
+            'failed' => $notification->logs->where('status', 'failed')->count(),
+            'pending' => $notification->logs->where('status', 'pending')->count(),
+        ];
+
+        return view('admin.notifications.logs', compact('notification', 'logs', 'summary'));
+    }
+
+    /**
+     * Preview notification with rendered variables
+     */
+    public function preview($uuid, Request $request)
+    {
+        $notification = Notification::where('uuid', $uuid)->firstOrFail();
+        
+        // Override variables if provided
+        if ($request->has('variables')) {
+            $notification->variables = array_merge(
+                $notification->variables ?? [], 
+                $request->variables
+            );
+        }
+        
+        $renderedContent = $this->renderNotificationContent($notification);
+        
+        return response()->json([
+            'success' => true,
+            'content' => $renderedContent
+        ]);
     }
 
     /**
@@ -391,246 +801,4 @@ class NotificationController extends Controller
             ], 500);
         }
     }
-
-    /**
-     * Send test notification
-     */
-    public function sendTest(Request $request)
-    {
-        $request->validate([
-            'test_email' => 'required|email',
-            'channels' => 'required|array|min:1',
-            'channels.*' => 'in:email,teams',
-            'subject' => 'required|string|max:255',
-            'message' => 'required|string',
-            'priority' => 'required|in:low,normal,high,urgent'
-        ]);
-
-        try {
-            // Create a test notification
-            $testData = [
-                'subject' => '[TEST] ' . $request->subject,
-                'body_html' => $request->message,
-                'body_text' => strip_tags($request->message),
-                'channels' => $request->channels,
-                'recipients' => [$request->test_email],
-                'priority' => $request->priority,
-                'status' => 'draft'
-            ];
-
-            $notification = $this->notificationService->createNotification($testData);
-            $this->notificationService->scheduleNotification($notification);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Test notification sent successfully!'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to send test notification: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Save notification as draft
-     */
-    public function saveDraft(Request $request)
-    {
-        try {
-            $data = $request->all();
-            $data['status'] = 'draft';
-            
-            $notification = $this->notificationService->createNotification($data);
-            
-            return redirect()->route('notifications.edit', $notification)
-                        ->with('success', 'Draft saved successfully!');
-        } catch (\Exception $e) {
-            return back()->withInput()
-                    ->withErrors(['error' => 'Failed to save draft: ' . $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Display detailed logs for a notification
-     */
-    public function logs(Notification $notification, Request $request)
-    {
-        $query = $notification->logs()->with('user');
-
-        // Filter by status
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        // Filter by channel
-        if ($request->filled('channel')) {
-            $query->where('channel', $request->channel);
-        }
-
-        // Filter by date range
-        if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-
-        if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
-
-        // Search in user info or error message
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('recipient_email', 'LIKE', "%{$search}%")
-                  ->orWhere('error_message', 'LIKE', "%{$search}%")
-                  ->orWhereHas('user', function($uq) use ($search) {
-                      $uq->where('name', 'LIKE', "%{$search}%");
-                  });
-            });
-        }
-
-        $logs = $query->orderBy('created_at', 'desc')->paginate(50)->appends($request->all());
-
-        // Summary statistics
-        $summary = [
-            'total' => $notification->logs->count(),
-            'delivered' => $notification->logs->where('status', 'delivered')->count(),
-            'failed' => $notification->logs->where('status', 'failed')->count(),
-            'pending' => $notification->logs->where('status', 'pending')->count(),
-        ];
-
-        return view('admin.notifications.logs', compact('notification', 'logs', 'summary'));
-    }
-
-    /**
-     * Display analytics dashboard
-     */
-    public function analytics(Request $request)
-    {
-        $dateFrom = $request->get('date_from', now()->subDays(30)->format('Y-m-d'));
-        $dateTo = $request->get('date_to', now()->format('Y-m-d'));
-
-        // Daily notification counts
-        $dailyStats = Notification::selectRaw('DATE(created_at) as date, COUNT(*) as count')
-                                 ->whereBetween('created_at', [$dateFrom, $dateTo])
-                                 ->groupBy('date')
-                                 ->orderBy('date')
-                                 ->get();
-
-        // Status distribution
-        $statusStats = Notification::selectRaw('status, COUNT(*) as count')
-                                  ->whereBetween('created_at', [$dateFrom, $dateTo])
-                                  ->groupBy('status')
-                                  ->get();
-
-        // Channel performance
-        $channelStats = NotificationLog::selectRaw('channel, status, COUNT(*) as count')
-                                      ->whereHas('notification', function($q) use ($dateFrom, $dateTo) {
-                                          $q->whereBetween('created_at', [$dateFrom, $dateTo]);
-                                      })
-                                      ->groupBy('channel', 'status')
-                                      ->get();
-
-        // Top templates
-        $topTemplates = Notification::with('template')
-                                   ->selectRaw('template_id, COUNT(*) as usage_count')
-                                   ->whereBetween('created_at', [$dateFrom, $dateTo])
-                                   ->whereNotNull('template_id')
-                                   ->groupBy('template_id')
-                                   ->orderBy('usage_count', 'desc')
-                                   ->limit(10)
-                                   ->get();
-
-        // Peak hours
-        $hourlyStats = Notification::selectRaw('HOUR(created_at) as hour, COUNT(*) as count')
-                                  ->whereBetween('created_at', [$dateFrom, $dateTo])
-                                  ->groupBy('hour')
-                                  ->orderBy('hour')
-                                  ->get();
-
-        // Delivery performance
-        $deliveryPerformance = NotificationLog::selectRaw('
-                DATE(created_at) as date,
-                AVG(CASE WHEN status = "delivered" AND delivered_at IS NOT NULL 
-                    THEN TIMESTAMPDIFF(SECOND, created_at, delivered_at) END) as avg_delivery_time,
-                (COUNT(CASE WHEN status = "delivered" THEN 1 END) / COUNT(*)) * 100 as delivery_rate
-            ')
-            ->whereHas('notification', function($q) use ($dateFrom, $dateTo) {
-                $q->whereBetween('created_at', [$dateFrom, $dateTo]);
-            })
-            ->groupBy('date')
-            ->orderBy('date')
-            ->get();
-
-        return view('admin.notifications.analytics', compact(
-            'dailyStats', 'statusStats', 'channelStats', 'topTemplates', 
-            'hourlyStats', 'deliveryPerformance', 'dateFrom', 'dateTo'
-        ));
-    }
-
-    /**
-     * Cancel a scheduled notification
-     */
-    public function cancel(Notification $notification)
-    {
-        if ($notification->status !== 'scheduled') {
-            return back()->withErrors(['error' => 'Only scheduled notifications can be cancelled.']);
-        }
-
-        $notification->update(['status' => 'cancelled']);
-
-        return back()->with('success', 'Notification cancelled successfully.');
-    }
-
-    /**
-     * Retry a failed notification
-     */
-    public function retry(Notification $notification)
-    {
-        if ($notification->status !== 'failed') {
-            return back()->withErrors(['error' => 'Only failed notifications can be retried.']);
-        }
-
-        try {
-            // $this->notificationService->processNotification($notification);
-            return back()->with('success', 'Notification retry initiated.');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Failed to retry notification: ' . $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Prepare recipients array from form input
-     */
-    // private function prepareRecipients($recipients)
-    // {
-    //     if (is_string($recipients)) {
-    //         $recipients = json_decode($recipients, true);
-    //     }
-
-    //     $result = [
-    //         'users' => [],
-    //         'groups' => [],
-    //         'emails' => []
-    //     ];
-
-    //     foreach ($recipients as $recipient) {
-    //         if (isset($recipient['type'])) {
-    //             switch ($recipient['type']) {
-    //                 case 'user':
-    //                     $result['users'][] = $recipient['id'];
-    //                     break;
-    //                 case 'group':
-    //                     $result['groups'][] = $recipient['id'];
-    //                     break;
-    //                 case 'email':
-    //                     $result['emails'][] = $recipient['email'];
-    //                     break;
-    //             }
-    //         }
-    //     }
-
-    //     return $result;
-    // }
 }

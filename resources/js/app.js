@@ -1,12 +1,15 @@
-// Import CSS
+import './bootstrap';
 import '../css/app.css';
 
-// Import Bootstrap JS
-import 'bootstrap/dist/js/bootstrap.bundle.min.js';
+// Import Bootstrap JavaScript
+import * as bootstrap from 'bootstrap';
 
 // Import jQuery (required for DataTables and Select2)
 import $ from 'jquery';
 window.$ = window.jQuery = $;
+
+// Make Bootstrap available globally
+window.bootstrap = bootstrap;
 
 // Import DataTables
 import 'datatables.net-bs5';
@@ -135,4 +138,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     console.log('🚀 App initialized successfully!');
+    console.log('✅ Bootstrap:', window.bootstrap ? 'Available' : 'Not available');
+    console.log('✅ jQuery:', window.$ ? 'Available' : 'Not available');
+    console.log('✅ Swal:', window.Swal ? 'Available' : 'Not available');
 });

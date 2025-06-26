@@ -22,7 +22,7 @@ class DashboardController extends Controller
                 'total_users' => User::count(),
                 'total_notifications' => Notification::count(),
                 'notifications_today' => Notification::whereDate('created_at', today())->count(),
-                'active_api_keys' => ApiKey::where('active', true)->count(),
+                'active_api_keys' => ApiKey::where('is_active', true)->count(),
             ];
 
             // Recent activities - CORRECT way

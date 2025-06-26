@@ -185,11 +185,11 @@ class NotificationLog extends Model
     public function getDeliveryTimeAttribute(): ?int
     {
         if ($this->delivered_at && $this->sent_at) {
-            return $this->delivered_at->diffInSeconds($this->sent_at);
+            return abs($this->delivered_at->diffInSeconds($this->sent_at));
         }
         
         if ($this->delivered_at && $this->created_at) {
-            return $this->delivered_at->diffInSeconds($this->created_at);
+            return abs($this->delivered_at->diffInSeconds($this->created_at));
         }
 
         return null;

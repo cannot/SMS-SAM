@@ -229,7 +229,7 @@
                             </td>
                             <td>
                                 <div class="btn-group" role="group">
-                                    @can('manage-groups')
+                                    @can('view-notification-groups')
                                     <a href="{{ route('groups.show', $group) }}" 
                                        class="btn btn-sm btn-outline-primary"
                                        title="ดูรายละเอียด">
@@ -237,7 +237,7 @@
                                     </a>
                                     @endcan
                                     
-                                    @can('edit-groups')
+                                    @can('edit-notification-groups')
                                     <a href="{{ route('groups.edit', $group) }}" 
                                        class="btn btn-sm btn-outline-warning"
                                        title="แก้ไข">
@@ -293,7 +293,7 @@
                         เริ่มต้นสร้างกลุ่มแรกของคุณ
                     @endif
                 </p>
-                @can('create-groups')
+                @can('create-notification-groups')
                 <a href="{{ route('groups.create') }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-1"></i>สร้างกลุ่มใหม่
                 </a>

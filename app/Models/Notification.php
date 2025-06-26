@@ -14,7 +14,7 @@ class Notification extends Model
     protected $fillable = [
         'uuid',
         'template_id',
-        'notification_group_id', // เพิ่มใหม่
+        'notification_group_id',
         'subject',
         'body_html',
         'body_text',
@@ -41,55 +41,24 @@ class Notification extends Model
         'variables' => 'array',
         'scheduled_at' => 'datetime',
         'sent_at' => 'datetime',
+        'total_recipients' => 'integer',
+        'delivered_count' => 'integer',
+        'failed_count' => 'integer',
     ];
 
-    public function getRecipientUsers()
-    {
-        $users = collect();
-        
-        // Get users from recipients array (emails)
-        if (!empty($this->recipients)) {
-            $users = $users->merge(
-                \App\Models\User::whereIn('email', $this->recipients)->get()
-            );
-        }
-        
-        // Get users from recipient_groups
-        if (!empty($this->recipient_groups)) {
-            foreach ($this->recipient_groups as $groupId) {
-                $group = \App\Models\NotificationGroup::find($groupId);
-                if ($group) {
-                    $users = $users->merge($group->users);
-                }
-            }
-        }
-        
-        return $users->unique('id');
-    }
+    protected $attributes = [
+        'status' => 'draft',
+        'priority' => 'medium',
+        'delivered_count' => 0,
+        'failed_count' => 0,
+    ];
 
-    public function updateDeliveryStats()
-    {
-        $delivered = $this->logs()->where('status', 'sent')->count();
-        $failed = $this->logs()->where('status', 'failed')->count();
-        
-        $this->update([
-            'delivered_count' => $delivered,
-            'failed_count' => $failed
-        ]);
-    }
-
-    // ========== RELATIONSHIPS ==========
+    // ===============================================
+    // RELATIONSHIPS
+    // ===============================================
 
     /**
-     * Notification group
-     */
-    public function group(): BelongsTo
-    {
-        return $this->belongsTo(NotificationGroup::class, 'notification_group_id');
-    }
-
-    /**
-     * Template used
+     * Get the template that owns the notification
      */
     public function template(): BelongsTo
     {
@@ -97,7 +66,23 @@ class Notification extends Model
     }
 
     /**
-     * User who created this notification
+     * Get the notification group that owns the notification
+     */
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(NotificationGroup::class, 'notification_group_id');
+    }
+
+    /**
+     * Get the API key that was used to create this notification
+     */
+    public function apiKey(): BelongsTo
+    {
+        return $this->belongsTo(ApiKey::class, 'api_key_id');
+    }
+
+    /**
+     * Get the user who created this notification
      */
     public function creator(): BelongsTo
     {
@@ -105,37 +90,31 @@ class Notification extends Model
     }
 
     /**
-     * Notification logs
+     * Get the notification logs for this notification
      */
     public function logs(): HasMany
     {
         return $this->hasMany(NotificationLog::class);
     }
 
-    /**
-     * API Key used (if sent via API)
-     */
-    public function apiKey(): BelongsTo
-    {
-        return $this->belongsTo(ApiKey::class, 'api_key_id', 'id');
-    }
-
-    // ========== SCOPES ==========
+    // ===============================================
+    // SCOPES
+    // ===============================================
 
     /**
-     * Scope for sent notifications
+     * Scope for notifications with specific status
      */
-    public function scopeSent($query)
+    public function scopeStatus($query, $status)
     {
-        return $query->where('status', 'sent');
+        return $query->where('status', $status);
     }
 
     /**
-     * Scope for failed notifications
+     * Scope for notifications with specific priority
      */
-    public function scopeFailed($query)
+    public function scopePriority($query, $priority)
     {
-        return $query->where('status', 'failed');
+        return $query->where('priority', $priority);
     }
 
     /**
@@ -143,152 +122,285 @@ class Notification extends Model
      */
     public function scopeScheduled($query)
     {
-        return $query->where('status', 'scheduled');
+        return $query->where('status', 'scheduled')
+                     ->whereNotNull('scheduled_at');
     }
 
     /**
-     * Scope for processing notifications
+     * Scope for notifications ready to be sent
      */
-    public function scopeProcessing($query)
+    public function scopeReadyToSend($query)
     {
-        return $query->where('status', 'processing');
+        return $query->where('status', 'scheduled')
+                     ->where('scheduled_at', '<=', now());
     }
 
-    // ========== ACCESSORS & MUTATORS ==========
-
     /**
-     * Get success rate
+     * Scope for notifications by channel
      */
-    public function getSuccessRateAttribute(): float
+    public function scopeByChannel($query, $channel)
     {
-        if ($this->total_recipients == 0) {
-            return 0;
-        }
-        
-        return round(($this->delivered_count / $this->total_recipients) * 100, 2);
+        return $query->whereJsonContains('channels', $channel);
     }
 
     /**
-     * Get failure rate
+     * Scope for notifications created in date range
      */
-    public function getFailureRateAttribute(): float
+    public function scopeDateRange($query, $from, $to)
     {
-        if ($this->total_recipients == 0) {
-            return 0;
-        }
-        
-        return round(($this->failed_count / $this->total_recipients) * 100, 2);
+        return $query->whereBetween('created_at', [$from, $to]);
     }
 
+    // ===============================================
+    // METHODS
+    // ===============================================
+
     /**
-     * Check if notification is sent
+     * Check if notification is scheduled for future delivery
      */
-    public function getIsSentAttribute(): bool
+    public function isScheduled(): bool
     {
-        return $this->status === 'sent';
+        return $this->scheduled_at !== null && $this->scheduled_at->isFuture();
     }
 
     /**
-     * Check if notification failed
+     * Check if notification is overdue (scheduled but past due)
      */
-    public function getIsFailedAttribute(): bool
+    public function isOverdue(): bool
+    {
+        return $this->status === 'scheduled' && 
+               $this->scheduled_at !== null && 
+               $this->scheduled_at->isPast();
+    }
+
+    /**
+     * Check if notification can be cancelled
+     */
+    public function canBeCancelled(): bool
+    {
+        return in_array($this->status, ['draft', 'queued', 'scheduled']);
+    }
+
+    /**
+     * Check if notification can be retried
+     */
+    public function canBeRetried(): bool
     {
         return $this->status === 'failed';
     }
 
     /**
-     * Check if notification is scheduled
+     * Get all recipient users from recipients and recipient_groups
      */
-    public function getIsScheduledAttribute(): bool
+    public function getRecipientUsers()
     {
-        return $this->status === 'scheduled';
+        $users = collect();
+        
+        // Get users from recipients array (emails)
+        if (!empty($this->recipients)) {
+            $users = $users->merge(
+                User::whereIn('email', $this->recipients)->get()
+            );
+        }
+        
+        // Get users from recipient_groups
+        if (!empty($this->recipient_groups)) {
+            foreach ($this->recipient_groups as $groupId) {
+                $group = NotificationGroup::find($groupId);
+                if ($group) {
+                    $users = $users->merge($group->users);
+                }
+            }
+        }
+        
+        // Remove duplicates based on email
+        return $users->unique('email');
     }
 
     /**
-     * Check if notification is processing
+     * Get delivery statistics
      */
-    public function getIsProcessingAttribute(): bool
+    public function getDeliveryStats(): array
     {
-        return in_array($this->status, ['queued', 'processing']);
+        $total = $this->logs->count();
+        $delivered = $this->logs->where('status', 'delivered')->count();
+        $failed = $this->logs->where('status', 'failed')->count();
+        $pending = $this->logs->where('status', 'pending')->count();
+
+        return [
+            'total' => $total,
+            'delivered' => $delivered,
+            'failed' => $failed,
+            'pending' => $pending,
+            'delivery_rate' => $total > 0 ? round(($delivered / $total) * 100, 2) : 0,
+            'failure_rate' => $total > 0 ? round(($failed / $total) * 100, 2) : 0,
+        ];
     }
 
     /**
-     * Get status badge class
+     * Get channel statistics
      */
-    public function getStatusBadgeClassAttribute(): string
+    public function getChannelStats(): array
     {
-        return match($this->status) {
-            'sent' => 'bg-success',
-            'failed' => 'bg-danger',
-            'scheduled' => 'bg-warning',
-            'processing', 'queued' => 'bg-info',
-            'cancelled' => 'bg-secondary',
-            default => 'bg-light text-dark'
-        };
+        return $this->logs->groupBy('channel')->map(function ($logs, $channel) {
+            $total = $logs->count();
+            $delivered = $logs->where('status', 'delivered')->count();
+            $failed = $logs->where('status', 'failed')->count();
+
+            return [
+                'channel' => $channel,
+                'total' => $total,
+                'delivered' => $delivered,
+                'failed' => $failed,
+                'delivery_rate' => $total > 0 ? round(($delivered / $total) * 100, 2) : 0,
+            ];
+        })->toArray();
     }
 
     /**
-     * Get status text in Thai
+     * Get priority color for display
      */
-    public function getStatusTextAttribute(): string
+    public function getPriorityColor(): string
     {
-        return match($this->status) {
-            'draft' => 'ร่าง',
-            'scheduled' => 'กำหนดการ',
-            'queued' => 'อยู่ในคิว',
-            'processing' => 'กำลังส่ง',
-            'sent' => 'ส่งแล้ว',
-            'failed' => 'ล้มเหลว',
-            'cancelled' => 'ยกเลิก',
-            default => $this->status
-        };
+        switch ($this->priority) {
+            case 'low':
+                return 'success';
+            case 'medium':
+                return 'warning';
+            case 'normal':
+                return 'info';
+            case 'high':
+                return 'orange';
+            case 'urgent':
+                return 'danger';
+            default:
+                return 'secondary';
+        }
     }
 
     /**
-     * Get priority badge class
+     * Get status color for display
      */
-    public function getPriorityBadgeClassAttribute(): string
+    public function getStatusColor(): string
     {
-        return match($this->priority) {
-            'urgent' => 'bg-danger',
-            'high' => 'bg-warning',
-            'normal' => 'bg-primary',
-            'low' => 'bg-secondary',
-            default => 'bg-light text-dark'
-        };
+        switch ($this->status) {
+            case 'draft':
+                return 'secondary';
+            case 'queued':
+                return 'warning';
+            case 'scheduled':
+                return 'info';
+            case 'processing':
+                return 'primary';
+            case 'sent':
+                return 'success';
+            case 'failed':
+                return 'danger';
+            case 'cancelled':
+                return 'dark';
+            default:
+                return 'secondary';
+        }
     }
 
     /**
-     * Get priority text in Thai
+     * Get formatted status for display
      */
-    public function getPriorityTextAttribute(): string
+    public function getStatusText(): string
     {
-        return match($this->priority) {
-            'urgent' => 'เร่งด่วน',
-            'high' => 'สูง',
-            'normal' => 'ปกติ',
-            'low' => 'ต่ำ',
-            default => $this->priority
-        };
+        switch ($this->status) {
+            case 'draft':
+                return 'Draft';
+            case 'queued':
+                return 'Queued';
+            case 'scheduled':
+                return 'Scheduled';
+            case 'processing':
+                return 'Processing';
+            case 'sent':
+                return 'Sent';
+            case 'failed':
+                return 'Failed';
+            case 'cancelled':
+                return 'Cancelled';
+            default:
+                return ucfirst($this->status);
+        }
     }
 
-    // ========== HELPER METHODS ==========
+    /**
+     * Get formatted priority for display
+     */
+    public function getPriorityText(): string
+    {
+        return ucfirst($this->priority);
+    }
 
     /**
-     * Mark as sent
+     * Get estimated delivery time based on priority
      */
-    public function markAsSent(int $deliveredCount = null, int $failedCount = null): void
+    public function getEstimatedDeliveryTime(): string
     {
+        if ($this->isScheduled()) {
+            return $this->scheduled_at->format('Y-m-d H:i:s');
+        }
+
+        switch ($this->priority) {
+            case 'urgent':
+                return 'Immediate';
+            case 'high':
+                return '5 seconds';
+            case 'medium':
+                return '15 seconds';
+            case 'normal':
+                return '30 seconds';
+            case 'low':
+                return '1 minute';
+            default:
+                return '30 seconds';
+        }
+    }
+
+    /**
+     * Update delivery counters
+     */
+    public function updateDeliveryCounters(): void
+    {
+        $stats = $this->getDeliveryStats();
+        
         $this->update([
-            'status' => 'sent',
-            'sent_at' => now(),
-            'delivered_count' => $deliveredCount ?? $this->delivered_count,
-            'failed_count' => $failedCount ?? $this->failed_count,
+            'delivered_count' => $stats['delivered'],
+            'failed_count' => $stats['failed'],
         ]);
+
+        // Update sent_at if all notifications are delivered
+        if ($stats['pending'] === 0 && $stats['total'] > 0 && !$this->sent_at) {
+            $this->update([
+                'status' => $stats['failed'] > 0 ? 'failed' : 'sent',
+                'sent_at' => now(),
+            ]);
+        }
     }
 
     /**
-     * Mark as failed
+     * Cancel the notification
+     */
+    public function cancel(): bool
+    {
+        if (!$this->canBeCancelled()) {
+            return false;
+        }
+
+        $this->update(['status' => 'cancelled']);
+        
+        // Cancel pending logs
+        $this->logs()->where('status', 'pending')->update(['status' => 'cancelled']);
+
+        return true;
+    }
+
+    /**
+     * Mark notification as failed with reason
      */
     public function markAsFailed(string $reason = null): void
     {
@@ -299,29 +411,68 @@ class Notification extends Model
     }
 
     /**
-     * Mark as processing
+     * Get template variables with defaults
      */
-    public function markAsProcessing(): void
+    public function getTemplateVariables(): array
     {
-        $this->update([
-            'status' => 'processing',
-        ]);
+        $variables = $this->variables ?? [];
+        
+        // Add system variables
+        $variables['notification_id'] = $this->uuid;
+        $variables['notification_title'] = $this->subject;
+        $variables['notification_subject'] = $this->subject;
+        $variables['notification_priority'] = $this->getPriorityText();
+        $variables['notification_created_at'] = $this->created_at->format('Y-m-d H:i:s');
+        $variables['content'] = $this->body_text ?? strip_tags($this->body_html ?? '');
+        
+        // Add recipient variables for individual rendering
+        $variables['recipient_name'] = $variables['recipient_name'] ?? 'Dear User';
+        $variables['recipient_email'] = $variables['recipient_email'] ?? '';
+        
+        if ($this->creator) {
+            $variables['created_by_name'] = $this->creator->display_name ?? $this->creator->username;
+            $variables['created_by_email'] = $this->creator->email;
+        }
+
+        // Add additional system info
+        $variables['additional_info'] = $variables['additional_info'] ?? 'No additional information provided.';
+        
+        return $variables;
+    }
+
+    // ===============================================
+    // MUTATORS & ACCESSORS
+    // ===============================================
+
+    /**
+     * Set channels attribute - ensure it's always an array
+     */
+    public function setChannelsAttribute($value)
+    {
+        $this->attributes['channels'] = json_encode(is_array($value) ? $value : [$value]);
     }
 
     /**
-     * Get channel names in Thai
+     * Set recipients attribute - ensure it's always an array
      */
-    public function getChannelNamesAttribute(): array
+    public function setRecipientsAttribute($value)
     {
-        $channelMap = [
-            'email' => 'อีเมล',
-            'teams' => 'Microsoft Teams',
-            'sms' => 'SMS',
-            'line' => 'LINE',
-        ];
+        $this->attributes['recipients'] = json_encode(is_array($value) ? $value : []);
+    }
 
-        return array_map(function($channel) use ($channelMap) {
-            return $channelMap[$channel] ?? $channel;
-        }, $this->channels ?? []);
+    /**
+     * Set recipient_groups attribute - ensure it's always an array
+     */
+    public function setRecipientGroupsAttribute($value)
+    {
+        $this->attributes['recipient_groups'] = json_encode(is_array($value) ? $value : []);
+    }
+
+    /**
+     * Set variables attribute - ensure it's always an array
+     */
+    public function setVariablesAttribute($value)
+    {
+        $this->attributes['variables'] = json_encode(is_array($value) ? $value : []);
     }
 }

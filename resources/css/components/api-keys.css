@@ -1,0 +1,46 @@
+.api-key-card {
+    transition: all 0.3s ease;
+}
+
+.api-key-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.code-block {
+    background: #2d3748;
+    color: #e2e8f0;
+    border-radius: 0.5rem;
+    position: relative;
+}
+
+.copy-button {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.code-block:hover .copy-button {
+    opacity: 1;
+}
+
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+.usage-chart {
+    min-height: 200px;
+}
+
+@media (max-width: 768px) {
+    .api-key-tabs .nav-link {
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .code-block pre {
+        font-size: 0.75rem;
+    }
+}
