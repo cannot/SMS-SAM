@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\ApiKeyController;
 use App\Http\Controllers\Admin\NotificationController as AdminNotificationController;
+use App\Http\Controllers\Admin\RabbitMQController;
+
 use App\Http\Controllers\User\NotificationController as UserNotificationController;
 use App\Http\Controllers\Web\ActivityLogController;
 // use App\Http\Controllers\Web\NotificationController;
@@ -14,7 +16,9 @@ use App\Http\Controllers\Web\ReportController;
 use App\Http\Controllers\Web\RoleController;
 use App\Http\Controllers\Web\UserController;
 use App\Http\Controllers\Web\UserPreferenceController;
+
 use App\Http\Controllers\Api\V1\UserController as ApiUserController;
+
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -71,6 +75,8 @@ Route::middleware(['auth', 'web'])->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard/data', [DashboardController::class, 'getDashboardData'])->name('dashboard.data');
+    Route::get('/dashboard/widgets/{widget}', [DashboardController::class, 'getWidget'])->name('dashboard.widget');
 
     // Route::prefix('user')->name('api.user.')->group(function () {
     //     Route::get('/stats', [ApiUserController::class, 'getUserStats'])->name('stats');
@@ -609,6 +615,15 @@ Route::middleware(['auth', 'web'])->group(function () {
 
         });
 
+        Route::prefix('rabbitmq')->name('rabbitmq.')->group(function () {
+            Route::get('/', [RabbitMQController::class, 'index'])->name('index');
+            Route::get('/stats', [RabbitMQController::class, 'getStats'])->name('stats');
+            Route::post('/test-connection', [RabbitMQController::class, 'testConnection'])->name('test-connection');
+            Route::get('/laravel-queue-status', [RabbitMQController::class, 'getLaravelQueueStatus'])->name('laravel-queue-status');
+            Route::post('/dispatch-test-job', [RabbitMQController::class, 'dispatchTestJob'])->name('dispatch-test-job');
+            Route::post('/purge-queue', [RabbitMQController::class, 'purgeQueue'])->name('purge-queue');
+        });
+
         // System Logs
         Route::get('/system-logs', function () {
             return "System logs - Coming soon!";
@@ -800,3 +815,67 @@ Route::post('/teams-send-test', function(Request $request) {
         ], 500);
     }
 });
+
+// Service Worker และ PWA Routes
+Route::get('/sw.js', function () {
+    return response()->file(public_path('sw.js'))
+        ->header('Content-Type', 'application/javascript')
+        ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        ->header('Pragma', 'no-cache')
+        ->header('Expires', '0');
+})->name('sw');
+
+Route::get('/manifest.json', function () {
+    return response()->file(public_path('manifest.json'))
+        ->header('Content-Type', 'application/json')
+        ->header('Cache-Control', 'public, max-age=3600');
+})->name('manifest');
+
+Route::get('/offline.html', function () {
+    return response()->file(public_path('offline.html'))
+        ->header('Content-Type', 'text/html')
+        ->header('Cache-Control', 'public, max-age=3600');
+})->name('offline');
+
+// PWA Icons (ถ้ามี)
+Route::get('/icon-{size}.png', function ($size) {
+    $iconPath = public_path("icon-{$size}.png");
+    
+    if (file_exists($iconPath)) {
+        return response()->file($iconPath)
+            ->header('Content-Type', 'image/png')
+            ->header('Cache-Control', 'public, max-age=31536000'); // 1 year
+    }
+    
+    // สร้าง placeholder icon
+    $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='{$size}' height='{$size}' viewBox='0 0 {$size} {$size}'>
+                <rect width='{$size}' height='{$size}' fill='#256B36'/>
+                <text x='" . ($size/2) . "' y='" . ($size/2 + $size/8) . "' text-anchor='middle' fill='white' font-family='Arial' font-size='" . ($size/3) . "' font-weight='bold'>S</text>
+            </svg>";
+    
+    return response($svg, 200)
+        ->header('Content-Type', 'image/svg+xml')
+        ->header('Cache-Control', 'public, max-age=3600');
+})->where('size', '[0-9]+')->name('pwa.icon');
+
+// Debug routes สำหรับ development
+if (app()->environment('local')) {
+    Route::get('/pwa-debug', function () {
+        return view('debug.pwa');
+    })->name('pwa.debug');
+    
+    Route::get('/sw-test', function () {
+        return response()->view('debug.sw-test')
+            ->header('Cache-Control', 'no-cache');
+    })->name('sw.test');
+}
+
+// Health check for Service Worker
+Route::get('/sw-health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()->toISOString(),
+        'version' => config('app.version', '1.0.0'),
+        'environment' => app()->environment()
+    ])->header('Cache-Control', 'no-cache');
+})->name('sw.health');

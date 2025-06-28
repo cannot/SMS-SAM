@@ -4,7 +4,7 @@
 
 /* External Dependencies */
 @import 'bootstrap/dist/css/bootstrap.min.css';
-@import 'bootstrap-icons/font/bootstrap-icons.css';
+/* ลบบรรทัดนี้ออก: @import 'bootstrap-icons/font/bootstrap-icons.css'; */
 @import '@fortawesome/fontawesome-free/css/all.min.css';
 @import 'datatables.net-bs5/css/dataTables.bootstrap5.min.css';
 @import 'select2/dist/css/select2.min.css';

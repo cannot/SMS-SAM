@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', config('app.name', 'Smart Notification System'))</title>
+    <title>{{ config('app.name', 'Smart Notification System') }} @yield('title')</title>
 
     {{-- <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
@@ -15,6 +15,9 @@
 
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+
+    <!-- Bootstrap Icons CDN - โหลดก่อน Vite assets -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
     <!-- Vite CSS -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -531,171 +534,6 @@
             // You can implement pause/resume logic here if needed
         });
 
-        window.debugNetworkError = async function() {
-        console.log('🔍 Debugging NetworkError in Service Worker');
-        
-        // 1. ตรวจสอบ Service Worker registrations
-        if ('serviceWorker' in navigator) {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            console.log('📋 Active Registrations:', registrations.length);
-            
-            for (const reg of registrations) {
-                console.log('- Scope:', reg.scope);
-                console.log('- Active Worker:', reg.active?.scriptURL);
-                console.log('- State:', reg.active?.state);
-            }
-        }
-        
-        // 2. ทดสอบ fetch requests ต่างๆ
-        const testUrls = [
-            '/favicon.ico',
-            '/offline.html', 
-            '/',
-            '/dashboard'
-        ];
-        
-        console.log('🌐 Testing fetch requests:');
-        
-        for (const url of testUrls) {
-            try {
-                console.log(`Testing: ${url}`);
-                
-                // ทดสอบ fetch แบบต่างๆ
-                const tests = [
-                    { name: 'Default', options: {} },
-                    { name: 'No-cache', options: { cache: 'no-cache' } },
-                    { name: 'Same-origin', options: { credentials: 'same-origin' } },
-                    { name: 'No-cors', options: { mode: 'no-cors' } }
-                ];
-                
-                for (const test of tests) {
-                    try {
-                        const response = await fetch(url, test.options);
-                        console.log(`  ✅ ${test.name}: ${response.status} ${response.statusText}`);
-                    } catch (error) {
-                        console.log(`  ❌ ${test.name}: ${error.name} - ${error.message}`);
-                    }
-                }
-                
-            } catch (error) {
-                console.error(`❌ Error testing ${url}:`, error);
-            }
-        }
-        
-        // 3. ตรวจสอบ cache
-        try {
-            const cacheNames = await caches.keys();
-            console.log('💾 Available Caches:', cacheNames);
-            
-            for (const cacheName of cacheNames) {
-                const cache = await caches.open(cacheName);
-                const keys = await cache.keys();
-                console.log(`Cache "${cacheName}":`, keys.map(req => req.url));
-            }
-        } catch (error) {
-            console.error('❌ Cache error:', error);
-        }
-        
-        // 4. ตรวจสอบ network status
-        console.log('🌐 Network Status:');
-        console.log('- Online:', navigator.onLine);
-        console.log('- Connection:', navigator.connection?.effectiveType);
-        console.log('- Location:', window.location.href);
-        console.log('- Origin:', window.location.origin);
-        console.log('- Protocol:', window.location.protocol);
-    };
-
-    // Enhanced Service Worker registration with error handling  
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-            const isDevelopment = {{ app()->environment('local') ? 'true' : 'false' }};
-            
-            // Unregister all existing service workers first (for debugging)
-            if (isDevelopment) {
-                navigator.serviceWorker.getRegistrations().then(registrations => {
-                    console.log('🧹 Cleaning up old registrations...');
-                    registrations.forEach(registration => {
-                        registration.unregister().then(success => {
-                            console.log('Unregistered:', success);
-                        });
-                    });
-                    
-                    // Wait a bit then register new one
-                    setTimeout(registerNewServiceWorker, 1000);
-                });
-            } else {
-                registerNewServiceWorker();
-            }
-            
-            function registerNewServiceWorker() {
-                navigator.serviceWorker.register('/sw.js', {
-                    scope: '/',
-                    updateViaCache: 'none'
-                })
-                .then(function(registration) {
-                    console.log('✅ Service Worker registered successfully');
-                    console.log('📍 Scope:', registration.scope);
-                    
-                    // Listen for errors
-                    registration.addEventListener('updatefound', function() {
-                        const newWorker = registration.installing;
-                        
-                        newWorker.addEventListener('statechange', function() {
-                            console.log('🔄 SW State changed to:', newWorker.state);
-                            
-                            if (newWorker.state === 'redundant') {
-                                console.error('❌ Service Worker became redundant');
-                            }
-                        });
-                        
-                        newWorker.addEventListener('error', function(error) {
-                            console.error('❌ Service Worker error:', error);
-                        });
-                    });
-                    
-                })
-                .catch(function(error) {
-                    console.error('❌ Service Worker registration failed:');
-                    console.error('Error details:', {
-                        name: error.name,
-                        message: error.message,
-                        stack: error.stack
-                    });
-                    
-                    // Auto-debug on failure
-                    setTimeout(() => {
-                        if (window.debugNetworkError) {
-                            window.debugNetworkError();
-                        }
-                    }, 1000);
-                });
-            }
-        });
-        
-        // Listen for Service Worker errors
-        navigator.serviceWorker.addEventListener('error', function(error) {
-            console.error('🚨 Service Worker runtime error:', error);
-        });
-        
-        // Listen for messages from Service Worker
-        navigator.serviceWorker.addEventListener('message', function(event) {
-            console.log('📨 SW Message:', event.data);
-            
-            if (event.data.type === 'ERROR') {
-                console.error('🚨 Service Worker reported error:', event.data.error);
-            }
-        });
-    }
-
-    // Auto-run debug in development
-    if ({{ app()->environment('local') ? 'true' : 'false' }}) {
-        setTimeout(() => {
-            if (window.debugNetworkError) {
-                window.debugNetworkError();
-            }
-        }, 5000);
-    }   
-
         // Dark mode toggle (optional feature)
         function toggleDarkMode() {
             document.body.classList.toggle('dark-mode');
@@ -710,6 +548,222 @@
         // Print functionality
         function printPage() {
             window.print();
+        }
+
+        // Service Worker registration and management
+        if ('serviceWorker' in navigator) {
+            console.log('🔧 Service Worker supported');
+            
+            // Configuration
+            const isDevelopment = {{ app()->environment('local') ? 'true' : 'false' }};
+            const isProduction = {{ app()->environment('production') ? 'true' : 'false' }};
+            
+            // Register Service Worker
+            async function registerServiceWorker() {
+                try {
+                    console.log('📝 Registering Service Worker...');
+                    
+                    const registration = await navigator.serviceWorker.register('/sw.js', {
+                        scope: '/',
+                        updateViaCache: 'none'
+                    });
+                    
+                    console.log('✅ Service Worker registered successfully');
+                    console.log('📍 Scope:', registration.scope);
+                    console.log('🆔 Registration ID:', registration);
+                    
+                    // Handle updates
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        console.log('🔄 New Service Worker found, installing...');
+                        
+                        newWorker.addEventListener('statechange', () => {
+                            console.log('📱 SW State changed to:', newWorker.state);
+                            
+                            if (newWorker.state === 'installed') {
+                                if (navigator.serviceWorker.controller) {
+                                    // New worker is available
+                                    console.log('🔄 New Service Worker available');
+                                    showUpdateNotification();
+                                } else {
+                                    // First install
+                                    console.log('✨ Service Worker installed for first time');
+                                    showInstallNotification();
+                                }
+                            }
+                        });
+                    });
+                    
+                    // Check for waiting worker
+                    if (registration.waiting) {
+                        console.log('⏳ Service Worker waiting');
+                        showUpdateNotification();
+                    }
+                    
+                    return registration;
+                    
+                } catch (error) {
+                    console.error('❌ Service Worker registration failed:');
+                    console.error('Error details:', {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    });
+                    
+                    // Show user-friendly error in development
+                    if (isDevelopment) {
+                        showErrorNotification('Service Worker registration failed: ' + error.message);
+                    }
+                    
+                    return null;
+                }
+            }
+            
+            // Handle Service Worker messages
+            navigator.serviceWorker.addEventListener('message', event => {
+                console.log('📨 Message from SW:', event.data);
+                
+                if (event.data && event.data.type) {
+                    switch (event.data.type) {
+                        case 'SW_ACTIVATED':
+                            console.log('🚀 Service Worker activated, version:', event.data.version);
+                            break;
+                            
+                        case 'ERROR':
+                            console.error('🚨 Service Worker error:', event.data.error);
+                            if (isDevelopment) {
+                                showErrorNotification('SW Error: ' + event.data.error.message);
+                            }
+                            break;
+                            
+                        default:
+                            console.log('📋 SW Message:', event.data);
+                    }
+                }
+            });
+            
+            // Show update notification
+            function showUpdateNotification() {
+                if (window.showNotification) {
+                    window.showNotification('แอปมีการอัปเดตใหม่ กรุณารีเฟรชหน้าเว็บ', 'info');
+                } else {
+                    console.log('💡 App update available - refresh to apply');
+                }
+            }
+            
+            // Show install notification
+            function showInstallNotification() {
+                if (window.showNotification) {
+                    window.showNotification('แอปพร้อมใช้งานออฟไลน์แล้ว!', 'success');
+                } else {
+                    console.log('✨ App ready for offline use');
+                }
+            }
+            
+            // Show error notification
+            function showErrorNotification(message) {
+                if (window.showNotification) {
+                    window.showNotification(message, 'error');
+                } else {
+                    console.error('🚨 SW Error:', message);
+                }
+            }
+            
+            // Debug function for development
+            window.debugServiceWorker = async function() {
+                console.log('🔍 Service Worker Debug Information');
+                console.log('==================================');
+                
+                // Check registrations
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                console.log('📋 Active Registrations:', registrations.length);
+                
+                registrations.forEach((reg, index) => {
+                    console.log(`Registration ${index + 1}:`);
+                    console.log('- Scope:', reg.scope);
+                    console.log('- Active Worker:', reg.active?.scriptURL);
+                    console.log('- State:', reg.active?.state);
+                    console.log('- Update Via Cache:', reg.updateViaCache);
+                });
+                
+                // Check controller
+                if (navigator.serviceWorker.controller) {
+                    console.log('🎮 Controller:', navigator.serviceWorker.controller.scriptURL);
+                    console.log('🎮 State:', navigator.serviceWorker.controller.state);
+                } else {
+                    console.log('❌ No controller found');
+                }
+                
+                // Check caches
+                try {
+                    const cacheNames = await caches.keys();
+                    console.log('💾 Available Caches:', cacheNames);
+                    
+                    for (const cacheName of cacheNames) {
+                        const cache = await caches.open(cacheName);
+                        const keys = await cache.keys();
+                        console.log(`Cache "${cacheName}":`, keys.length, 'items');
+                    }
+                } catch (error) {
+                    console.error('❌ Cache error:', error);
+                }
+                
+                // Test SW messaging
+                if (navigator.serviceWorker.controller) {
+                    console.log('📨 Testing SW messaging...');
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'GET_VERSION'
+                    });
+                }
+            };
+            
+            // Clear Service Worker (for development)
+            window.clearServiceWorker = async function() {
+                console.log('🧹 Clearing Service Worker...');
+                
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                
+                for (const registration of registrations) {
+                    await registration.unregister();
+                    console.log('🗑️ Unregistered:', registration.scope);
+                }
+                
+                // Clear caches
+                const cacheNames = await caches.keys();
+                for (const cacheName of cacheNames) {
+                    await caches.delete(cacheName);
+                    console.log('🗑️ Deleted cache:', cacheName);
+                }
+                
+                console.log('✅ Service Worker cleared');
+                
+                if (confirm('Service Worker cleared. Reload page?')) {
+                    window.location.reload();
+                }
+            };
+            
+            // Register when page loads
+            window.addEventListener('load', () => {
+                // Only register in production or when explicitly enabled in development
+                if (isProduction || (isDevelopment && localStorage.getItem('enableSW') === 'true')) {
+                    registerServiceWorker();
+                } else {
+                    console.log('🚫 Service Worker disabled in development');
+                    console.log('💡 Enable with: localStorage.setItem("enableSW", "true"); location.reload()');
+                }
+            });
+            
+            // Auto-debug in development after 3 seconds
+            if (isDevelopment) {
+                setTimeout(() => {
+                    if (window.debugServiceWorker) {
+                        window.debugServiceWorker();
+                    }
+                }, 3000);
+            }
+            
+        } else {
+            console.warn('❌ Service Worker not supported in this browser');
         }
 
         // Export functions for global use
