@@ -371,16 +371,16 @@ except requests.exceptions.RequestException as e:
             </div>
 
             <!-- Permissions -->
-            @if($apiKey->permissions && $apiKey->permissions->count() > 0)
+            @if($apiKey->apiPermissions && $apiKey->apiPermissions->count() > 0)
             <div class="card mb-4">
                 <div class="card-header bg-secondary text-white">
                     <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Permissions</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
-                        @foreach($apiKey->permissions as $permission)
+                        @foreach($apiKey->apiPermissions as $permission)
                         <div class="col-md-6 mb-2">
-                            <span class="badge bg-info">{{ $permission->display_name }}</span>
+                            <span class="badge bg-info">{{ $permission->display_name ?? $permission->name }}</span>
                         </div>
                         @endforeach
                     </div>
@@ -483,15 +483,25 @@ except requests.exceptions.RequestException as e:
                 <div class="card-body">
                     <div class="mb-3">
                         <strong>Auto Notifications:</strong>
-                        <span class="text-muted">Disabled</span>
+                        <span class="text-muted">{{ $apiKey->auto_notifications ? 'Enabled' : 'Disabled' }}</span>
                     </div>
                     <div class="mb-3">
                         <strong>Permissions:</strong>
-                        <span class="text-muted">{{ $apiKey->permissions->count() ?? 0 }}</span>
+                        <span class="text-muted">{{ $apiKey->apiPermissions ? $apiKey->apiPermissions->count() : 0 }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Rate Limit:</strong>
+                        <span class="text-muted">{{ $apiKey->rate_limit_per_minute ?? 60 }}/min</span>
                     </div>
                     <div class="mb-0">
                         <strong>IP Restrictions:</strong>
-                        <span class="text-muted">None</span>
+                        <span class="text-muted">
+                            @if($apiKey->allowed_ips && count($apiKey->allowed_ips) > 0)
+                                {{ count($apiKey->allowed_ips) }} IPs
+                            @else
+                                None
+                            @endif
+                        </span>
                     </div>
                 </div>
             </div>

@@ -1137,7 +1137,7 @@ class NotificationController extends Controller
             'webhook_url' => 'required|url',
             'subject' => 'nullable|string',
             'body_text' => 'nullable|string'
-        ]);
+        ]); 
 
         try {
             $notification = new TeamsNotification();

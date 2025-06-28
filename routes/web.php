@@ -577,7 +577,7 @@ Route::middleware(['auth', 'web'])->group(function () {
     // ADMIN ROUTES
     // ===========================================
     Route::prefix('admin')->name('admin.')->middleware('can:manage-api-keys')->group(function () {
-
+ 
         // API Keys Management
         Route::prefix('api-keys')->name('api-keys.')->middleware('can:manage-api-keys')->group(function () {
             Route::get('/', [ApiKeyController::class, 'index'])->name('index');

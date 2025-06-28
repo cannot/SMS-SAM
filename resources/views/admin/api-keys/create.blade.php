@@ -87,7 +87,7 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="rate_limit_per_minute" class="required">Rate Limit</label>
+                                    <label for="rate_limit_per_minute" class="required">Rate Limit (per minute)</label>
                                     <select class="form-control @error('rate_limit_per_minute') is-invalid @enderror" 
                                             id="rate_limit_per_minute" name="rate_limit_per_minute" required>
                                         @foreach($defaultRateLimits as $value => $label)
@@ -105,6 +105,26 @@
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                     <small class="form-text text-muted">Maximum requests per minute</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="rate_limit_per_hour" class="required">Rate Limit (per hour)</label>
+                                    <input type="number" class="form-control @error('rate_limit_per_hour') is-invalid @enderror" 
+                                           id="rate_limit_per_hour" name="rate_limit_per_hour" 
+                                           value="{{ old('rate_limit_per_hour', 3600) }}" min="1" max="100000" required>
+                                    @error('rate_limit_per_hour')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                    <small class="form-text text-muted">Maximum requests per hour</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="rate_limit_per_day" class="required">Rate Limit (per day)</label>
+                                    <input type="number" class="form-control @error('rate_limit_per_day') is-invalid @enderror" 
+                                           id="rate_limit_per_day" name="rate_limit_per_day" 
+                                           value="{{ old('rate_limit_per_day', 86400) }}" min="1" max="1000000" required>
+                                    @error('rate_limit_per_day')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                    <small class="form-text text-muted">Maximum requests per day</small>
                                 </div>
                             </div>
                             <div class="col-md-6">

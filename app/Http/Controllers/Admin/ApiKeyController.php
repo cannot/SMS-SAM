@@ -1,17 +1,16 @@
 <?php
-
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApiKey;
-use App\Models\User;
-use App\Models\ApiUsageLog;
 use App\Models\ApiKeyEvent;
-use Spatie\Permission\Models\Permission;
+use App\Models\ApiUsageLogs; // เปลี่ยนเป็น ApiUsageLog
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Spatie\Permission\Models\Permission;
 
 class ApiKeyController extends Controller
 {
@@ -21,14 +20,14 @@ class ApiKeyController extends Controller
     public function index(Request $request)
     {
         $query = ApiKey::with(['createdBy', 'assignedTo'])
-                      ->withCount(['apiPermissions', 'usageLogs', 'notifications']);
+            ->withCount(['apiPermissions', 'usageLogs', 'notifications']);
 
         // Filters
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
@@ -47,14 +46,40 @@ class ApiKeyController extends Controller
         }
 
         $apiKeys = $query->orderBy('created_at', 'desc')
-                        ->paginate(15)
-                        ->withQueryString();
+            ->paginate(15)
+            ->withQueryString();
 
         $users = User::select('id', 'display_name', 'username')
-                    ->orderBy('display_name')
-                    ->get();
+            ->orderBy('display_name')
+            ->get();
 
-        return view('admin.api-keys.index', compact('apiKeys', 'users'));
+        // Statistics
+        $stats = [
+            'total'                => ApiKey::count(),
+            'active'               => ApiKey::where('is_active', true)->count(),
+            'expired'              => ApiKey::where('expires_at', '<', now())->count(),
+            'total_requests_today' => ApiUsageLogs::whereDate('created_at', today())->count(),
+        ];
+
+        // Expiring soon
+        $expiringSoon = ApiKey::where('expires_at', '>', now())
+            ->where('expires_at', '<=', now()->addDays(30))
+            ->where('is_active', true)
+            ->get();
+
+        // Recent activity
+        $recentActivity = ApiUsageLogs::with('apiKey')
+            ->latest()
+            ->limit(10)
+            ->get();
+
+        return view('admin.api-keys.index', compact(
+            'apiKeys',
+            'users',
+            'stats',
+            'expiringSoon',
+            'recentActivity'
+        ));
     }
 
     /**
@@ -62,17 +87,44 @@ class ApiKeyController extends Controller
      */
     public function create()
     {
-        $users = User::select('id', 'display_name', 'username')
-                    ->orderBy('display_name')
-                    ->get();
+        $users = User::select('id', 'display_name', 'username', 'email')
+            ->orderBy('display_name')
+            ->get();
 
         $apiPermissions = Permission::where('guard_name', 'api')
-                                   ->orderBy('category')
-                                   ->orderBy('display_name')
-                                   ->get()
-                                   ->groupBy('category');
+            ->orderBy('category')
+            ->orderBy('display_name')
+            ->get()
+            ->groupBy('category');
 
-        return view('admin.api-keys.create', compact('users', 'apiPermissions'));
+        // Default rate limits
+        $defaultRateLimits = [
+            60   => '60 requests/minute (Development)',
+            120  => '120 requests/minute (Testing)',
+            300  => '300 requests/minute (Production Light)',
+            600  => '600 requests/minute (Production Heavy)',
+            1200 => '1200 requests/minute (Enterprise)',
+        ];
+
+        // Available permissions with descriptions
+        $availablePermissions = [
+            'notifications.send'     => 'Send single notification',
+            'notifications.bulk'     => 'Send multiple notifications',
+            'notifications.schedule' => 'Schedule notifications',
+            'notifications.status'   => 'Check notification status',
+            'users.read'             => 'Read user information',
+            'groups.read'            => 'Read group information',
+            'groups.manage'          => 'Manage group members',
+            'templates.read'         => 'Access templates',
+            'templates.render'       => 'Render templates',
+        ];
+
+        return view('admin.api-keys.create', compact(
+            'users',
+            'apiPermissions',
+            'defaultRateLimits',
+            'availablePermissions'
+        ));
     }
 
     /**
@@ -91,7 +143,7 @@ class ApiKeyController extends Controller
             'allowed_ips' => 'nullable|array',
             'allowed_ips.*' => 'ip',
             'permissions' => 'required|array|min:1',
-            'permissions.*' => 'exists:permissions,id',
+            'permissions.*' => 'string', // เปลี่ยนจาก exists:permissions,id เป็น string
             'auto_notifications' => 'boolean',
             'notification_webhook' => 'nullable|url',
         ]);
@@ -99,6 +151,18 @@ class ApiKeyController extends Controller
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Validate permissions exist
+        $validPermissions = Permission::where('guard_name', 'api')
+                                    ->whereIn('name', $request->permissions)
+                                    ->pluck('name')
+                                    ->toArray();
+
+        if (count($validPermissions) !== count($request->permissions)) {
+            return redirect()->back()
+                ->with('error', 'One or more selected permissions are invalid.')
                 ->withInput();
         }
 
@@ -112,7 +176,7 @@ class ApiKeyController extends Controller
             $apiKey = ApiKey::create([
                 'name' => $request->name,
                 'description' => $request->description,
-                'key_value' => $keyValue, // จะถูกล้างหลังจากแสดงผล
+                'key_value' => $keyValue,
                 'assigned_to' => $request->assigned_to,
                 'expires_at' => $request->expires_at,
                 'rate_limit_per_minute' => $request->rate_limit_per_minute,
@@ -124,35 +188,21 @@ class ApiKeyController extends Controller
                 'created_by' => auth()->id(),
             ]);
 
-            // Assign permissions
-            $permissions = Permission::whereIn('id', $request->permissions)
-                                   ->where('guard_name', 'api')
-                                   ->get();
-
-            foreach ($permissions as $permission) {
-                $apiKey->givePermissionTo($permission);
+            // Assign permissions by name
+            foreach ($request->permissions as $permissionName) {
+                $permission = Permission::where('name', $permissionName)
+                                    ->where('guard_name', 'api')
+                                    ->first();
+                if ($permission) {
+                    $apiKey->givePermissionTo($permission);
+                }
             }
-
-            // Log creation event
-            $apiKey->logEvent(
-                ApiKeyEvent::EVENT_CREATED,
-                "API Key '{$apiKey->name}' created",
-                null,
-                [
-                    'permissions' => $permissions->pluck('name')->toArray(),
-                    'rate_limits' => [
-                        'per_minute' => $apiKey->rate_limit_per_minute,
-                        'per_hour' => $apiKey->rate_limit_per_hour,
-                        'per_day' => $apiKey->rate_limit_per_day,
-                    ]
-                ]
-            );
 
             DB::commit();
 
             return redirect()->route('admin.api-keys.show', $apiKey)
                 ->with('success', 'API Key created successfully!')
-                ->with('new_api_key', true); // Flag สำหรับแสดง key เต็ม
+                ->with('new_api_key', true);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -166,70 +216,6 @@ class ApiKeyController extends Controller
                 ->with('error', 'Failed to create API Key. Please try again.')
                 ->withInput();
         }
-    }
-
-    /**
-     * Display the specified API key
-     */
-    public function show(ApiKey $apiKey)
-    {
-        $apiKey->load(['createdBy', 'assignedTo', 'apiPermissions']);
-        
-        // Get usage statistics
-        $usageStats = [
-            'total_requests' => $apiKey->usageLogs()->count(),
-            'today' => $apiKey->usageLogs()->today()->count(),
-            'this_week' => $apiKey->usageLogs()->thisWeek()->count(),
-            'this_month' => $apiKey->usageLogs()->thisMonth()->count(),
-        ];
-        
-        // Get performance statistics
-        $performanceStats = [
-            'avg_response_time' => ApiUsageLog::getUsageStats($apiKey, 'month')['avg_response_time'] . 'ms',
-            'success_rate' => ApiUsageLog::getUsageStats($apiKey, 'month')['success_rate'] . '%',
-            'rate_limit_utilization' => $this->calculateRateLimitUtilization($apiKey),
-        ];
-
-        // Get recent events
-        $recentEvents = ApiKeyEvent::getRecentActivity($apiKey, 10);
-
-        // Get top endpoints
-        $topEndpoints = ApiUsageLog::getTopEndpoints($apiKey, 5);
-
-        return view('admin.api-keys.show', compact(
-            'apiKey', 
-            'usageStats', 
-            'performanceStats',
-            'recentEvents',
-            'topEndpoints'
-        ));
-    }
-
-    /**
-     * Show the form for editing the API key
-     */
-    public function edit(ApiKey $apiKey)
-    {
-        $apiKey->load(['assignedTo', 'apiPermissions']);
-
-        $users = User::select('id', 'display_name', 'username')
-                    ->orderBy('display_name')
-                    ->get();
-
-        $apiPermissions = Permission::where('guard_name', 'api')
-                                   ->orderBy('category')
-                                   ->orderBy('display_name')
-                                   ->get()
-                                   ->groupBy('category');
-
-        $assignedPermissions = $apiKey->apiPermissions->pluck('id')->toArray();
-
-        return view('admin.api-keys.edit', compact(
-            'apiKey', 
-            'users', 
-            'apiPermissions', 
-            'assignedPermissions'
-        ));
     }
 
     /**
@@ -248,7 +234,7 @@ class ApiKeyController extends Controller
             'allowed_ips' => 'nullable|array',
             'allowed_ips.*' => 'ip',
             'permissions' => 'required|array|min:1',
-            'permissions.*' => 'exists:permissions,id',
+            'permissions.*' => 'string', // เปลี่ยนจาก exists:permissions,id เป็น string
             'auto_notifications' => 'boolean',
             'notification_webhook' => 'nullable|url',
         ]);
@@ -259,23 +245,20 @@ class ApiKeyController extends Controller
                 ->withInput();
         }
 
+        // Validate permissions exist
+        $validPermissions = Permission::where('guard_name', 'api')
+                                    ->whereIn('name', $request->permissions)
+                                    ->pluck('name')
+                                    ->toArray();
+
+        if (count($validPermissions) !== count($request->permissions)) {
+            return redirect()->back()
+                ->with('error', 'One or more selected permissions are invalid.')
+                ->withInput();
+        }
+
         try {
             DB::beginTransaction();
-
-            // Store old values for logging
-            $oldValues = [
-                'name' => $apiKey->name,
-                'description' => $apiKey->description,
-                'assigned_to' => $apiKey->assigned_to,
-                'expires_at' => $apiKey->expires_at,
-                'rate_limits' => [
-                    'per_minute' => $apiKey->rate_limit_per_minute,
-                    'per_hour' => $apiKey->rate_limit_per_hour,
-                    'per_day' => $apiKey->rate_limit_per_day,
-                ],
-                'allowed_ips' => $apiKey->allowed_ips,
-                'permissions' => $apiKey->apiPermissions->pluck('name')->toArray(),
-            ];
 
             // Update API key
             $apiKey->update([
@@ -291,35 +274,16 @@ class ApiKeyController extends Controller
                 'notification_webhook' => $request->notification_webhook,
             ]);
 
-            // Update permissions
-            $newPermissions = Permission::whereIn('id', $request->permissions)
-                                       ->where('guard_name', 'api')
-                                       ->pluck('name')
-                                       ->toArray();
-            
-            $apiKey->syncPermissions($newPermissions);
-
-            // Log update event
-            $newValues = [
-                'name' => $apiKey->name,
-                'description' => $apiKey->description,
-                'assigned_to' => $apiKey->assigned_to,
-                'expires_at' => $apiKey->expires_at,
-                'rate_limits' => [
-                    'per_minute' => $apiKey->rate_limit_per_minute,
-                    'per_hour' => $apiKey->rate_limit_per_hour,
-                    'per_day' => $apiKey->rate_limit_per_day,
-                ],
-                'allowed_ips' => $apiKey->allowed_ips,
-                'permissions' => $newPermissions,
-            ];
-
-            $apiKey->logEvent(
-                ApiKeyEvent::EVENT_UPDATED,
-                "API Key '{$apiKey->name}' updated",
-                $oldValues,
-                $newValues
-            );
+            // Update permissions - clear existing and add new ones
+            $apiKey->apiPermissions()->detach();
+            foreach ($request->permissions as $permissionName) {
+                $permission = Permission::where('name', $permissionName)
+                                    ->where('guard_name', 'api')
+                                    ->first();
+                if ($permission) {
+                    $apiKey->givePermissionTo($permission);
+                }
+            }
 
             DB::commit();
 
@@ -341,37 +305,113 @@ class ApiKeyController extends Controller
     }
 
     /**
-     * Remove the specified API key
+     * Display the specified API key
      */
+    public function show(ApiKey $apiKey)
+    {
+        // Load ทั้ง apiPermissions และ permissions
+        $apiKey->load(['createdBy', 'assignedTo', 'permissions']);
+
+        // ลบ dd() ออก
+        // dd($apiKey->permissions);
+
+        // Get usage statistics
+        $usageStats = [
+            'total_requests' => $apiKey->usageLogs()->count(),
+            'today'          => $apiKey->usageLogs()->whereDate('created_at', today())->count(),
+            'this_week'      => $apiKey->usageLogs()->whereBetween('created_at', [
+                now()->startOfWeek(), now()->endOfWeek(),
+            ])->count(),
+            'this_month'     => $apiKey->usageLogs()->whereMonth('created_at', now()->month)->count(),
+        ];
+
+        // Get performance statistics
+        $performanceStats = [
+            'avg_response_time'      => number_format($apiKey->usageLogs()->avg('response_time') ?? 0, 2) . 'ms',
+            'success_rate'           => number_format($apiKey->getSuccessRate(), 1) . '%',
+            'rate_limit_utilization' => $this->calculateRateLimitUtilization($apiKey),
+        ];
+
+        // Get recent events
+        $recentEvents = $apiKey->events()->latest()->limit(10)->get();
+
+        // Get top endpoints
+        $topEndpoints = $apiKey->usageLogs()
+            ->selectRaw('endpoint, method, COUNT(*) as request_count, AVG(response_time) as avg_response_time')
+            ->groupBy('endpoint', 'method')
+            ->orderByDesc('request_count')
+            ->limit(5)
+            ->get();
+
+        return view('admin.api-keys.show', compact(
+            'apiKey',
+            'usageStats',
+            'performanceStats',
+            'recentEvents',
+            'topEndpoints'
+        ));
+    }
+
+/**
+ * Show the form for editing the API key
+ */
+    public function edit(ApiKey $apiKey)
+    {
+        $apiKey->load(['assignedTo', 'apiPermissions']);
+
+        $users = User::select('id', 'display_name', 'username')
+            ->orderBy('display_name')
+            ->get();
+
+        $apiPermissions = Permission::where('guard_name', 'api')
+            ->orderBy('category')
+            ->orderBy('display_name')
+            ->get()
+            ->groupBy('category');
+
+        $assignedPermissions = $apiKey->apiPermissions->pluck('id')->toArray();
+
+        // Default rate limits
+        $defaultRateLimits = [
+            60   => '60 requests/minute (Development)',
+            120  => '120 requests/minute (Testing)',
+            300  => '300 requests/minute (Production Light)',
+            600  => '600 requests/minute (Production Heavy)',
+            1200 => '1200 requests/minute (Enterprise)',
+        ];
+
+        // Available permissions
+        $availablePermissions = [
+            'notifications.send'     => 'Send single notification',
+            'notifications.bulk'     => 'Send multiple notifications',
+            'notifications.schedule' => 'Schedule notifications',
+            'notifications.status'   => 'Check notification status',
+            'users.read'             => 'Read user information',
+            'groups.read'            => 'Read group information',
+            'groups.manage'          => 'Manage group members',
+            'templates.read'         => 'Access templates',
+            'templates.render'       => 'Render templates',
+        ];
+
+        return view('admin.api-keys.edit', compact(
+            'apiKey',
+            'users',
+            'apiPermissions',
+            'assignedPermissions',
+            'defaultRateLimits',
+            'availablePermissions'
+        ));
+    }
+
+/**
+ * Remove the specified API key
+ */
     public function destroy(ApiKey $apiKey)
     {
         try {
             DB::beginTransaction();
 
-            // Check if API key has active notifications
-            $activeNotifications = $apiKey->notifications()
-                ->whereIn('status', ['pending', 'processing', 'scheduled'])
-                ->count();
-
-            if ($activeNotifications > 0) {
-                return redirect()->back()
-                    ->with('error', "Cannot delete API Key. It has {$activeNotifications} active notifications.");
-            }
-
             $apiKeyName = $apiKey->name;
-
-            // Log deletion event before deleting
-            $apiKey->logEvent(
-                ApiKeyEvent::EVENT_DELETED,
-                "API Key '{$apiKeyName}' deleted",
-                [
-                    'usage_count' => $apiKey->usage_count,
-                    'permissions' => $apiKey->apiPermissions->pluck('name')->toArray(),
-                ],
-                null
-            );
-
-            // Soft delete the API key
             $apiKey->delete();
 
             DB::commit();
@@ -383,8 +423,8 @@ class ApiKeyController extends Controller
             DB::rollBack();
             Log::error('Failed to delete API Key', [
                 'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage(),
-                'user_id' => auth()->id()
+                'error'      => $e->getMessage(),
+                'user_id'    => auth()->id(),
             ]);
 
             return redirect()->back()
@@ -392,9 +432,9 @@ class ApiKeyController extends Controller
         }
     }
 
-    /**
-     * Regenerate API key
-     */
+/**
+ * Regenerate API key
+ */
     public function regenerate(ApiKey $apiKey)
     {
         try {
@@ -406,14 +446,14 @@ class ApiKeyController extends Controller
 
             return redirect()->route('admin.api-keys.show', $apiKey)
                 ->with('success', 'API Key regenerated successfully!')
-                ->with('new_api_key', true); // Flag สำหรับแสดง key เต็ม
+                ->with('new_api_key', true);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Failed to regenerate API Key', [
                 'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage(),
-                'user_id' => auth()->id()
+                'error'      => $e->getMessage(),
+                'user_id'    => auth()->id(),
             ]);
 
             return redirect()->back()
@@ -421,29 +461,143 @@ class ApiKeyController extends Controller
         }
     }
 
-    /**
-     * Toggle API key status
-     */
+/**
+ * Toggle API key status
+ */
     public function toggleStatus(ApiKey $apiKey)
     {
         try {
             $apiKey->toggleStatus(auth()->user());
 
             $status = $apiKey->is_active ? 'activated' : 'deactivated';
-            
+
             return redirect()->back()
                 ->with('success', "API Key {$status} successfully.");
 
         } catch (\Exception $e) {
             Log::error('Failed to toggle API Key status', [
                 'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage(),
-                'user_id' => auth()->id()
+                'error'      => $e->getMessage(),
+                'user_id'    => auth()->id(),
             ]);
 
             return redirect()->back()
                 ->with('error', 'Failed to update API Key status. Please try again.');
         }
+    }
+
+/**
+ * Show usage history
+ */
+    public function usageHistory(Request $request, ApiKey $apiKey)
+    {
+        $query = $apiKey->usageLogs();
+
+        // Apply filters
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        if ($request->filled('endpoint')) {
+            $query->where('endpoint', 'like', '%' . $request->endpoint . '%');
+        }
+
+        if ($request->filled('method')) {
+            $query->where('method', $request->method);
+        }
+
+        if ($request->filled('status_code')) {
+            $query->where('response_code', $request->status_code);
+        }
+
+        $logs = $query->orderByDesc('created_at')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('admin.api-keys.usage-history', compact('apiKey', 'logs'));
+    }
+
+/**
+ * Clear API key value after showing
+ */
+    public function clearKeyValue(ApiKey $apiKey)
+    {
+        $apiKey->clearKeyValue();
+
+        return response()->json(['success' => true]);
+    }
+
+/**
+ * Reset usage statistics
+ */
+    public function resetUsage(ApiKey $apiKey)
+    {
+        try {
+            $apiKey->update([
+                'usage_count'    => 0,
+                'usage_reset_at' => now(),
+                'usage_reset_by' => auth()->id(),
+            ]);
+
+            return redirect()->back()
+                ->with('success', 'Usage statistics reset successfully.');
+
+        } catch (\Exception $e) {
+            Log::error('Failed to reset usage', [
+                'api_key_id' => $apiKey->id,
+                'error'      => $e->getMessage(),
+                'user_id'    => auth()->id(),
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'Failed to reset usage statistics.');
+        }
+    }
+
+/**
+ * Export API keys
+ */
+    public function export($format)
+    {
+        // Implementation for export functionality
+        // You can implement CSV, Excel, PDF export here
+
+        return redirect()->back()
+            ->with('info', 'Export functionality will be implemented.');
+    }
+
+/**
+ * Export usage data
+ */
+    public function exportUsage(ApiKey $apiKey, $format)
+    {
+        // Implementation for usage export functionality
+
+        return redirect()->back()
+            ->with('info', 'Usage export functionality will be implemented.');
+    }
+
+/**
+ * Get security metrics for AJAX
+ */
+    public function getSecurityMetrics()
+    {
+        $totalKeys              = ApiKey::count();
+        $keysWithIpRestrictions = ApiKey::whereNotNull('allowed_ips')
+            ->whereJsonLength('allowed_ips', '>', 0)
+            ->count();
+        $keysWithExpiry = ApiKey::whereNotNull('expires_at')->count();
+
+        return response()->json([
+            'keys_with_ip_restrictions' => $keysWithIpRestrictions,
+            'keys_with_expiry'          => $keysWithExpiry,
+            'last_scan_time'            => now()->format('M j, Y H:i'),
+            'total_keys'                => $totalKeys,
+        ]);
     }
 
     /**
@@ -452,16 +606,16 @@ class ApiKeyController extends Controller
     public function usage(ApiKey $apiKey)
     {
         $usageStats = [
-            'hourly' => ApiUsageLog::getUsageStats($apiKey, 'hour'),
-            'daily' => ApiUsageLog::getUsageStats($apiKey, 'day'),
-            'weekly' => ApiUsageLog::getUsageStats($apiKey, 'week'),
-            'monthly' => ApiUsageLog::getUsageStats($apiKey, 'month'),
+            'hourly'  => ApiUsageLogs::getUsageStats($apiKey, 'hour'),
+            'daily'   => ApiUsageLogs::getUsageStats($apiKey, 'day'),
+            'weekly'  => ApiUsageLogs::getUsageStats($apiKey, 'week'),
+            'monthly' => ApiUsageLogs::getUsageStats($apiKey, 'month'),
         ];
 
-        $topEndpoints = ApiUsageLog::getTopEndpoints($apiKey);
-        $errorAnalysis = ApiUsageLog::getErrorAnalysis($apiKey);
-        $recentErrors = ApiUsageLog::getRecentErrors($apiKey);
-        $slowRequests = ApiUsageLog::getSlowRequests($apiKey);
+        $topEndpoints  = ApiUsageLogs::getTopEndpoints($apiKey);
+        $errorAnalysis = ApiUsageLogs::getErrorAnalysis($apiKey);
+        $recentErrors  = ApiUsageLogs::getRecentErrors($apiKey);
+        $slowRequests  = ApiUsageLogs::getSlowRequests($apiKey);
 
         return view('admin.api-keys.usage', compact(
             'apiKey',
@@ -479,23 +633,13 @@ class ApiKeyController extends Controller
     public function audit(ApiKey $apiKey)
     {
         $events = $apiKey->events()
-                         ->with('performedBy:id,display_name,username')
-                         ->orderByDesc('created_at')
-                         ->paginate(20);
+            ->with('performedBy:id,display_name,username')
+            ->orderByDesc('created_at')
+            ->paginate(20);
 
         $eventStats = ApiKeyEvent::getEventStats($apiKey);
 
         return view('admin.api-keys.audit', compact('apiKey', 'events', 'eventStats'));
-    }
-
-    /**
-     * Clear API key value after showing
-     */
-    public function clearKeyValue(ApiKey $apiKey)
-    {
-        $apiKey->clearKeyValue();
-        
-        return response()->json(['success' => true]);
     }
 
     /**
@@ -504,12 +648,14 @@ class ApiKeyController extends Controller
     private function calculateRateLimitUtilization(ApiKey $apiKey): string
     {
         $currentHourUsage = $apiKey->getUsageCount('hour');
-        $rateLimit = $apiKey->getRateLimit('hour');
-        
-        if ($rateLimit <= 0) return '0.0%';
-        
+        $rateLimit        = $apiKey->getRateLimit('hour');
+
+        if ($rateLimit <= 0) {
+            return '0.0%';
+        }
+
         $utilization = ($currentHourUsage / $rateLimit) * 100;
-        
+
         return number_format($utilization, 1) . '%';
     }
 }

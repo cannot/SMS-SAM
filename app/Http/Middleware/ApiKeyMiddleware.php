@@ -372,14 +372,13 @@ class ApiKeyMiddleware
     /**
      * Add rate limit headers to response
      */
-    private function addRateLimitHeaders(Response $response, array $rateLimitCheck): void
+    private function addRateLimitHeaders(Response $response, array $rateLimitData): void
     {
-        $response->headers->set('X-RateLimit-Limit', $rateLimitCheck['limit']);
-        $response->headers->set('X-RateLimit-Remaining', $rateLimitCheck['remaining']);
-        $response->headers->set('X-RateLimit-Reset', $rateLimitCheck['reset_time']->timestamp);
+        $response->headers->set('X-RateLimit-Limit', $rateLimitData['limits']['minute']);
+        $response->headers->set('X-RateLimit-Remaining', max(0, $rateLimitData['limits']['minute'] - $rateLimitData['current_usage']['minute']));
         
-        if ($rateLimitCheck['limit_exceeded']) {
-            $response->headers->set('Retry-After', 60); // Retry after 1 minute
+        if ($rateLimitData['reset_time']) {
+            $response->headers->set('X-RateLimit-Reset', $rateLimitData['reset_time']->timestamp);
         }
     }
     
@@ -390,9 +389,8 @@ class ApiKeyMiddleware
     {
         return response()->json([
             'success' => false,
-            'message' => $message,
-            'error_code' => 'UNAUTHORIZED',
-            'timestamp' => now()->toISOString()
+            'error' => 'Unauthorized',
+            'message' => $message
         ], 401);
     }
     
@@ -403,28 +401,23 @@ class ApiKeyMiddleware
     {
         return response()->json([
             'success' => false,
-            'message' => $message,
-            'error_code' => 'FORBIDDEN',
-            'timestamp' => now()->toISOString()
+            'error' => 'Forbidden',
+            'message' => $message
         ], 403);
     }
     
     /**
-     * Return rate limit exceeded response
+     * Return rate limit response
      */
-    private function rateLimitResponse(array $rateLimitCheck): Response
+    private function rateLimitResponse(array $rateLimitData): Response
     {
         return response()->json([
             'success' => false,
-            'message' => 'Rate limit exceeded',
-            'error_code' => 'RATE_LIMIT_EXCEEDED',
-            'rate_limit' => [
-                'limit' => $rateLimitCheck['limit'],
-                'remaining' => $rateLimitCheck['remaining'],
-                'reset_time' => $rateLimitCheck['reset_time']->toISOString(),
-                'retry_after' => 60
-            ],
-            'timestamp' => now()->toISOString()
-        ], 429)->header('Retry-After', 60);
+            'error' => 'Rate Limit Exceeded',
+            'message' => 'Too many requests. Please try again later.',
+            'retry_after' => $rateLimitData['retry_after']
+        ], 429)->header('Retry-After', $rateLimitData['retry_after']);
     }
+
+
 }

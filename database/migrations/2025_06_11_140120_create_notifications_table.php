@@ -23,6 +23,7 @@ return new class extends Migration
             $table->json('recipients'); // Array of user IDs or email addresses
             $table->json('recipient_groups')->nullable(); // Array of group IDs
             $table->json('variables')->nullable(); // Template variables
+            $table->text('webhook_url')->nullable();
             
             // ✅ Fixed: ใช้ enum เดียวกันกับ notification_templates
             $table->enum('priority', ['low', 'normal', 'high', 'urgent'])->default('normal');
