@@ -11,37 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // เพิ่ม columns ที่ขาดหายไปสำหรับ API Key management
-        Schema::table('api_keys', function (Blueprint $table) {
-            // เพิ่ม key_value column สำหรับเก็บ plain API key (ชั่วคราว)
-            // ใช้สำหรับแสดงผลครั้งแรกหลังสร้าง จากนั้นจะถูกล้าง
-            $table->text('key_value')->nullable()->after('key_hash')
-                ->comment('Plain API key value (temporary, will be cleared after first show)');
-            
-            // เพิ่ม rate limiting columns
-            $table->integer('rate_limit_per_hour')->default(3600)->after('rate_limit_per_minute');
-            $table->integer('rate_limit_per_day')->default(86400)->after('rate_limit_per_hour');
-            
-            // เปลี่ยนชื่อ ip_whitelist เป็น allowed_ips เพื่อความสอดคล้อง
-            $table->renameColumn('ip_whitelist', 'allowed_ips');
-            
-            // เพิ่ม metadata column สำหรับ configuration เพิ่มเติม
-            $table->json('metadata')->nullable()->after('allowed_ips')
-                ->comment('Additional configuration and settings');
-            
-            // เพิ่ม soft delete
-            $table->softDeletes()->after('updated_at');
-            
-            // เพิ่ม UUID สำหรับ external reference
-            $table->uuid('uuid')->unique()->after('id');
-            
-            // เพิ่ม indexes
-            $table->index('uuid');
-            $table->index('last_used_at');
-            $table->index('usage_count');
-            $table->index(['deleted_at', 'is_active']);
-        });
-
+        
         // สร้างตาราง api_key_permissions สำหรับ many-to-many relationship
         Schema::create('api_key_permissions', function (Blueprint $table) {
             $table->id();

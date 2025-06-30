@@ -14,7 +14,7 @@
             <p class="text-muted mb-0">สร้างและจัดการกลุ่มผู้รับการแจ้งเตือน</p>
         </div>
         <div>
-            @can('create-groups')
+            @can('create-notification-groups')
             <a href="{{ route('groups.create') }}" class="btn btn-primary">
                 <i class="bi bi-plus-lg me-1"></i>
                 สร้างกลุ่มใหม่

@@ -15,6 +15,7 @@ class NotificationMail extends Mailable
 
     public $emailData;
     public $mailType;
+    public $attachmentPaths;
 
     /**
      * Create a new message instance.
@@ -23,6 +24,7 @@ class NotificationMail extends Mailable
     {
         $this->emailData = $emailData;
         $this->mailType = $type;
+        $this->attachmentPaths = $attachmentPaths;
     }
 
     /**
@@ -52,6 +54,7 @@ class NotificationMail extends Mailable
                     'mailType' => $this->mailType,
                     'htmlContent' => $this->emailData['body_html'],
                     'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html']),
+                    'hasAttachments' => !empty($this->attachmentPaths)
                 ]
             );
         } else {
@@ -61,6 +64,7 @@ class NotificationMail extends Mailable
                     'emailData' => $this->emailData,
                     'mailType' => $this->mailType,
                     'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html'] ?? ''),
+                    'hasAttachments' => !empty($this->attachmentPaths)
                 ]
             );
         }
@@ -71,6 +75,14 @@ class NotificationMail extends Mailable
      */
     public function attachments(): array
     {
-        return [];
+        $attachments = [];
+
+        foreach ($this->attachmentPaths as $path) {
+            if (file_exists($path)) {
+                $attachments[] = Attachment::fromPath($path);
+            }
+        }
+
+        return $attachments;
     }
 }

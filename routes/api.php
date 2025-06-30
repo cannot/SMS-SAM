@@ -184,6 +184,7 @@ Route::prefix('v1')->middleware([ApiKeyMiddleware::class, RateLimitMiddleware::c
         Route::post('/send', 'send')->name('send');
         Route::post('/bulk', 'sendBulk')->name('bulk');
         Route::post('/schedule', 'schedule')->name('schedule');
+        Route::post('/test-webhook', 'testWebhook')->name('test-webhook');
         
         // Notification status and management
         Route::get('/{id}', 'show')->name('show');
@@ -206,6 +207,7 @@ Route::prefix('v1')->middleware([ApiKeyMiddleware::class, RateLimitMiddleware::c
         Route::post('/preview', 'preview')->name('preview');
         Route::post('/validate', 'validate')->name('validate');
         Route::get('/unread-count', 'getUnreadCount')->name('unread-count');
+
     });
 
     // User Management

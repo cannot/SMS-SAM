@@ -11,7 +11,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             CompletePermissionsSeeder::class,
             DefaultUserSeeder::class,
-            NotificationTemplateSeeder::class,
+            //NotificationTemplateSeeder::class,
+            ApiPermissionsSeeder::class,
             // DefaultGroupSeeder::class,
             // GroupPermissionsSeeder::class,
             

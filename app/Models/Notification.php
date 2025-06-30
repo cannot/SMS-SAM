@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 class Notification extends Model
 {
@@ -22,6 +23,8 @@ class Notification extends Model
         'recipients',
         'recipient_groups',
         'variables',
+        'attachments',
+        'attachments_size',
         'priority',
         'status',
         'scheduled_at',
@@ -33,6 +36,8 @@ class Notification extends Model
         'api_key_id',
         'created_by',
         'webhook_url',
+        'processed_content',
+        'personalized_recipients_count',
     ];
 
     protected $casts = [
@@ -40,11 +45,13 @@ class Notification extends Model
         'recipients' => 'array',
         'recipient_groups' => 'array',
         'variables' => 'array',
+        'attachments' => 'array',
         'scheduled_at' => 'datetime',
         'sent_at' => 'datetime',
         'total_recipients' => 'integer',
         'delivered_count' => 'integer',
         'failed_count' => 'integer',
+        'processed_content' => 'array',
     ];
 
     protected $attributes = [
@@ -479,5 +486,102 @@ class Notification extends Model
     public function setVariablesAttribute($value)
     {
         $this->attributes['variables'] = json_encode(is_array($value) ? $value : []);
+    }
+
+    public function setProcessedContentAttribute($value)
+    {
+        // Log::debug("Setting processed_content attribute", [
+        //     'value_type' => gettype($value),
+        //     'value_is_array' => is_array($value),
+        //     'value_keys' => is_array($value) ? array_keys($value) : 'not_array',
+        //     'has_personalized_content' => is_array($value) && !empty($value['personalized_content'] ?? [])
+        // ]);
+
+        $this->attributes['processed_content'] = json_encode($value);
+    }
+
+    // ✅ เพิ่ม accessor เพื่อ debug
+    public function getProcessedContentAttribute($value)
+    {
+        $decoded = json_decode($value, true);
+        
+        // Log::debug("Getting processed_content attribute", [
+        //     'raw_value' => substr($value ?? '', 0, 100),
+        //     'decoded_type' => gettype($decoded),
+        //     'decoded_is_array' => is_array($decoded),
+        //     'has_personalized_content' => is_array($decoded) && !empty($decoded['personalized_content'] ?? [])
+        // ]);
+
+        return $decoded;
+    }
+
+    public function processAttachments($attachments, $attachmentsBase64 = null)
+    {
+        $processedAttachments = [];
+        $totalSize = 0;
+
+        // จัดการ file uploads
+        if ($attachments) {
+            foreach ($attachments as $file) {
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('attachments/' . $this->uuid, $filename, 'local');
+                
+                $attachment = [
+                    'name' => $file->getClientOriginalName(),
+                    'filename' => $filename,
+                    'path' => $path,
+                    'size' => $file->getSize(),
+                    'mime_type' => $file->getMimeType(),
+                    'type' => 'file'
+                ];
+                
+                $processedAttachments[] = $attachment;
+                $totalSize += $file->getSize();
+            }
+        }
+
+        // จัดการ base64 attachments
+        if ($attachmentsBase64) {
+            foreach ($attachmentsBase64 as $base64File) {
+                $filename = time() . '_' . $base64File['name'];
+                $data = base64_decode($base64File['data']);
+                $path = 'attachments/' . $this->uuid . '/' . $filename;
+                
+                Storage::disk('local')->put($path, $data);
+                
+                $attachment = [
+                    'name' => $base64File['name'],
+                    'filename' => $filename,
+                    'path' => $path,
+                    'size' => strlen($data),
+                    'mime_type' => $base64File['mime_type'],
+                    'type' => 'base64'
+                ];
+                
+                $processedAttachments[] = $attachment;
+                $totalSize += strlen($data);
+            }
+        }
+
+        $this->update([
+            'attachments' => $processedAttachments,
+            'attachments_size' => $totalSize
+        ]);
+
+        return $processedAttachments;
+    }
+
+    /**
+     * ได้รับไฟล์แนบทั้งหมด
+     */
+    public function getAttachmentPaths()
+    {
+        if (!$this->attachments) {
+            return [];
+        }
+
+        return array_map(function($attachment) {
+            return storage_path('app/' . $attachment['path']);
+        }, $this->attachments);
     }
 }

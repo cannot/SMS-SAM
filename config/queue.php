@@ -113,6 +113,58 @@ return [
              */
             'worker' => env('RABBITMQ_WORKER', 'default'),
 
+            /*
+             * Connection settings
+             */
+            'connection_timeout' => env('RABBITMQ_CONNECTION_TIMEOUT', 60.0),
+            'read_write_timeout' => env('RABBITMQ_READ_TIMEOUT', 60.0),
+            'heartbeat' => env('RABBITMQ_HEARTBEAT', 60),
+            'keepalive' => env('RABBITMQ_KEEPALIVE', false),
+
+            /*
+             * Exchange settings
+             */
+            'exchange' => [
+                'name' => env('RABBITMQ_EXCHANGE', 'amq.direct'),
+                'declare' => env('RABBITMQ_EXCHANGE_DECLARE', true),
+                'type' => env('RABBITMQ_EXCHANGE_TYPE', 'direct'),
+                'passive' => env('RABBITMQ_EXCHANGE_PASSIVE', false),
+                'durable' => env('RABBITMQ_EXCHANGE_DURABLE', true),
+                'auto_delete' => env('RABBITMQ_EXCHANGE_AUTO_DELETE', false),
+                'arguments' => env('RABBITMQ_EXCHANGE_ARGUMENTS', '{}'),
+            ],
+
+            /*
+             * Queue settings
+             */
+            'queue_params' => [
+                'passive' => env('RABBITMQ_QUEUE_PASSIVE', false),
+                'durable' => env('RABBITMQ_QUEUE_DURABLE', true),
+                'exclusive' => env('RABBITMQ_QUEUE_EXCLUSIVE', false),
+                'auto_delete' => env('RABBITMQ_QUEUE_AUTO_DELETE', false),
+                'arguments' => env('RABBITMQ_QUEUE_ARGUMENTS', '{}'),
+            ],
+
+            /*
+             * Retry settings
+             */
+            'retry_after' => env('RABBITMQ_RETRY_AFTER', 90),
+            'block_for' => env('RABBITMQ_BLOCK_FOR', null),
+
+            /*
+             * Sleep settings
+             */
+            'sleep_on_error' => env('RABBITMQ_ERROR_SLEEP', 5),
+
+            /*
+             * Message settings
+             */
+            'message' => [
+                'content_type' => env('RABBITMQ_MESSAGE_CONTENT_TYPE', 'application/json'),
+                'delivery_mode' => env('RABBITMQ_MESSAGE_DELIVERY_MODE', 2), // 2 = persistent
+                'content_encoding' => env('RABBITMQ_MESSAGE_CONTENT_ENCODING', null),
+            ],
+
         ],
 
     ],

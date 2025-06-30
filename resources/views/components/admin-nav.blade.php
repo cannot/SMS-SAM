@@ -187,7 +187,7 @@
 </li>
 @endcan
 
-@can('view-permission-matrix')
+{{-- @can('view-permission-matrix')
 <li class="nav-item">
     <a class="nav-link {{ request()->routeIs('permissions.matrix') ? 'active' : '' }}"
         href="{{ route('permissions.matrix') }}">
@@ -195,7 +195,7 @@
         <span class="nav-text">Permission Matrix</span>
     </a>
 </li>
-@endcan
+@endcan --}}
 
 
 @endcanany

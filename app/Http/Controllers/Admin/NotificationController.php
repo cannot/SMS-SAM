@@ -1,24 +1,22 @@
 <?php
-
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Notification;
-use App\Models\NotificationTemplate;
-use App\Models\NotificationGroup;
-use App\Models\NotificationLog;
-use App\Models\User;
-use App\Services\NotificationService;
-use App\Services\LdapService;
 use App\Jobs\SendEmailNotification;
 use App\Jobs\SendTeamsNotification;
 use App\Jobs\SendWebhookNotification;
+use App\Models\Notification;
+use App\Models\NotificationGroup;
+use App\Models\NotificationLog;
+use App\Models\NotificationTemplate;
+use App\Models\User;
+use App\Services\LdapService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Auth;
 use Osama\LaravelTeamsNotification\TeamsNotification;
-use Carbon\Carbon;
 
 class NotificationController extends Controller
 {
@@ -28,7 +26,7 @@ class NotificationController extends Controller
     public function __construct(NotificationService $notificationService, LdapService $ldapService)
     {
         $this->notificationService = $notificationService;
-        $this->ldapService = $ldapService;
+        $this->ldapService         = $ldapService;
     }
 
     /**
@@ -78,43 +76,43 @@ class NotificationController extends Controller
         // Search in subject and body
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('subject', 'LIKE', "%{$search}%")
-                ->orWhere('body_text', 'LIKE', "%{$search}%")
-                ->orWhere('body_html', 'LIKE', "%{$search}%")
-                ->orWhere('uuid', 'LIKE', "%{$search}%")
-                ->orWhereHas('template', function($tq) use ($search) {
-                    $tq->where('name', 'LIKE', "%{$search}%");
-                });
+                    ->orWhere('body_text', 'LIKE', "%{$search}%")
+                    ->orWhere('body_html', 'LIKE', "%{$search}%")
+                    ->orWhere('uuid', 'LIKE', "%{$search}%")
+                    ->orWhereHas('template', function ($tq) use ($search) {
+                        $tq->where('name', 'LIKE', "%{$search}%");
+                    });
             });
         }
 
         // Sorting
-        $sortBy = $request->get('sort_by', 'created_at');
+        $sortBy    = $request->get('sort_by', 'created_at');
         $sortOrder = $request->get('sort_order', 'desc');
         $query->orderBy($sortBy, $sortOrder);
 
         $notifications = $query->paginate(20)->appends($request->all());
 
         // Get filter options
-        $templates = NotificationTemplate::orderBy('name')->get();
-        $groups = NotificationGroup::orderBy('name')->get();
-        $users = User::orderBy('display_name')->get(); // เปลี่ยนจาก display_name เป็น name
-        $statuses = ['draft', 'queued', 'scheduled', 'processing', 'sent', 'failed', 'cancelled'];
+        $templates  = NotificationTemplate::orderBy('name')->get();
+        $groups     = NotificationGroup::orderBy('name')->get();
+        $users      = User::orderBy('display_name')->get(); // เปลี่ยนจาก display_name เป็น name
+        $statuses   = ['draft', 'queued', 'scheduled', 'processing', 'sent', 'failed', 'cancelled'];
         $priorities = ['low', 'medium', 'normal', 'high', 'urgent'];
-        $channels = ['teams', 'email', 'webhook'];
+        $channels   = ['teams', 'email', 'webhook'];
 
         // Statistics for dashboard cards
         $stats = [
-            'total' => Notification::count(),
-            'sent' => Notification::where('status', 'sent')->count(),
+            'total'   => Notification::count(),
+            'sent'    => Notification::where('status', 'sent')->count(),
             'pending' => Notification::whereIn('status', ['queued', 'processing'])->count(),
-            'failed' => Notification::where('status', 'failed')->count(),
-            'today' => Notification::whereDate('created_at', today())->count(),
+            'failed'  => Notification::where('status', 'failed')->count(),
+            'today'   => Notification::whereDate('created_at', today())->count(),
         ];
 
         return view('admin.notifications.index', compact(
-            'notifications', 'templates', 'groups', 'users', 'statuses', 
+            'notifications', 'templates', 'groups', 'users', 'statuses',
             'priorities', 'channels', 'stats'
         ));
     }
@@ -125,31 +123,31 @@ class NotificationController extends Controller
     public function create(Request $request)
     {
         $templates = NotificationTemplate::orderBy('name')->get();
-        $groups = NotificationGroup::with('users')
-                               ->withCount('users')
-                               ->orderBy('name')
-                               ->get();
+        $groups    = NotificationGroup::with('users')
+            ->withCount('users')
+            ->orderBy('name')
+            ->get();
 
-        $users = User::where('is_active', true)->take(10)->get();
-        $channels = ['teams', 'email', 'webhook'];
+        $users      = User::where('is_active', true)->take(10)->get();
+        $channels   = ['teams', 'email', 'webhook'];
         $priorities = ['low', 'medium', 'normal', 'high', 'urgent'];
 
         // Initialize selectedTemplate as null
         $selectedTemplate = null;
-        
+
         // Check if template_id is provided in the request
         if ($request->filled('template_id')) {
             $selectedTemplate = NotificationTemplate::find($request->template_id);
         }
 
         $templateVariables = [
-            'recipient_name' => '{{recipient_name}}',
-            'recipient_email' => '{{recipient_email}}',
-            'notification_title' => '{{notification_title}}',
-            'content' => '{{content}}',
-            'additional_info' => '{{additional_info}}',
-            'created_by_name' => '{{created_by_name}}',
-            'notification_created_at' => '{{notification_created_at}}'
+            'recipient_name'          => '{{recipient_name}}',
+            'recipient_email'         => '{{recipient_email}}',
+            'notification_title'      => '{{notification_title}}',
+            'content'                 => '{{content}}',
+            'additional_info'         => '{{additional_info}}',
+            'created_by_name'         => '{{created_by_name}}',
+            'notification_created_at' => '{{notification_created_at}}',
         ];
 
         return view('admin.notifications.create', compact(
@@ -157,8 +155,8 @@ class NotificationController extends Controller
         ));
     }
 
-    /**
-     * Store a newly created notification
+        /**
+     * Store a newly created notification - Updated for unified service
      */
     public function store(Request $request)
     {
@@ -188,7 +186,7 @@ class NotificationController extends Controller
         $notification = null;
 
         try {
-            // Create notification first
+            // Create notification using unified service approach
             $notification = DB::transaction(function() use ($request) {
                 // Prepare recipients
                 $recipients = $this->prepareRecipients($request);
@@ -199,10 +197,10 @@ class NotificationController extends Controller
                     $webhookUrl = $request->webhook_url;
                 }
 
-                // Prepare variables for replacement
+                // Prepare variables for replacement (Admin style - no personalization)
                 $variables = $this->prepareVariablesForReplacement($request);
 
-                // Replace variables in subject and body content
+                // Replace variables in subject and body content (Admin style - single content)
                 $processedSubject = $this->replaceVariables($request->subject, $variables);
                 $processedBodyHtml = $this->replaceVariables($request->body_html, $variables);
                 $processedBodyText = $this->replaceVariables($request->body_text, $variables);
@@ -210,7 +208,7 @@ class NotificationController extends Controller
                 // Generate UUID
                 $uuid = \Illuminate\Support\Str::uuid();
 
-                // Create notification
+                // Create notification (Admin style - no processed_content)
                 return Notification::create([
                     'uuid' => $uuid,
                     'template_id' => $request->template_id,
@@ -225,35 +223,35 @@ class NotificationController extends Controller
                     'webhook_url' => $webhookUrl,
                     'scheduled_at' => $request->scheduled_at,
                     'status' => $request->has('save_as_draft') ? 'draft' : ($request->scheduled_at ? 'scheduled' : 'queued'),
-                    'created_by' => auth()->id()
+                    'created_by' => auth()->id(),
+                    // Note: No api_key_id for Admin, No processed_content for Admin
                 ]);
             });
 
-            Log::info('Notification created successfully:', [
+            Log::info('Admin notification created successfully:', [
                 'notification_id' => $notification->id,
                 'uuid' => $notification->uuid,
-                'status' => $notification->status
+                'status' => $notification->status,
+                'source' => 'Admin'
             ]);
 
-            // Process notification outside of transaction if needed
+            // Process notification using unified service
             if (!$request->scheduled_at && !$request->has('save_as_draft')) {
-                Log::info('Processing notification immediately');
+                Log::info('Processing admin notification immediately');
                 
-                // Process in separate try-catch to avoid affecting main transaction
                 try {
+                    // Use the unified service - it will automatically detect this as Admin source
                     $processResult = $this->notificationService->processNotification($notification);
                     
                     if (!$processResult) {
-                        Log::warning('Notification processing returned false but notification was created');
+                        Log::warning('Admin notification processing returned false but notification was created');
                     }
                 } catch (\Exception $processError) {
-                    Log::error('Failed to process notification after creation', [
+                    Log::error('Failed to process admin notification after creation', [
                         'notification_id' => $notification->id,
                         'error' => $processError->getMessage()
                     ]);
-                    
-                    // Don't fail the entire operation, just log the error
-                    // The notification was created successfully, processing can be retried later
+                    // Don't fail the entire operation for Admin
                 }
             }
 
@@ -262,29 +260,10 @@ class NotificationController extends Controller
                 'Notification created successfully!';
 
             return redirect()->route('admin.notifications.show', $notification->uuid)
-            ->with('success', $message);
+                ->with('success', $message);
 
-        } catch (\Illuminate\Database\QueryException $e) {
-            Log::error('Database error during notification creation', [
-                'error' => $e->getMessage(),
-                'sql' => $e->getSql() ?? 'N/A',
-                'user_id' => auth()->id()
-            ]);
-            
-            return back()->withInput()->withErrors([
-                'error' => 'Database error occurred. Please check your input and try again.'
-            ]);
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error('Validation error during notification creation', [
-                'errors' => $e->errors(),
-                'user_id' => auth()->id()
-            ]);
-            
-            return back()->withInput()->withErrors($e->errors());
-            
         } catch (\Exception $e) {
-            Log::error('Notification creation failed', [
+            Log::error('Admin notification creation failed', [
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
@@ -296,12 +275,13 @@ class NotificationController extends Controller
             ]);
         }
     }
+
     /**
-     * Prepare variables for replacement including system variables
+     * Prepare variables for replacement (Admin style - no personalization)
      */
     private function prepareVariablesForReplacement(Request $request): array
     {
-        // Get system variables
+        // Get system variables (Admin context)
         $systemVariables = $this->getSystemVariables();
         
         // Get user-provided variables
@@ -320,38 +300,45 @@ class NotificationController extends Controller
         return array_merge($systemVariables, $templateVariables, $userVariables);
     }
 
-    /**
-     * Get system variables
-     */
     private function getSystemVariables(): array
     {
         $user = auth()->user();
         
         return [
-            // User data
-            'user_name' => $user->name ?? 'User',
+            // Admin user data
+            'user_name' => $user->name ?? 'Admin User',
             'user_email' => $user->email ?? '',
-            'user_first_name' => $user->name ? explode(' ', $user->name)[0] : 'User',
-            'user_last_name' => $user->name ? (explode(' ', $user->name)[1] ?? '') : '',
-            'user_department' => $user->department ?? 'Unknown Department',
-            'user_title' => $user->title ?? 'Employee',
+            'user_first_name' => $user->name ? explode(' ', $user->name)[0] : 'Admin',
+            'user_last_name' => $user->name ? (explode(' ', $user->name)[1] ?? '') : 'User',
+            'user_department' => $user->department ?? 'Administration',
+            'user_title' => $user->title ?? 'Administrator',
+            'created_by_name' => $user->name ?? 'Admin User',
             
             // System variables
             'current_date' => now()->format('Y-m-d'),
             'current_time' => now()->format('H:i:s'),
             'current_datetime' => now()->format('Y-m-d H:i:s'),
+            'current_date_thai' => now()->locale('th')->translatedFormat('j F Y'),
+            'current_time_12h' => now()->format('g:i A'),
             'app_name' => config('app.name', 'Smart Notification'),
             'app_url' => config('app.url', url('/')),
             'year' => now()->format('Y'),
             'month' => now()->format('m'),
+            'month_name' => now()->format('F'),
+            'month_name_thai' => now()->locale('th')->translatedFormat('F'),
             'day' => now()->format('d'),
+            'day_name' => now()->format('l'),
+            'day_name_thai' => now()->locale('th')->translatedFormat('l'),
             'company' => config('app.name', 'Your Company'),
+            'notification_created_at' => now()->format('Y-m-d H:i:s'),
+            
+            // Admin-specific variables
+            'source' => 'Admin Panel',
+            'created_via' => 'Web Interface',
+            'admin_version' => 'v1.0',
         ];
     }
 
-    /**
-     * Replace variables in content
-     */
     private function replaceVariables(?string $content, array $variables): ?string
     {
         if (empty($content)) {
@@ -369,6 +356,8 @@ class NotificationController extends Controller
                 $value = $value ? 'Yes' : 'No';
             } elseif (is_null($value)) {
                 $value = '';
+            } elseif ($value instanceof \Carbon\Carbon) {
+                $value = $value->format('Y-m-d H:i:s');
             }
             
             // Replace {{variable}} pattern (with optional spaces)
@@ -382,14 +371,14 @@ class NotificationController extends Controller
         // Handle loop blocks {{#each items}}...{{/each}}
         $processedContent = $this->processLoopBlocks($processedContent, $variables);
         
-        // Clean up any remaining unreplaced variables by replacing with empty string or placeholder
+        // Clean up any remaining unreplaced variables
         $processedContent = preg_replace('/\{\{[^}]+\}\}/', '[Variable Not Found]', $processedContent);
         
         return $processedContent;
     }
 
     /**
-     * Process conditional blocks {{#if variable}}...{{/if}}
+     * Process conditional blocks {{#if variable}}...{{/if}} (Admin)
      */
     private function processConditionalBlocks(string $content, array $variables): string
     {
@@ -409,7 +398,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Process loop blocks {{#each items}}...{{/each}}
+     * Process loop blocks {{#each items}}...{{/each}} (Admin)
      */
     private function processLoopBlocks(string $content, array $variables): string
     {
@@ -448,7 +437,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Test notification endpoint
+     * Test notification endpoint - Updated for unified service
      */
     public function test(Request $request)
     {
@@ -461,18 +450,19 @@ class NotificationController extends Controller
         ]);
 
         try {
-            // Create a temporary notification for testing
+            // Create a temporary notification for testing (Admin style)
             $testData = [
                 'subject' => $request->subject,
                 'body_html' => $request->body_html,
                 'body_text' => $request->body_text,
                 'variables' => $request->variables ?? [],
                 'recipients' => [$request->test_email],
-                'channels' => ['email'], // Only test email for now
-                'priority' => 'normal'
+                'channels' => ['email'], // Admin test only supports email
+                'priority' => 'normal',
+                'test_email' => $request->test_email
             ];
 
-            // Send test email using notification service
+            // Send test email using unified service
             $result = $this->notificationService->sendTestNotification($testData);
 
             return response()->json([
@@ -481,7 +471,7 @@ class NotificationController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Test notification failed', [
+            Log::error('Admin test notification failed', [
                 'error' => $e->getMessage(),
                 'test_data' => $request->all()
             ]);
@@ -494,7 +484,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Prepare recipients based on type
+     * Prepare recipients based on type (Admin style)
      */
     private function prepareRecipients($request)
     {
@@ -507,7 +497,7 @@ class NotificationController extends Controller
                     if (is_array($request->recipients)) {
                         $recipients = $request->recipients;
                     } else {
-                        // Parse textarea input
+                        // Parse textarea input (Admin specific)
                         $recipients = array_filter(
                             array_map('trim', 
                                 preg_split('/[,\n\r]+/', $request->recipients)
@@ -523,6 +513,7 @@ class NotificationController extends Controller
                 
             case 'all_users':
                 $recipients = User::where('is_active', true)
+                                ->whereNotNull('email')
                                 ->pluck('email')
                                 ->toArray();
                 break;
@@ -534,6 +525,7 @@ class NotificationController extends Controller
         ];
     }
 
+
     /**
      * Display the specified notification
      */
@@ -544,7 +536,7 @@ class NotificationController extends Controller
 
     //     // Update delivery counters first
     //     $notification->updateDeliveryCounters();
-        
+
     //     // Refresh notification to get updated data
     //     $notification->refresh();
 
@@ -553,10 +545,10 @@ class NotificationController extends Controller
 
     //     // Delivery statistics
     //     $deliveryStats = $notification->logs->groupBy('status')->map->count();
-        
+
     //     // Channel statistics
     //     $channelStats = $notification->logs->groupBy('channel')->map->count();
-        
+
     //     // Recent logs (last 50)
     //     $recentLogs = $notification->logs()
     //                               ->orderBy('created_at', 'desc')
@@ -566,7 +558,7 @@ class NotificationController extends Controller
     //     // Performance metrics
     //     $metrics = [
     //         'total_recipients' => $notification->logs->count(),
-    //         'delivery_rate' => $notification->logs->count() > 0 
+    //         'delivery_rate' => $notification->logs->count() > 0
     //             ? round(($notification->logs->whereIn('status', ['sent', 'delivered'])->count() / $notification->logs->count()) * 100, 2)
     //             : 0,
     //         'avg_delivery_time' => $notification->logs->whereIn('status', ['sent', 'delivered'])
@@ -592,12 +584,12 @@ class NotificationController extends Controller
     public function show($uuid)
     {
         $notification = Notification::where('uuid', $uuid)
-                                    ->with(['template', 'creator', 'logs'])
-                                    ->firstOrFail();
+            ->with(['template', 'creator', 'logs'])
+            ->firstOrFail();
 
         // Update delivery counters first
         $notification->updateDeliveryCounters();
-        
+
         // Refresh notification to get updated data
         $notification->refresh();
 
@@ -606,33 +598,33 @@ class NotificationController extends Controller
 
         // Delivery statistics
         $deliveryStats = $notification->logs->groupBy('status')->map->count();
-        
+
         // Channel statistics
         $channelStats = $notification->logs->groupBy('channel')->map->count();
-        
+
         // Recent logs (last 50)
         $recentLogs = $notification->logs()
-                                ->orderBy('created_at', 'desc')
-                                ->limit(50)
-                                ->get();
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get();
 
         // Performance metrics
         $metrics = [
-            'total_recipients' => $notification->logs->count(),
-            'delivery_rate' => $notification->logs->count() > 0 
-                ? round(($notification->logs->whereIn('status', ['sent', 'delivered'])->count() / $notification->logs->count()) * 100, 2)
-                : 0,
+            'total_recipients'  => $notification->logs->count(),
+            'delivery_rate'     => $notification->logs->count() > 0
+            ? round(($notification->logs->whereIn('status', ['sent', 'delivered'])->count() / $notification->logs->count()) * 100, 2)
+            : 0,
             'avg_delivery_time' => $notification->logs->whereIn('status', ['sent', 'delivered'])
-                ->filter(function($log) {
+                ->filter(function ($log) {
                     return $log->delivered_at || $log->sent_at;
                 })
-                ->avg(function($log) {
+                ->avg(function ($log) {
                     $endTime = $log->delivered_at ?? $log->sent_at;
                     return $endTime ? abs($endTime->diffInSeconds($log->created_at)) : 0;
                 }),
-            'failure_rate' => $notification->logs->count() > 0
-                ? round(($notification->logs->where('status', 'failed')->count() / $notification->logs->count()) * 100, 2)
-                : 0
+            'failure_rate'      => $notification->logs->count() > 0
+            ? round(($notification->logs->where('status', 'failed')->count() / $notification->logs->count()) * 100, 2)
+            : 0,
         ];
 
         return view('admin.notifications.show', compact(
@@ -646,30 +638,30 @@ class NotificationController extends Controller
     private function renderNotificationContent($notification)
     {
         $variables = $notification->getTemplateVariables();
-        
+
         // Get the base content
-        $subject = $notification->subject;
+        $subject  = $notification->subject;
         $bodyHtml = $notification->body_html;
         $bodyText = $notification->body_text;
-        
+
         // Replace variables in content
         foreach ($variables as $key => $value) {
             $placeholder = '{{' . $key . '}}';
-            $subject = str_replace($placeholder, $value, $subject);
-            $bodyHtml = str_replace($placeholder, $value, $bodyHtml);
-            $bodyText = str_replace($placeholder, $value, $bodyText);
+            $subject     = str_replace($placeholder, $value, $subject);
+            $bodyHtml    = str_replace($placeholder, $value, $bodyHtml);
+            $bodyText    = str_replace($placeholder, $value, $bodyText);
         }
-        
+
         return [
-            'subject' => $subject,
+            'subject'   => $subject,
             'body_html' => $bodyHtml,
             'body_text' => $bodyText,
-            'variables' => $variables
+            'variables' => $variables,
         ];
     }
 
     /**
-     * Resend failed notifications
+     * Resend failed notifications - Updated for unified service
      */
     public function resend($uuid)
     {
@@ -704,13 +696,13 @@ class NotificationController extends Controller
                 'failure_reason' => null
             ]);
 
-            // Re-queue the notification
+            // Re-queue the notification using unified service
             $this->notificationService->queueNotification($notification);
 
             return back()->with('success', "Resending {$failedLogs->count()} failed notifications.");
 
         } catch (\Exception $e) {
-            Log::error('Resend failed', [
+            Log::error('Admin resend failed', [
                 'notification_uuid' => $uuid,
                 'error' => $e->getMessage()
             ]);
@@ -724,7 +716,7 @@ class NotificationController extends Controller
     public function resendLog($uuid, NotificationLog $log)
     {
         $notification = Notification::where('uuid', $uuid)->firstOrFail();
-        
+
         try {
             if ($log->notification_id !== $notification->id) {
                 return back()->withErrors(['error' => 'Invalid notification log.']);
@@ -736,29 +728,29 @@ class NotificationController extends Controller
 
             // Reset log to pending
             $log->update([
-                'status' => 'pending',
-                'retry_count' => 0,
+                'status'        => 'pending',
+                'retry_count'   => 0,
                 'error_message' => null,
-                'next_retry_at' => null
+                'next_retry_at' => null,
             ]);
 
             // Queue single notification
-            $delay = $this->notificationService->calculateDelay($notification->priority);
+            $delay     = $this->notificationService->calculateDelay($notification->priority);
             $queueName = $this->notificationService->getQueueName($notification->priority);
-            
+
             switch ($log->channel) {
                 case 'email':
                     SendEmailNotification::dispatch($log)
                         ->delay($delay)
                         ->onQueue($queueName);
                     break;
-                    
+
                 case 'teams':
                     SendTeamsNotification::dispatch($log)
                         ->delay($delay)
                         ->onQueue($queueName);
                     break;
-                    
+
                 case 'webhook':
                     SendWebhookNotification::dispatch($log)
                         ->delay($delay)
@@ -771,8 +763,8 @@ class NotificationController extends Controller
         } catch (\Exception $e) {
             Log::error('Resend log failed', [
                 'notification_uuid' => $uuid,
-                'log_id' => $log->id,
-                'error' => $e->getMessage()
+                'log_id'            => $log->id,
+                'error'             => $e->getMessage(),
             ]);
             return back()->withErrors(['error' => 'Failed to resend notification: ' . $e->getMessage()]);
         }
@@ -784,8 +776,8 @@ class NotificationController extends Controller
     public function cancel($uuid)
     {
         $notification = Notification::where('uuid', $uuid)->firstOrFail();
-        
-        if (!$notification->canBeCancelled()) {
+
+        if (! $notification->canBeCancelled()) {
             return back()->withErrors(['error' => 'This notification cannot be cancelled.']);
         }
 
@@ -800,12 +792,12 @@ class NotificationController extends Controller
     public function stats()
     {
         $stats = [
-            'total' => Notification::count(),
-            'draft' => Notification::where('status', 'draft')->count(),
-            'scheduled' => Notification::where('status', 'scheduled')->count(),
+            'total'      => Notification::count(),
+            'draft'      => Notification::where('status', 'draft')->count(),
+            'scheduled'  => Notification::where('status', 'scheduled')->count(),
             'processing' => Notification::whereIn('status', ['queued', 'processing'])->count(),
-            'sent' => Notification::where('status', 'sent')->count(),
-            'failed' => Notification::where('status', 'failed')->count(),
+            'sent'       => Notification::where('status', 'sent')->count(),
+            'failed'     => Notification::where('status', 'failed')->count(),
         ];
 
         return response()->json($stats);
@@ -817,14 +809,14 @@ class NotificationController extends Controller
     public function bulkAction(Request $request)
     {
         $request->validate([
-            'action' => 'required|in:resend,cancel,export,delete',
-            'notifications' => 'required|array|min:1',
-            'notifications.*' => 'exists:notifications,id'
+            'action'          => 'required|in:resend,cancel,export,delete',
+            'notifications'   => 'required|array|min:1',
+            'notifications.*' => 'exists:notifications,id',
         ]);
 
         try {
             $notifications = Notification::whereIn('id', $request->notifications)->get();
-            $results = [];
+            $results       = [];
 
             switch ($request->action) {
                 case 'resend':
@@ -843,19 +835,19 @@ class NotificationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $results['message'],
-                'details' => $results['details'] ?? null
+                'details' => $results['details'] ?? null,
             ]);
 
         } catch (\Exception $e) {
             Log::error('Bulk action failed', [
-                'action' => $request->action,
+                'action'        => $request->action,
                 'notifications' => $request->notifications,
-                'error' => $e->getMessage()
+                'error'         => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Bulk action failed: ' . $e->getMessage()
+                'message' => 'Bulk action failed: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -871,17 +863,17 @@ class NotificationController extends Controller
         foreach ($notifications as $notification) {
             try {
                 $failedLogs = $notification->logs()->where('status', 'failed')->get();
-                
+
                 if ($failedLogs->count() > 0) {
                     foreach ($failedLogs as $log) {
                         $log->update([
-                            'status' => 'pending',
-                            'retry_count' => 0,
+                            'status'        => 'pending',
+                            'retry_count'   => 0,
                             'error_message' => null,
-                            'next_retry_at' => null
+                            'next_retry_at' => null,
                         ]);
                     }
-                    
+
                     $notification->update(['status' => 'processing']);
                     $this->notificationService->queueNotification($notification);
                     $resent++;
@@ -890,14 +882,14 @@ class NotificationController extends Controller
                 $failed++;
                 Log::error('Bulk resend failed for notification', [
                     'notification_id' => $notification->id,
-                    'error' => $e->getMessage()
+                    'error'           => $e->getMessage(),
                 ]);
             }
         }
 
         return [
             'message' => "Resent {$resent} notifications" . ($failed > 0 ? ", {$failed} failed" : ""),
-            'details' => ['resent' => $resent, 'failed' => $failed]
+            'details' => ['resent' => $resent, 'failed' => $failed],
         ];
     }
 
@@ -907,7 +899,7 @@ class NotificationController extends Controller
     private function bulkCancel($notifications)
     {
         $cancelled = 0;
-        $failed = 0;
+        $failed    = 0;
 
         foreach ($notifications as $notification) {
             try {
@@ -919,14 +911,14 @@ class NotificationController extends Controller
                 $failed++;
                 Log::error('Bulk cancel failed for notification', [
                     'notification_id' => $notification->id,
-                    'error' => $e->getMessage()
+                    'error'           => $e->getMessage(),
                 ]);
             }
         }
 
         return [
             'message' => "Cancelled {$cancelled} notifications" . ($failed > 0 ? ", {$failed} failed" : ""),
-            'details' => ['cancelled' => $cancelled, 'failed' => $failed]
+            'details' => ['cancelled' => $cancelled, 'failed' => $failed],
         ];
     }
 
@@ -936,7 +928,7 @@ class NotificationController extends Controller
     private function bulkDelete($notifications)
     {
         $deleted = 0;
-        $failed = 0;
+        $failed  = 0;
 
         foreach ($notifications as $notification) {
             try {
@@ -949,14 +941,14 @@ class NotificationController extends Controller
                 $failed++;
                 Log::error('Bulk delete failed for notification', [
                     'notification_id' => $notification->id,
-                    'error' => $e->getMessage()
+                    'error'           => $e->getMessage(),
                 ]);
             }
         }
 
         return [
             'message' => "Deleted {$deleted} notifications" . ($failed > 0 ? ", {$failed} failed" : ""),
-            'details' => ['deleted' => $deleted, 'failed' => $failed]
+            'details' => ['deleted' => $deleted, 'failed' => $failed],
         ];
     }
 
@@ -984,17 +976,17 @@ class NotificationController extends Controller
 
             // Generate CSV
             $headers = [
-                'Content-Type' => 'text/csv',
+                'Content-Type'        => 'text/csv',
                 'Content-Disposition' => 'attachment; filename="notifications_' . date('Y-m-d_H-i-s') . '.csv"',
             ];
 
-            $callback = function() use ($notifications) {
+            $callback = function () use ($notifications) {
                 $file = fopen('php://output', 'w');
-                
+
                 // Headers
                 fputcsv($file, [
-                    'UUID', 'Subject', 'Status', 'Priority', 'Channels', 
-                    'Recipients Count', 'Created At', 'Created By', 'Template'
+                    'UUID', 'Subject', 'Status', 'Priority', 'Channels',
+                    'Recipients Count', 'Created At', 'Created By', 'Template',
                 ]);
 
                 // Data
@@ -1008,7 +1000,7 @@ class NotificationController extends Controller
                         $notification->logs->count(),
                         $notification->created_at->format('Y-m-d H:i:s'),
                         $notification->creator->display_name ?? 'System',
-                        $notification->template->name ?? 'N/A'
+                        $notification->template->name ?? 'N/A',
                     ]);
                 }
 
@@ -1019,8 +1011,8 @@ class NotificationController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Export failed', [
-                'error' => $e->getMessage(),
-                'request' => $request->all()
+                'error'   => $e->getMessage(),
+                'request' => $request->all(),
             ]);
 
             return back()->withErrors(['error' => 'Export failed: ' . $e->getMessage()]);
@@ -1033,7 +1025,7 @@ class NotificationController extends Controller
     public function logs($uuid, Request $request)
     {
         $notification = Notification::where('uuid', $uuid)->firstOrFail();
-        $query = $notification->logs();
+        $query        = $notification->logs();
 
         // Apply filters
         if ($request->filled('status')) {
@@ -1046,10 +1038,10 @@ class NotificationController extends Controller
 
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('recipient_email', 'LIKE', "%{$search}%")
-                  ->orWhere('recipient_name', 'LIKE', "%{$search}%")
-                  ->orWhere('error_message', 'LIKE', "%{$search}%");
+                    ->orWhere('recipient_name', 'LIKE', "%{$search}%")
+                    ->orWhere('error_message', 'LIKE', "%{$search}%");
             });
         }
 
@@ -1057,10 +1049,10 @@ class NotificationController extends Controller
 
         // Summary statistics
         $summary = [
-            'total' => $notification->logs->count(),
+            'total'     => $notification->logs->count(),
             'delivered' => $notification->logs->whereIn('status', ['sent', 'delivered'])->count(),
-            'failed' => $notification->logs->where('status', 'failed')->count(),
-            'pending' => $notification->logs->where('status', 'pending')->count(),
+            'failed'    => $notification->logs->where('status', 'failed')->count(),
+            'pending'   => $notification->logs->where('status', 'pending')->count(),
         ];
 
         return view('admin.notifications.logs', compact('notification', 'logs', 'summary'));
@@ -1072,20 +1064,20 @@ class NotificationController extends Controller
     public function preview($uuid, Request $request)
     {
         $notification = Notification::where('uuid', $uuid)->firstOrFail();
-        
+
         // Override variables if provided
         if ($request->has('variables')) {
             $notification->variables = array_merge(
-                $notification->variables ?? [], 
+                $notification->variables ?? [],
                 $request->variables
             );
         }
-        
+
         $renderedContent = $this->renderNotificationContent($notification);
-        
+
         return response()->json([
             'success' => true,
-            'content' => $renderedContent
+            'content' => $renderedContent,
         ]);
     }
 
@@ -1096,40 +1088,40 @@ class NotificationController extends Controller
     {
         $request->validate([
             'template_id' => 'required|exists:notification_templates,id',
-            'variables' => 'nullable|array'
+            'variables'   => 'nullable|array',
         ]);
 
         try {
-            $template = NotificationTemplate::findOrFail($request->template_id);
+            $template  = NotificationTemplate::findOrFail($request->template_id);
             $variables = $request->variables ?? [];
-            
+
             // Render template with variables
             $rendered = $template->render($variables);
-            
+
             return response()->json([
-                'success' => true,
+                'success'  => true,
                 'template' => [
-                    'id' => $template->id,
-                    'name' => $template->name,
-                    'variables' => $template->variables ?? [],
-                    'supported_channels' => $template->supported_channels
+                    'id'                 => $template->id,
+                    'name'               => $template->name,
+                    'variables'          => $template->variables ?? [],
+                    'supported_channels' => $template->supported_channels,
                 ],
-                'preview' => [
-                    'subject' => $rendered['subject'] ?? $template->subject_template,
+                'preview'  => [
+                    'subject'   => $rendered['subject'] ?? $template->subject_template,
                     'body_html' => $rendered['body_html'] ?? $template->body_html_template,
-                    'body_text' => $rendered['body_text'] ?? $template->body_text_template
-                ]
+                    'body_text' => $rendered['body_text'] ?? $template->body_text_template,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error loading template: ' . $e->getMessage()
+                'message' => 'Error loading template: ' . $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Test webhook endpoint with improved Teams notification
+     * Test webhook endpoint - Enhanced for unified service
      */
     public function testWebhook(Request $request)
     {
@@ -1140,25 +1132,24 @@ class NotificationController extends Controller
         ]); 
 
         try {
-            $notification = new TeamsNotification();
+            $notification = new \Osama\LaravelTeamsNotification\TeamsNotification();
             
-            // ใช้ subject เป็น message หลัก หรือใช้ข้อความเริ่มต้น
-            $message = $request->subject ?? "Test Webhook Notification";
+            // Use subject as main message or default
+            $message = $request->subject ?? "Admin Test Webhook Notification";
             
-            // สร้าง details จาก body_text
+            // Create details from body_text
             $details = [];
             
             if ($request->body_text) {
-                // แยกข้อมูลจาก body_text แบบต่างๆ
+                // Parse body_text for Teams format
                 $bodyText = $request->body_text;
                 
-                // วิธีที่ 1: ถ้าเป็น JSON format
+                // Try JSON decode first
                 $jsonData = json_decode($bodyText, true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($jsonData)) {
                     $details = $jsonData;
-                } 
-                // วิธีที่ 2: ถ้าเป็นรูปแบบ key: value แยกด้วย newline
-                else {
+                } else {
+                    // Parse key: value format
                     $lines = explode("\n", $bodyText);
                     foreach ($lines as $line) {
                         $line = trim($line);
@@ -1168,40 +1159,44 @@ class NotificationController extends Controller
                         }
                     }
                     
-                    // ถ้าไม่มี key: value ให้ใช้เป็น message เดียว
+                    // If no key: value format, use as single message
                     if (empty($details)) {
                         $details = [
                             'Message' => $bodyText,
+                            'Source' => 'Admin Panel Test',
                             'Test Time' => now()->format('Y-m-d H:i:s'),
-                            'Sent By' => auth()->user()->name ?? 'System'
+                            'Sent By' => auth()->user()->name ?? 'Admin User'
                         ];
                     }
                 }
             } else {
-                // ใช้ข้อมูลเริ่มต้นถ้าไม่มี body_text
+                // Default test data for Admin
                 $details = [
-                    'Status' => 'Testing',
+                    'Status' => 'Admin Test',
+                    'Source' => 'Admin Panel',
                     'Server' => 'Development',
                     'Test Time' => now()->format('Y-m-d H:i:s'),
-                    'Sent By' => auth()->user()->name ?? 'System'
+                    'Sent By' => auth()->user()->name ?? 'Admin User'
                 ];
             }
             
-            // เพิ่ม webhook info
-            // $details['Webhook URL'] = $request->webhook_url;
+            // Add Admin-specific info
+            $details['User ID'] = auth()->id();
+            $details['User Email'] = auth()->user()->email ?? 'Unknown';
             
-            // ส่งข้อความผ่าน Teams
+            // Send message through Teams
             $response = $notification->sendMessageSetWebhook($request->webhook_url, $message, $details);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Webhook test successful',
+                'message' => 'Admin webhook test successful',
                 'status_code' => $response->getStatusCode(),
                 'details' => [
                     'webhook_url' => $request->webhook_url,
                     'message' => $message,
                     'details_sent' => $details,
-                    'response_headers' => $response->getHeaders()
+                    'response_headers' => $response->getHeaders(),
+                    'source' => 'Admin Panel'
                 ]
             ]);
 
@@ -1211,29 +1206,34 @@ class NotificationController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Webhook test failed: ' . $e->getMessage(),
+                'message' => 'Admin webhook test failed: ' . $e->getMessage(),
                 'status_code' => $statusCode,
                 'response_body' => $responseBody,
                 'details' => [
                     'webhook_url' => $request->webhook_url,
-                    'error_type' => 'Request Exception'
+                    'error_type' => 'Request Exception',
+                    'source' => 'Admin Panel'
                 ]
             ], 400);
         } catch (\Exception $e) {
-            Log::error('Webhook test failed', [
+            Log::error('Admin webhook test failed', [
                 'webhook_url' => $request->webhook_url,
                 'error' => $e->getMessage(),
+                'user_id' => auth()->id(),
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Webhook test failed: ' . $e->getMessage(),
+                'message' => 'Admin webhook test failed: ' . $e->getMessage(),
                 'details' => [
                     'webhook_url' => $request->webhook_url,
-                    'error_type' => 'General Exception'
+                    'error_type' => 'General Exception',
+                    'source' => 'Admin Panel'
                 ]
             ], 500);
         }
     }
+
+    
 }

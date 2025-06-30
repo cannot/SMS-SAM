@@ -33,7 +33,9 @@ class SendEmailNotification implements ShouldQueue
             Log::info('Processing email notification', [
                 'log_id' => $this->notificationLog->id,
                 'recipient' => $this->notificationLog->recipient_email,
-                'current_status' => $this->notificationLog->status
+                'recipient_name' => $this->notificationLog->recipient_name,
+                'current_status' => $this->notificationLog->status,
+                'has_personalized_content' => !empty($this->notificationLog->personalized_content)
             ]);
 
             $notification = $this->notificationLog->notification;
@@ -41,7 +43,7 @@ class SendEmailNotification implements ShouldQueue
             // ตรวจสอบว่าควรส่งอีเมลหรือไม่
             if (!$this->shouldSendEmail()) {
                 $this->notificationLog->update([
-                    'status' => 'failed', // ใช้ 'failed' แทน 'skipped'
+                    'status' => 'failed',
                     'error_message' => 'User preferences do not allow email notifications',
                     'failed_at' => now()
                 ]);
@@ -55,7 +57,7 @@ class SendEmailNotification implements ShouldQueue
                 return;
             }
 
-            // เตรียมเนื้อหาอีเมล
+            // ✅ เตรียมเนื้อหาอีเมลโดยใช้ personalized content ก่อน
             $emailContent = $this->prepareEmailContent($notification);
             
             $recipient = [
@@ -63,9 +65,14 @@ class SendEmailNotification implements ShouldQueue
                 'name' => $this->notificationLog->recipient_name ?: $this->extractNameFromEmail($this->notificationLog->recipient_email)
             ];
 
-            Log::info('Sending email', [
+            Log::info('Sending email with final content', [
                 'recipient' => $recipient['email'],
-                'subject' => substr($emailContent['subject'], 0, 50) . '...'
+                'recipient_name' => $recipient['name'],
+                'subject' => $emailContent['subject'],
+                'has_html' => !empty($emailContent['body_html']),
+                'has_text' => !empty($emailContent['body_text']),
+                'subject_length' => strlen($emailContent['subject']),
+                'content_source' => $this->detectContentSource()
             ]);
 
             // ส่งอีเมลโดยใช้ Laravel Mail หรือ EmailService
@@ -76,7 +83,8 @@ class SendEmailNotification implements ShouldQueue
                 $this->notificationLog->update([
                     'status' => 'sent',
                     'sent_at' => now(),
-                    'delivered_at' => now(), // ✅ เพิ่ม delivered_at
+                    'delivered_at' => now(),
+                    'content_sent' => $emailContent, // ✅ บันทึก content ที่ส่งจริง
                     'response_data' => [
                         'success' => true,
                         'method' => $result['method'] ?? 'mail',
@@ -88,6 +96,8 @@ class SendEmailNotification implements ShouldQueue
                 Log::info('Email notification sent successfully', [
                     'log_id' => $this->notificationLog->id,
                     'recipient' => $recipient['email'],
+                    'recipient_name' => $recipient['name'],
+                    'subject_sent' => $emailContent['subject'],
                     'method' => $result['method'] ?? 'mail'
                 ]);
 
@@ -101,7 +111,10 @@ class SendEmailNotification implements ShouldQueue
             Log::error('Email notification failed', [
                 'log_id' => $this->notificationLog->id,
                 'recipient' => $this->notificationLog->recipient_email,
-                'error' => $e->getMessage()
+                'recipient_name' => $this->notificationLog->recipient_name,
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
             ]);
             
             $this->handleFailure($e->getMessage());
@@ -109,38 +122,123 @@ class SendEmailNotification implements ShouldQueue
     }
 
     /**
-     * เตรียมเนื้อหาอีเมล
+     * ✅ เตรียมเนื้อหาอีเมล - ใช้ personalized content ก่อน
      */
     private function prepareEmailContent($notification)
     {
-        $subject = $notification->subject ?? 'Notification';
-        $bodyHtml = $notification->body_html ?? '';
-        $bodyText = $notification->body_text ?? '';
+        try {
+            // ✅ ลำดับความสำคัญ: personalized_content > template > notification content
+            
+            // 1. ลองใช้ personalized content จาก log ก่อน
+            if (!empty($this->notificationLog->personalized_content)) {
+                $personalizedContent = $this->notificationLog->personalized_content;
+                
+                Log::info("Using personalized content from log", [
+                    'log_id' => $this->notificationLog->id,
+                    'has_subject' => !empty($personalizedContent['subject']),
+                    'has_body_html' => !empty($personalizedContent['body_html']),
+                    'has_body_text' => !empty($personalizedContent['body_text']),
+                    'subject_preview' => !empty($personalizedContent['subject']) ? substr($personalizedContent['subject'], 0, 100) : 'EMPTY'
+                ]);
+                
+                if (!empty($personalizedContent['subject'])) {
+                    return [
+                        'subject' => $personalizedContent['subject'],
+                        'body_html' => $personalizedContent['body_html'] ?? '',
+                        'body_text' => $personalizedContent['body_text'] ?? strip_tags($personalizedContent['body_html'] ?? '')
+                    ];
+                }
+            }
+            
+            // 2. ถ้าไม่มี personalized content ให้สร้างใหม่
+            Log::info("No personalized content found, creating content with variables", [
+                'log_id' => $this->notificationLog->id,
+                'notification_subject' => $notification->subject,
+                'recipient_name' => $this->notificationLog->recipient_name
+            ]);
+            
+            return $this->createContentWithVariables($notification);
+            
+        } catch (\Exception $e) {
+            Log::error("Error preparing email content", [
+                'log_id' => $this->notificationLog->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback to basic content
+            return [
+                'subject' => $notification->subject ?: 'Smart Notification',
+                'body_html' => $notification->body_html ?: '',
+                'body_text' => $notification->body_text ?: 'Notification content'
+            ];
+        }
+    }
 
-        // แทนที่ variables ถ้ามี
-        $variables = $this->getTemplateVariables($notification);
+    /**
+     * ✅ สร้าง content ใหม่โดยใช้ variables
+     */
+    private function createContentWithVariables($notification)
+    {
+        // เตรียม variables สำหรับ recipient นี้
+        $variables = $this->getTemplateVariables($notification, $this->notificationLog);
         
-        if (!empty($variables)) {
-            $subject = $this->replaceVariables($subject, $variables);
-            $bodyHtml = $this->replaceVariables($bodyHtml, $variables);
-            $bodyText = $this->replaceVariables($bodyText, $variables);
+        Log::info("Creating content with variables", [
+            'recipient' => $this->notificationLog->recipient_email,
+            'recipient_name' => $variables['recipient_name'] ?? 'N/A',
+            'variables_count' => count($variables),
+            'key_variables' => [
+                'recipient_name' => $variables['recipient_name'] ?? 'MISSING',
+                'recipient_email' => $variables['recipient_email'] ?? 'MISSING',
+                'system_name' => $variables['system_name'] ?? 'MISSING'
+            ]
+        ]);
+        
+        // ใช้ template ถ้ามี
+        $template = $notification->template;
+        if ($template) {
+            $subject = $this->replaceVariables($template->subject_template, $variables);
+            $bodyHtml = $this->replaceVariables($template->body_html_template, $variables);
+            $bodyText = $this->replaceVariables($template->body_text_template, $variables);
+        } else {
+            $subject = $this->replaceVariables($notification->subject, $variables);
+            $bodyHtml = $this->replaceVariables($notification->body_html ?? '', $variables);
+            $bodyText = $this->replaceVariables($notification->body_text ?? '', $variables);
         }
-
-        // ถ้าไม่มี bodyText ให้แปลงจาก HTML
-        if (empty($bodyText) && !empty($bodyHtml)) {
-            $bodyText = strip_tags($bodyHtml);
+        
+        // ตรวจสอบผลลัพธ์
+        if (empty($subject) || trim($subject) === '') {
+            $subject = 'แจ้งเตือนสำหรับ ' . ($variables['recipient_name'] ?? 'คุณ');
         }
-
-        // ถ้าไม่มี bodyHtml ให้ใช้ bodyText
-        if (empty($bodyHtml) && !empty($bodyText)) {
-            $bodyHtml = nl2br(htmlspecialchars($bodyText));
-        }
-
+        
+        Log::info("Content created with variables", [
+            'final_subject' => $subject,
+            'subject_length' => strlen($subject),
+            'has_html' => !empty($bodyHtml),
+            'has_text' => !empty($bodyText)
+        ]);
+        
         return [
             'subject' => $subject,
             'body_html' => $bodyHtml,
-            'body_text' => $bodyText
+            'body_text' => $bodyText ?: strip_tags($bodyHtml)
         ];
+    }
+
+    /**
+     * ✅ ตรวจสอบแหล่งที่มาของ content
+     */
+    private function detectContentSource(): string
+    {
+        if (!empty($this->notificationLog->personalized_content)) {
+            return 'personalized_content';
+        }
+        
+        $notification = $this->notificationLog->notification;
+        if ($notification->template) {
+            return 'template';
+        }
+        
+        return 'notification_direct';
     }
 
     /**
@@ -193,6 +291,11 @@ class SendEmailNotification implements ShouldQueue
                 if (!empty($emailContent['body_text'])) {
                     $message->text($emailContent['body_text']);
                 }
+                
+                // ตั้งค่า From
+                $fromEmail = config('mail.from.address', 'noreply@company.com');
+                $fromName = config('mail.from.name', config('app.name'));
+                $message->from($fromEmail, $fromName);
             });
 
             return [
@@ -211,44 +314,250 @@ class SendEmailNotification implements ShouldQueue
     }
 
     /**
-     * ได้ template variables
+     * ✅ ได้ template variables ที่ถูกต้อง
      */
-    private function getTemplateVariables($notification)
+    private function getTemplateVariables($notification, $log)
     {
-        $variables = $notification->variables ?? [];
-        
-        // เพิ่ม system variables
-        $systemVariables = [
-            'notification_id' => $notification->uuid,
-            'subject' => $notification->subject,
-            'recipient_name' => $this->notificationLog->recipient_name,
-            'recipient_email' => $this->notificationLog->recipient_email,
-            'current_date' => now()->format('Y-m-d'),
-            'current_time' => now()->format('H:i:s'),
-            'current_datetime' => now()->format('Y-m-d H:i:s'),
-            'app_name' => config('app.name', 'Smart Notification System'),
-            'app_url' => config('app.url', 'http://localhost'),
-            'priority' => $notification->priority ?? 'normal'
-        ];
-
-        return array_merge($systemVariables, $variables);
+        try {
+            // 1. System Variables
+            $systemVariables = [
+                'notification_id' => $notification->uuid,
+                'subject' => $notification->subject,
+                'current_date' => now()->format('Y-m-d'),
+                'current_time' => now()->format('H:i:s'),
+                'current_datetime' => now()->format('Y-m-d H:i:s'),
+                'app_name' => config('app.name', 'Smart Notification System'),
+                'app_url' => config('app.url'),
+                'priority' => $notification->priority ?? 'normal',
+                'system_name' => config('app.name', 'Smart Notification System'),
+            ];
+    
+            // 2. Notification Variables (user provided)
+            $notificationVariables = $notification->variables ?? [];
+            
+            // 3. Template Variables (cleaned)
+            $cleanTemplateVariables = [];
+            $template = $notification->template;
+            if ($template && !empty($template->default_variables)) {
+                foreach ($template->default_variables as $key => $value) {
+                    if (!is_string($value) || strpos(strtolower($value), 'sample') === false) {
+                        $cleanTemplateVariables[$key] = $value;
+                    }
+                }
+            }
+    
+            // 4. Recipient Variables (ต้องมาท้ายสุด - Priority สูงสุด)
+            $recipientName = $this->getActualRecipientName($log);
+            
+            $recipientVariables = [
+                'recipient_name' => $recipientName,
+                'recipient_email' => $log->recipient_email,
+                'recipient_first_name' => $this->extractFirstName($recipientName),
+                'recipient_last_name' => $this->extractLastName($recipientName),
+                'user_name' => $recipientName,
+                'user_email' => $log->recipient_email,
+                'user_first_name' => $this->extractFirstName($recipientName),
+                'user_last_name' => $this->extractLastName($recipientName),
+            ];
+    
+            // 5. Merge ตามลำดับความสำคัญ (Recipient Variables มาท้ายสุด)
+            $finalVariables = array_merge(
+                $systemVariables,
+                $cleanTemplateVariables,
+                $notificationVariables,
+                $recipientVariables  // ✅ สำคัญที่สุด
+            );
+    
+            Log::debug("Template variables prepared", [
+                'recipient' => $log->recipient_email,
+                'final_recipient_name' => $finalVariables['recipient_name'],
+                'variables_count' => count($finalVariables),
+            ]);
+    
+            return $finalVariables;
+    
+        } catch (\Exception $e) {
+            Log::error("Failed to get template variables", [
+                'error' => $e->getMessage(),
+                'log_id' => $log->id ?? 'unknown',
+            ]);
+            
+            // Fallback
+            return [
+                'recipient_name' => $this->getActualRecipientName($log),
+                'recipient_email' => $log->recipient_email,
+                'user_name' => $this->getActualRecipientName($log),
+                'user_email' => $log->recipient_email,
+                'system_name' => config('app.name', 'Smart Notification System'),
+                'current_date' => now()->format('Y-m-d'),
+            ];
+        }
     }
 
-    /**
-     * แทนที่ variables
-     */
+    private function getActualRecipientName($log): string
+    {
+        $recipientName = $log->recipient_name;
+        $recipientEmail = $log->recipient_email;
+        
+        // ตรวจสอบว่าชื่อใน log ไม่ใช่ sample หรือ empty
+        if (!$recipientName || 
+            empty(trim($recipientName)) || 
+            strpos($recipientName, 'Sample') !== false) {
+            
+            // ดึงจาก database
+            $user = \App\Models\User::where('email', $recipientEmail)->first();
+            if ($user) {
+                $recipientName = $user->display_name ?? $user->name ?? $user->first_name;
+                if (!$recipientName && ($user->first_name || $user->last_name)) {
+                    $recipientName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                }
+            }
+            
+            // ถ้ายังไม่มี ให้ extract จาก email
+            if (!$recipientName) {
+                $recipientName = $this->extractNameFromEmail($recipientEmail);
+            }
+        }
+        
+        return $recipientName;
+    }
+
     private function replaceVariables($content, $variables)
     {
         if (empty($content)) {
             return $content;
         }
 
-        foreach ($variables as $key => $value) {
-            $content = str_replace('{{' . $key . '}}', (string)$value, $content);
-            $content = str_replace('{{ ' . $key . ' }}', (string)$value, $content);
-        }
+        try {
+            // ✅ ตรวจสอบ UTF-8 encoding ของ input
+            if (!mb_check_encoding($content, 'UTF-8')) {
+                $content = mb_convert_encoding($content, 'UTF-8', 'auto');
+                Log::debug("Fixed input content encoding to UTF-8");
+            }
 
-        return $content;
+            Log::debug("replaceVariables START", [
+                'content_length' => mb_strlen($content),
+                'content_preview' => mb_substr($content, 0, 100),
+                'variables_count' => count($variables),
+                'key_variables' => array_slice($variables, 0, 3, true), // แสดงแค่ 3 ตัวแรก
+                'recipient_name' => $variables['recipient_name'] ?? 'NOT_SET',
+                'has_sample_recipient' => isset($variables['recipient_name']) && strpos($variables['recipient_name'], 'Sample') !== false
+            ]);
+
+            $processedContent = $content;
+            $replacements = [];
+            $sampleReplacements = []; // ✅ เก็บ sample values ที่ถูกแทนที่
+
+            foreach ($variables as $key => $value) {
+                // ✅ จัดการ value types
+                if (is_array($value)) {
+                    $value = implode(', ', $value);
+                } elseif (is_bool($value)) {
+                    $value = $value ? 'Yes' : 'No';
+                } elseif (is_null($value)) {
+                    $value = '';
+                } elseif ($value instanceof \Carbon\Carbon) {
+                    $value = $value->format('Y-m-d H:i:s');
+                }
+
+                // ✅ ตรวจสอบ UTF-8 encoding ของ value
+                if (is_string($value)) {
+                    if (!mb_check_encoding($value, 'UTF-8')) {
+                        $value = mb_convert_encoding($value, 'UTF-8', 'auto');
+                    }
+                    // ✅ แปลง encoding ให้แน่ใจ
+                    $value = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+                }
+
+                // ✅ ข้าม Sample values
+                if (is_string($value) && strpos(strtolower($value), 'sample') !== false) {
+                    $sampleReplacements[$key] = $value;
+                    Log::debug("Skipping sample value", [
+                        'variable' => $key,
+                        'sample_value' => $value
+                    ]);
+                    continue; // ไม่แทนที่ sample values
+                }
+
+                // ✅ นับ matches ก่อน replace
+                $pattern = '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/u';
+                $beforeCount = preg_match_all($pattern, $processedContent);
+
+                if ($beforeCount > 0) {
+                    $processedContent = preg_replace($pattern, $value, $processedContent);
+                    $afterCount = preg_match_all($pattern, $processedContent);
+
+                    $replacements[$key] = [
+                        'value' => $value,
+                        'matches' => $beforeCount,
+                        'remaining' => $afterCount
+                    ];
+
+                    Log::debug("Variable replaced", [
+                        'variable' => $key,
+                        'value' => mb_substr($value, 0, 50), // ใช้ mb_substr
+                        'matches_found' => $beforeCount,
+                        'matches_remaining' => $afterCount
+                    ]);
+                }
+            }
+
+            // ✅ ทำความสะอาด variables ที่เหลือ (รวม sample variables)
+            $unreplacedPattern = '/\{\{[^}]+\}\}/u';
+            $unreplacedMatches = [];
+            preg_match_all($unreplacedPattern, $processedContent, $unreplacedMatches);
+            
+            if (!empty($unreplacedMatches[0])) {
+                Log::debug("Cleaning unreplaced variables", [
+                    'unreplaced_variables' => $unreplacedMatches[0],
+                    'count' => count($unreplacedMatches[0])
+                ]);
+            }
+            
+            $processedContent = preg_replace($unreplacedPattern, '', $processedContent);
+
+            // ✅ ตรวจสอบ UTF-8 encoding ของผลลัพธ์
+            if (!mb_check_encoding($processedContent, 'UTF-8')) {
+                $processedContent = mb_convert_encoding($processedContent, 'UTF-8', 'UTF-8');
+                Log::debug("Fixed output content encoding to UTF-8");
+            }
+
+            // ✅ ลบ whitespace ที่เกินจาก variables ที่ถูกลบ
+            $processedContent = preg_replace('/\s+/', ' ', $processedContent);
+            $processedContent = trim($processedContent);
+
+            Log::debug("replaceVariables RESULT", [
+                'replacements_made' => count($replacements),
+                'sample_values_skipped' => count($sampleReplacements),
+                'final_content_length' => mb_strlen($processedContent),
+                'final_content_preview' => mb_substr($processedContent, 0, 100),
+                'contains_sample' => strpos(strtolower($processedContent), 'sample') !== false
+            ]);
+
+            // ✅ Warning ถ้ายังมี 'sample' ใน content
+            if (strpos(strtolower($processedContent), 'sample') !== false) {
+                Log::warning("Final content still contains 'sample' text", [
+                    'content_preview' => mb_substr($processedContent, 0, 200),
+                    'skipped_samples' => $sampleReplacements
+                ]);
+            }
+
+            return $processedContent;
+
+        } catch (\Exception $e) {
+            Log::error("Failed to replace variables", [
+                'error' => $e->getMessage(),
+                'content_length' => mb_strlen($content ?? ''),
+                'variables_count' => count($variables),
+                'line' => $e->getLine()
+            ]);
+            
+            // ✅ Return original content with UTF-8 fix
+            if (!mb_check_encoding($content, 'UTF-8')) {
+                $content = mb_convert_encoding($content, 'UTF-8', 'UTF-8');
+            }
+            return $content;
+        }
     }
 
     /**
@@ -256,8 +565,49 @@ class SendEmailNotification implements ShouldQueue
      */
     private function extractNameFromEmail($email)
     {
-        $username = explode('@', $email)[0];
-        return ucfirst(str_replace(['.', '_', '-'], ' ', $username));
+        try {
+            $username = explode('@', $email)[0];
+            $name = str_replace(['.', '_', '-'], ' ', $username);
+            $words = explode(' ', $name);
+            $formattedWords = array_map(function($word) {
+                return ucfirst(strtolower($word));
+            }, $words);
+            return implode(' ', $formattedWords);
+        } catch (\Exception $e) {
+            return $email;
+        }
+    }
+
+    /**
+     * Extract first name from full name safely
+     */
+    private function extractFirstName($fullName)
+    {
+        try {
+            if (empty($fullName)) return '';
+            $parts = explode(' ', trim($fullName));
+            return $parts[0] ?? '';
+        } catch (\Exception $e) {
+            return '';
+        }
+    }
+
+    /**
+     * Extract last name from full name safely
+     */
+    private function extractLastName($fullName)
+    {
+        try {
+            if (empty($fullName)) return '';
+            $parts = explode(' ', trim($fullName));
+            if (count($parts) > 1) {
+                array_shift($parts);
+                return implode(' ', $parts);
+            }
+            return '';
+        } catch (\Exception $e) {
+            return '';
+        }
     }
 
     /**

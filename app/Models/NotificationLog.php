@@ -26,15 +26,23 @@ class NotificationLog extends Model
         'retry_count',
         'attempts',
         'next_retry_at',
+        'personalized_content',
+        'content_sent',
+        'webhook_url',
+        'webhook_response_code',
+        'variables'
     ];
 
     protected $casts = [
+        'variables' => 'array',
         'response_data' => 'array',
+        'content_sent' => 'array',
+        'personalized_content' => 'array',
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
-        'read_at' => 'datetime',
-        'archived_at' => 'datetime',
         'next_retry_at' => 'datetime',
+        'retry_count' => 'integer',
+        'webhook_response_code' => 'integer'
     ];
 
     // ========== RELATIONSHIPS ==========

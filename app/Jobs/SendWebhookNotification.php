@@ -65,7 +65,7 @@ class SendWebhookNotification implements ShouldQueue
             
             // เพิ่มข้อมูลระบบ
             $systemDetails = [
-                'Notification ID' => $notification->uuid,
+                'Notification ID' => (string) $notification->uuid,
                 'Priority' => strtoupper($notification->priority ?? 'normal'),
                 'Recipient' => $this->notificationLog->recipient_name ?: $this->notificationLog->recipient_email,
                 'Sent At' => now()->format('Y-m-d H:i:s'),
@@ -106,13 +106,16 @@ class SendWebhookNotification implements ShouldQueue
                     'response_data' => [
                         'status_code' => $statusCode,
                         'success' => true,
-                        'webhook_url' => substr($notification->webhook_url, -20) // แสดงท้าย URL
+                        'webhook_url' => substr($notification->webhook_url, -20),
+                        'message_sent' => $message,
+                        'details_count' => count($finalDetails)
                     ]
                 ]);
 
                 Log::info('Webhook notification sent successfully', [
                     'log_id' => $this->notificationLog->id,
-                    'status_code' => $statusCode
+                    'status_code' => $statusCode,
+                    'notification_uuid' => (string) $notification->uuid
                 ]);
 
                 // อัปเดตสถานะ notification

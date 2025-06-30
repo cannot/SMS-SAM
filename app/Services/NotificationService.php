@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Notification;
 use App\Models\NotificationLog;
 use App\Models\NotificationGroup;
+use App\Models\NotificationTemplate;
 use App\Models\User;
 use App\Models\ApiKey;
 use App\Jobs\SendTeamsNotification;
@@ -22,7 +23,7 @@ class NotificationService
     protected $teamsService;
     protected $emailService;
 
-    // Valid priority values that match database constraint (including medium)
+    // Valid priority values that match database constraint
     const VALID_PRIORITIES = ['low', 'medium', 'normal', 'high', 'urgent'];
     
     // Valid status values that match database constraint
@@ -30,7 +31,6 @@ class NotificationService
 
     public function __construct($teamsService = null, $emailService = null)
     {
-        // Safe constructor - avoid crashes if services not available
         try {
             $this->teamsService = $teamsService;
             $this->emailService = $emailService;
@@ -49,31 +49,29 @@ class NotificationService
     }
 
     // ===============================================
-    // Main process notification method (for compatibility)
+    // MAIN PROCESS METHODS (Admin & API Compatible)
     // ===============================================
 
-    /**
-     * Process notification - main entry point for notification delivery
-     * This method is called from NotificationController
-     */
-    public function processNotificationx(Notification $notification)
+    public function processNotification(Notification $notification)
     {
         try {
             Log::info("Processing notification START", [
                 'uuid' => $notification->uuid,
                 'status' => $notification->status,
                 'priority' => $notification->priority,
-                'channels' => $notification->channels
+                'channels' => $notification->channels,
+                'source' => $this->detectSource($notification),
+                'has_processed_content' => !empty($notification->processed_content),
+                'has_personalized_content' => !empty($notification->processed_content['personalized_content'] ?? [])
             ]);
-
+    
             // Validate notification status
             if (!in_array($notification->status, ['draft', 'queued', 'scheduled'])) {
                 throw new \Exception("Cannot process notification with status: {$notification->status}");
             }
-
+    
             // If notification is scheduled for future, don't process now
             if ($notification->scheduled_at && $notification->scheduled_at->isFuture()) {
-                // Use separate transaction for status update
                 DB::transaction(function() use ($notification) {
                     $notification->update(['status' => 'scheduled']);
                 });
@@ -84,68 +82,31 @@ class NotificationService
                 ]);
                 return true;
             }
-
-            // Update status to processing in separate transaction
+    
+            // Update status to processing
             DB::transaction(function() use ($notification) {
                 $notification->update(['status' => 'processing']);
             });
-
-            // Get all recipients with error handling
-            $recipients = $this->getAllRecipientsSafely($notification);
-
-            Log::info('Recipients found', [
-                'notification_id' => $notification->id,
-                'recipient_count' => count($recipients)
+    
+            // ✅ ตรวจสอบว่ามี personalized content หรือไม่อย่างถูกต้อง
+            $hasPersonalizedContent = !empty($notification->processed_content['personalized_content'] ?? []);
+            
+            Log::info("Processing decision", [
+                'has_processed_content' => !empty($notification->processed_content),
+                'has_personalized_content' => $hasPersonalizedContent,
+                'personalized_count' => count($notification->processed_content['personalized_content'] ?? []),
+                'processing_method' => $hasPersonalizedContent ? 'Enhanced' : 'Standard'
             ]);
-
-            if (empty($recipients)) {
-                // Update to failed status in separate transaction
-                DB::transaction(function() use ($notification) {
-                    $notification->update([
-                        'status' => 'failed',
-                        'failure_reason' => 'No recipients found'
-                    ]);
-                });
-                return false;
+            
+            // ใช้เมธอดที่เหมาะสมตามประเภท
+            if ($hasPersonalizedContent) {
+                Log::info("Using Enhanced Processing (with personalization)");
+                return $this->processNotificationEnhanced($notification);
+            } else {
+                Log::info("Using Standard Processing (no personalization)");
+                return $this->processNotificationStandard($notification);
             }
-
-            // Create logs for each recipient and channel combination
-            $totalLogs = 0;
-            DB::transaction(function() use ($notification, $recipients, &$totalLogs) {
-                foreach ($notification->channels as $channel) {
-                    foreach ($recipients as $recipient) {
-                        try {
-                            $this->createNotificationLog($notification, $recipient, $channel);
-                            $totalLogs++;
-                        } catch (\Exception $e) {
-                            Log::error('Failed to create notification log', [
-                                'notification_id' => $notification->id,
-                                'channel' => $channel,
-                                'recipient' => $recipient,
-                                'error' => $e->getMessage()
-                            ]);
-                            // Don't throw exception here, just log and continue
-                        }
-                    }
-                }
-
-                // Update notification counters
-                $notification->update([
-                    'total_recipients' => count($recipients),
-                    'total_logs' => $totalLogs
-                ]);
-            });
-
-            // Queue the notification safely (outside transaction)
-            $this->queueNotificationSafely($notification);
-
-            Log::info('Notification processed successfully END', [
-                'notification_id' => $notification->id,
-                'total_logs' => $totalLogs
-            ]);
-
-            return true;
-
+    
         } catch (\Exception $e) {
             Log::error("CRITICAL: Failed to process notification", [
                 'uuid' => $notification->uuid ?? 'unknown',
@@ -153,16 +114,14 @@ class NotificationService
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ]);
-
-            // Update notification status to failed in separate transaction
+    
             try {
                 DB::transaction(function() use ($notification, $e) {
-                    // Fresh instance to avoid stale data
                     $freshNotification = Notification::find($notification->id);
                     if ($freshNotification) {
                         $freshNotification->update([
                             'status' => 'failed',
-                            'failure_reason' => substr($e->getMessage(), 0, 500) // Limit length
+                            'failure_reason' => substr($e->getMessage(), 0, 500)
                         ]);
                     }
                 });
@@ -173,130 +132,157 @@ class NotificationService
                     'update_error' => $updateError->getMessage()
                 ]);
             }
-
-            // Don't re-throw to prevent crashes
+    
             return false;
         }
     }
 
     /**
-     * Get all recipients for notification with comprehensive error handling
+     * Process notification แบบ Enhanced (สำหรับ API ที่มี personalization)
      */
-    private function getAllRecipientsSafely(Notification $notification)
+    public function processNotificationEnhancedx(Notification $notification)
     {
         try {
-            return $this->getAllRecipients($notification);
+            Log::info("Processing enhanced notification", [
+                'notification_id' => $notification->uuid,
+                'channels' => $notification->channels,
+                'has_personalized_content' => !empty($notification->processed_content['personalized_content'] ?? [])
+            ]);
+            
+            $recipients = $this->getRecipientsForNotificationEnhanced($notification);
+            $hasWebhook = in_array('webhook', $notification->channels);
+            
+            if (empty($recipients) && !$hasWebhook) {
+                throw new \Exception('No valid recipients found');
+            }
+            
+            // สร้าง logs สำหรับแต่ละ recipient และ channel
+            $this->createNotificationLogsEnhanced($notification, $recipients);
+            
+            // ประมวลผลแต่ละ channel
+            foreach ($notification->channels as $channel) {
+                $this->processChannelEnhanced($notification, $channel, $recipients);
+            }
+            
+            // อัพเดตสถานะ
+            $this->updateNotificationStatusAfterProcessing($notification);
+            
+            return true;
+            
         } catch (\Exception $e) {
-            Log::error("Failed to get recipients", [
-                'notification_id' => $notification->id,
+            Log::error("Enhanced notification processing failed", [
+                'notification_id' => $notification->uuid,
                 'error' => $e->getMessage()
             ]);
-            return [];
+            
+            $notification->update([
+                'status' => 'failed',
+                'failure_reason' => $e->getMessage()
+            ]);
+            
+            return false;
         }
     }
 
-    /**
-     * Get all recipients for notification
-     */
-    private function getAllRecipientsx(Notification $notification)
-    {
-        $recipients = [];
-
-        // Direct recipients
-        if (!empty($notification->recipients)) {
-            foreach ($notification->recipients as $email) {
-                if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $recipients[] = [
-                        'email' => $email,
-                        'name' => $this->extractNameFromEmail($email)
-                    ];
-                }
-            }
-        }
-
-        // Group recipients
-        if (!empty($notification->recipient_groups)) {
-            try {
-                $groups = NotificationGroup::whereIn('id', $notification->recipient_groups)
-                                         ->with('users')
-                                         ->get();
-
-                foreach ($groups as $group) {
-                    foreach ($group->users as $user) {
-                        if ($user->email && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
-                            $recipients[] = [
-                                'email' => $user->email,
-                                'name' => $user->display_name ?: $user->name ?: $this->extractNameFromEmail($user->email)
-                            ];
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::error("Failed to get group recipients", [
-                    'groups' => $notification->recipient_groups,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        // Remove duplicates
-        $uniqueRecipients = [];
-        $emails = [];
-        foreach ($recipients as $recipient) {
-            if (!in_array($recipient['email'], $emails)) {
-                $uniqueRecipients[] = $recipient;
-                $emails[] = $recipient['email'];
-            }
-        }
-
-        return $uniqueRecipients;
-    }
-
-    /**
-     * Process notification - อัปเดตเมธอดหลัก (แก้ไข undefined variable)
-     */
-    public function processNotification(Notification $notification)
+    public function processNotificationEnhanced(Notification $notification)
     {
         try {
-            Log::info("Processing notification START", [
-                'uuid' => $notification->uuid,
-                'status' => $notification->status,
-                'priority' => $notification->priority,
-                'channels' => $notification->channels
+            Log::info("DEBUG: Processing enhanced notification", [
+                'notification_id' => $notification->uuid,
+                'channels' => $notification->channels,
+                'subject' => $notification->subject,
+                'subject_length' => strlen($notification->subject ?? ''),
+                'body_text' => substr($notification->body_text ?? '', 0, 200),
+                'body_text_length' => strlen($notification->body_text ?? ''),
+                'has_processed_content' => !empty($notification->processed_content),
+                'processed_content_keys' => !empty($notification->processed_content) ? array_keys($notification->processed_content) : [],
+                'personalized_content_count' => count($notification->processed_content['personalized_content'] ?? []),
+                'variables' => $notification->variables ?? [],
+                'webhook_url' => $notification->webhook_url
             ]);
-
-            // Validate notification status
-            if (!in_array($notification->status, ['draft', 'queued', 'scheduled'])) {
-                throw new \Exception("Cannot process notification with status: {$notification->status}");
-            }
-
-            // If notification is scheduled for future, don't process now
-            if ($notification->scheduled_at && $notification->scheduled_at->isFuture()) {
-                DB::transaction(function() use ($notification) {
-                    $notification->update(['status' => 'scheduled']);
-                });
+            
+            // ตรวจสอบ processed_content แบบละเอียด
+            if (!empty($notification->processed_content)) {
+                $processedContent = $notification->processed_content;
                 
-                Log::info("Notification scheduled for future delivery", [
-                    'uuid' => $notification->uuid,
-                    'scheduled_at' => $notification->scheduled_at
+                Log::info("DEBUG: Processed content details", [
+                    'base_subject' => $processedContent['subject'] ?? 'MISSING',
+                    'base_body_text' => substr($processedContent['body_text'] ?? '', 0, 200),
+                    'base_variables_count' => count($processedContent['base_variables'] ?? []),
+                    'personalized_emails' => array_keys($processedContent['personalized_content'] ?? [])
                 ]);
-                return true;
+                
+                // ตรวจสอบ personalized content แต่ละคน
+                foreach ($processedContent['personalized_content'] ?? [] as $email => $personalContent) {
+                    Log::info("DEBUG: Personalized content for email", [
+                        'email' => $email,
+                        'personalized_subject' => $personalContent['subject'] ?? 'MISSING',
+                        'personalized_subject_length' => strlen($personalContent['subject'] ?? ''),
+                        'personalized_body_text' => substr($personalContent['body_text'] ?? '', 0, 100),
+                        'has_variables' => !empty($personalContent['variables']),
+                        'recipient_name_in_variables' => $personalContent['variables']['recipient_name'] ?? 'NOT_SET'
+                    ]);
+                }
             }
+            
+            $recipients = $this->getRecipientsForNotificationEnhanced($notification);
+            $hasWebhook = in_array('webhook', $notification->channels);
+            
+            Log::info("DEBUG: Recipients and webhook info", [
+                'recipients_count' => count($recipients),
+                'has_webhook' => $hasWebhook,
+                'recipient_emails' => array_column($recipients, 'email')
+            ]);
+            
+            if (empty($recipients) && !$hasWebhook) {
+                throw new \Exception('No valid recipients found');
+            }
+            
+            // สร้าง logs สำหรับแต่ละ recipient และ channel
+            $this->createNotificationLogsEnhanced($notification, $recipients);
+            
+            // ประมวลผลแต่ละ channel
+            foreach ($notification->channels as $channel) {
+                Log::info("DEBUG: Processing channel", [
+                    'channel' => $channel,
+                    'notification_id' => $notification->uuid
+                ]);
+                
+                $this->processChannelEnhanced($notification, $channel, $recipients);
+            }
+            
+            // อัพเดตสถานะ
+            $this->updateNotificationStatusAfterProcessing($notification);
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            Log::error("Enhanced notification processing failed", [
+                'notification_id' => $notification->uuid,
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
+            ]);
+            
+            $notification->update([
+                'status' => 'failed',
+                'failure_reason' => $e->getMessage()
+            ]);
+            
+            return false;
+        }
+    }
 
-            // Update status to processing
-            DB::transaction(function() use ($notification) {
-                $notification->update(['status' => 'processing']);
-            });
-
-            // Check for webhook-only notifications BEFORE getting recipients
+    /**
+     * Process notification แบบ Standard (สำหรับ Admin และ API ธรรมดา)
+     */
+    public function processNotificationStandard(Notification $notification)
+    {
+        try {
+            // Check for webhook-only notifications
             $hasWebhookOnly = count($notification->channels) === 1 && in_array('webhook', $notification->channels);
             
-            Log::info('Channel analysis', [
-                'channels' => $notification->channels,
-                'hasWebhookOnly' => $hasWebhookOnly
-            ]);
-
-            // Get recipients - webhook will return system recipient only
+            // Get recipients
             $recipients = $this->getAllRecipientsSafely($notification);
 
             Log::info('Recipients found', [
@@ -325,10 +311,8 @@ class NotificationService
 
                 // Update notification counters
                 if ($hasWebhookOnly) {
-                    // For webhook-only notifications, count as 1 recipient
                     $actualRecipientCount = 1;
                 } else {
-                    // For other channels, count actual recipients (excluding system webhook)
                     $actualRecipientCount = count(array_filter($recipients, function($r) {
                         return $r['email'] !== 'system@webhook';
                     }));
@@ -338,62 +322,765 @@ class NotificationService
                     'total_recipients' => $actualRecipientCount,
                     'total_logs' => $totalLogs
                 ]);
-                
-                Log::info('Updated notification counters', [
-                    'notification_id' => $notification->id,
-                    'actualRecipientCount' => $actualRecipientCount,
-                    'totalLogs' => $totalLogs,
-                    'hasWebhookOnly' => $hasWebhookOnly
-                ]);
             });
 
             // Queue the notification
             $this->queueNotificationSafely($notification);
 
-            Log::info('Notification processed successfully END', [
+            Log::info('Standard notification processed successfully', [
                 'notification_id' => $notification->id,
-                'total_logs' => $totalLogs,
-                'has_webhook' => in_array('webhook', $notification->channels),
-                'hasWebhookOnly' => $hasWebhookOnly
+                'total_logs' => $totalLogs
             ]);
 
             return true;
 
         } catch (\Exception $e) {
-            Log::error("CRITICAL: Failed to process notification", [
-                'uuid' => $notification->uuid ?? 'unknown',
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
+            Log::error("Standard notification processing failed", [
+                'notification_id' => $notification->uuid,
+                'error' => $e->getMessage()
             ]);
-
-            try {
-                DB::transaction(function() use ($notification, $e) {
-                    $freshNotification = Notification::find($notification->id);
-                    if ($freshNotification) {
-                        $freshNotification->update([
-                            'status' => 'failed',
-                            'failure_reason' => substr($e->getMessage(), 0, 500)
-                        ]);
-                    }
-                });
-            } catch (\Exception $updateError) {
-                Log::error("Failed to update notification status after processing failure", [
-                    'notification_id' => $notification->id,
-                    'original_error' => $e->getMessage(),
-                    'update_error' => $updateError->getMessage()
-                ]);
-            }
-
+            
             return false;
         }
     }
+
+    // ===============================================
+    // ENHANCED PERSONALIZATION METHODS (API)
+    // ===============================================
+
+    private function getRecipientsForNotificationEnhanced1(Notification $notification): array
+    {
+        $recipients = [];
+        $personalizedContent = $notification->processed_content['personalized_content'] ?? [];
+        
+        Log::info("Getting recipients for enhanced processing", [
+            'notification_id' => $notification->uuid,
+            'personalized_emails' => array_keys($personalizedContent),
+            'direct_recipients' => $notification->recipients ?? [],
+            'recipient_groups' => $notification->recipient_groups ?? []
+        ]);
+        
+        // ✅ ใช้ emails จาก personalized_content เป็น source of truth
+        foreach ($personalizedContent as $email => $content) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                // ✅ แก้ไข: ลองหาชื่อจาก database ด้วยวิธีที่ถูกต้อง
+                $user = \App\Models\User::where('email', $email)->first();
+                
+                // ✅ เพิ่มการตรวจสอบชื่อแบบละเอียด
+                $name = null;
+                if ($user) {
+                    // ลำดับความสำคัญในการเลือกชื่อ
+                    $name = $user->display_name ?? $user->name ?? $user->first_name;
+                    
+                    // ถ้าไม่มีชื่อเลย ให้รวม first_name + last_name
+                    if (!$name && ($user->first_name || $user->last_name)) {
+                        $name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                    }
+                    
+                    Log::info("Found user in database", [
+                        'email' => $email,
+                        'display_name' => $user->display_name,
+                        'name' => $user->name,
+                        'first_name' => $user->first_name,
+                        'last_name' => $user->last_name,
+                        'selected_name' => $name
+                    ]);
+                }
+                
+                // ถ้าไม่พบใน database หรือไม่มีชื่อ ให้ extract จาก email
+                if (!$name) {
+                    $name = $this->extractNameFromEmail($email);
+                    Log::info("Name extracted from email", [
+                        'email' => $email,
+                        'extracted_name' => $name
+                    ]);
+                }
+                
+                $recipients[] = [
+                    'email' => $email,
+                    'name' => $name,
+                    'personalized_content' => $content
+                ];
+            }
+        }
+        
+        Log::info("Recipients prepared for enhanced processing", [
+            'recipients_count' => count($recipients),
+            'emails' => array_column($recipients, 'email'),
+            'names' => array_column($recipients, 'name')
+        ]);
+        
+        return $recipients;
+    }
+
+    private function getRecipientsForNotificationEnhanced(Notification $notification): array
+    {
+        $recipients = [];
+        $personalizedContent = $notification->processed_content['personalized_content'] ?? [];
+        
+        Log::info("Getting recipients for enhanced processing", [
+            'notification_id' => $notification->uuid,
+            'personalized_emails' => array_keys($personalizedContent),
+            'direct_recipients' => $notification->recipients ?? [],
+            'recipient_groups' => $notification->recipient_groups ?? []
+        ]);
+        
+        // ✅ ใช้ emails จาก personalized_content เป็น source of truth
+        // แต่ต้องตรวจสอบให้แน่ใจว่าไม่ซ้ำกัน
+        $processedEmails = [];
+        
+        foreach ($personalizedContent as $email => $content) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL) && !in_array($email, $processedEmails)) {
+                // ✅ ลองหาชื่อจาก database ด้วยวิธีที่ถูกต้อง
+                $user = \App\Models\User::where('email', $email)->first();
+                
+                // ✅ เพิ่มการตรวจสอบชื่อแบบละเอียด
+                $name = null;
+                if ($user) {
+                    // ลำดับความสำคัญในการเลือกชื่อ
+                    $name = $user->display_name ?? $user->name ?? $user->first_name;
+                    
+                    // ถ้าไม่มีชื่อเลย ให้รวม first_name + last_name
+                    if (!$name && ($user->first_name || $user->last_name)) {
+                        $name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                    }
+                    
+                    Log::debug("Found user in database", [
+                        'email' => $email,
+                        'display_name' => $user->display_name,
+                        'name' => $user->name,
+                        'first_name' => $user->first_name,
+                        'last_name' => $user->last_name,
+                        'selected_name' => $name
+                    ]);
+                }
+                
+                // ถ้าไม่พบใน database หรือไม่มีชื่อ ให้ extract จาก email
+                if (!$name) {
+                    $name = $this->extractNameFromEmail($email);
+                    Log::debug("Name extracted from email", [
+                        'email' => $email,
+                        'extracted_name' => $name
+                    ]);
+                }
+                
+                $recipients[] = [
+                    'email' => $email,
+                    'name' => $name,
+                    'personalized_content' => $content
+                ];
+                
+                $processedEmails[] = $email; // ✅ Track processed emails
+            } else if (in_array($email, $processedEmails)) {
+                Log::warning("Duplicate email detected in personalized content", [
+                    'email' => $email,
+                    'notification_id' => $notification->uuid
+                ]);
+            }
+        }
+        
+        Log::info("Recipients prepared for enhanced processing", [
+            'recipients_count' => count($recipients),
+            'unique_emails' => count($processedEmails),
+            'emails' => array_column($recipients, 'email'),
+            'names' => array_column($recipients, 'name')
+        ]);
+        
+        return $recipients;
+    }
     /**
-     * Get all recipients for notification with webhook channel handling (updated)
+     * สร้าง notification logs พร้อม personalized content
+     */
+    private function createNotificationLogsEnhancedz(Notification $notification, array $recipients)
+    {
+        foreach ($notification->channels as $channel) {
+            if ($channel === 'webhook') {
+                // Webhook มี log เดียว
+                NotificationLog::create([
+                    'notification_id' => $notification->id,
+                    'recipient_email' => 'system@webhook',
+                    'recipient_name' => 'Webhook System',
+                    'channel' => 'webhook',
+                    'status' => 'pending',
+                    'webhook_url' => $notification->webhook_url,
+                    'personalized_content' => $notification->processed_content,
+                ]);
+            } else {
+                // สร้าง log สำหรับแต่ละ recipient
+                foreach ($recipients as $recipient) {
+                    NotificationLog::create([
+                        'notification_id' => $notification->id,
+                        'recipient_email' => $recipient['email'],
+                        'recipient_name' => $recipient['name'],
+                        'channel' => $channel,
+                        'status' => 'pending',
+                        'personalized_content' => $recipient['personalized_content'],
+                    ]);
+                }
+            }
+        }
+    }
+
+    private function createNotificationLogsEnhanced(Notification $notification, array $recipients)
+    {
+        $createdLogs = [];
+        
+        foreach ($notification->channels as $channel) {
+            if ($channel === 'webhook') {
+                // Webhook มี log เดียว - ตรวจสอบว่ายังไม่มี
+                $existingWebhookLog = NotificationLog::where('notification_id', $notification->id)
+                                                  ->where('channel', 'webhook')
+                                                  ->first();
+                
+                if (!$existingWebhookLog) {
+                    $webhookLog = NotificationLog::create([
+                        'notification_id' => $notification->id,
+                        'recipient_email' => 'system@webhook',
+                        'recipient_name' => 'Webhook System',
+                        'channel' => 'webhook',
+                        'status' => 'pending',
+                        'webhook_url' => $notification->webhook_url,
+                        'personalized_content' => $notification->processed_content,
+                    ]);
+                    
+                    $createdLogs[] = $webhookLog;
+                    
+                    Log::info("Created webhook log", [
+                        'notification_id' => $notification->id,
+                        'log_id' => $webhookLog->id
+                    ]);
+                } else {
+                    Log::info("Webhook log already exists", [
+                        'notification_id' => $notification->id,
+                        'existing_log_id' => $existingWebhookLog->id
+                    ]);
+                }
+            } else {
+                // สร้าง log สำหรับแต่ละ recipient (ตรวจสอบ duplicate)
+                foreach ($recipients as $recipient) {
+                    // ✅ ตรวจสอบว่ามี log สำหรับ email และ channel นี้อยู่แล้วหรือไม่
+                    $existingLog = NotificationLog::where('notification_id', $notification->id)
+                                                 ->where('recipient_email', $recipient['email'])
+                                                 ->where('channel', $channel)
+                                                 ->first();
+                    
+                    if (!$existingLog) {
+                        $log = NotificationLog::create([
+                            'notification_id' => $notification->id,
+                            'recipient_email' => $recipient['email'],
+                            'recipient_name' => $recipient['name'],
+                            'channel' => $channel,
+                            'status' => 'pending',
+                            'personalized_content' => $recipient['personalized_content'] ?? null,
+                        ]);
+                        
+                        $createdLogs[] = $log;
+                        
+                        Log::info("Created recipient log", [
+                            'notification_id' => $notification->id,
+                            'log_id' => $log->id,
+                            'recipient_email' => $recipient['email'],
+                            'channel' => $channel
+                        ]);
+                    } else {
+                        Log::warning("Log already exists for recipient and channel", [
+                            'notification_id' => $notification->id,
+                            'recipient_email' => $recipient['email'],
+                            'channel' => $channel,
+                            'existing_log_id' => $existingLog->id
+                        ]);
+                    }
+                }
+            }
+        }
+        
+        Log::info("createNotificationLogsEnhanced completed", [
+            'notification_id' => $notification->id,
+            'total_logs_created' => count($createdLogs),
+            'channels_processed' => $notification->channels,
+            'recipients_processed' => count($recipients)
+        ]);
+        
+        return $createdLogs;
+    }
+    /**
+     * ประมวลผลแต่ละ channel พร้อม personalization
+     */
+    private function processChannelEnhanced(Notification $notification, string $channel, array $recipients)
+    {
+        try {
+            switch ($channel) {
+                case 'email':
+                    $this->processEmailChannelEnhanced($notification, $recipients);
+                    break;
+                    
+                case 'teams':
+                    $this->processTeamsChannelEnhanced($notification, $recipients);
+                    break;
+                    
+                case 'webhook':
+                    $this->processWebhookChannelEnhanced($notification);
+                    break;
+                    
+                default:
+                    Log::warning("Unknown channel: {$channel}");
+            }
+        } catch (\Exception $e) {
+            Log::error("Channel processing failed", [
+                'channel' => $channel,
+                'notification_id' => $notification->uuid,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    private function extractFirstNameFromEmail($email)
+    {
+        try {
+            $fullName = $this->extractNameFromEmail($email);
+            $parts = explode(' ', trim($fullName));
+            return $parts[0] ?? '';
+        } catch (\Exception $e) {
+            return '';
+        }
+    }
+
+    private function extractLastNameFromEmail($email)
+    {
+        try {
+            $fullName = $this->extractNameFromEmail($email);
+            $parts = explode(' ', trim($fullName));
+            if (count($parts) > 1) {
+                array_shift($parts); // ลบ first name ออก
+                return implode(' ', $parts);
+            }
+            return '';
+        } catch (\Exception $e) {
+            return '';
+        }
+    }
+
+    private function processEmailChannelEnhanced(Notification $notification, array $recipients)
+    {
+        Log::info("processEmailChannelEnhanced START", [
+            'notification_id' => $notification->uuid,
+            'recipients_count' => count($recipients),
+            'has_processed_content' => !empty($notification->processed_content),
+            'personalized_content_count' => count($notification->processed_content['personalized_content'] ?? [])
+        ]);
+    
+        foreach ($recipients as $recipient) {
+            $log = NotificationLog::where('notification_id', $notification->id)
+                                 ->where('recipient_email', $recipient['email'])
+                                 ->where('channel', 'email')
+                                 ->first();
+            
+            if (!$log) {
+                Log::warning("No log found for recipient", [
+                    'notification_id' => $notification->id,
+                    'recipient_email' => $recipient['email']
+                ]);
+                continue;
+            }
+            
+            try {
+                // ✅ ใช้ personalized content ที่ถูกต้อง
+                $personalizedData = $notification->processed_content['personalized_content'][$recipient['email']] ?? null;
+                
+                Log::debug("Processing email for recipient", [
+                    'email' => $recipient['email'],
+                    'has_personalized_data' => !empty($personalizedData),
+                    'personalized_subject' => !empty($personalizedData) ? substr($personalizedData['subject'], 0, 100) : 'N/A'
+                ]);
+                
+                if ($personalizedData && !empty($personalizedData['subject'])) {
+                    // ✅ ใช้ personalized content
+                    $content = $personalizedData;
+                    // Log::info("Using personalized content for email", [
+                    //     'email' => $recipient['email'],
+                    //     'subject' => substr($content['subject'], 0, 100)
+                    // ]);
+                } else {
+                    // Fallback: สร้าง content ใหม่สำหรับ recipient นี้
+                    Log::warning("No personalized content found, creating fallback", [
+                        'email' => $recipient['email']
+                    ]);
+                    
+                    $template = $notification->template;
+                    $recipientVariables = array_merge(
+                        $notification->processed_content['base_variables'] ?? [],
+                        [
+                            'recipient_email' => $recipient['email'],
+                            'recipient_name' => $recipient['name'],
+                            'recipient_first_name' => $this->extractFirstNameFromEmail($recipient['email']),
+                            'recipient_last_name' => $this->extractLastNameFromEmail($recipient['email']),
+                            'user_name' => $recipient['name'],
+                            'user_email' => $recipient['email'],
+                            'user_first_name' => $this->extractFirstNameFromEmail($recipient['email']),
+                            'user_last_name' => $this->extractLastNameFromEmail($recipient['email']),
+                        ]
+                    );
+                    
+                    $baseSubject = $template ? $template->subject_template : $notification->subject;
+                    $baseBodyHtml = $template ? $template->body_html_template : $notification->body_html;
+                    $baseBodyText = $template ? $template->body_text_template : $notification->body_text;
+                    
+                    $content = [
+                        'subject' => $this->replaceVariables($baseSubject, $recipientVariables),
+                        'body_html' => $this->replaceVariables($baseBodyHtml, $recipientVariables),
+                        'body_text' => $this->replaceVariables($baseBodyText, $recipientVariables),
+                    ];
+                    
+                    // ตรวจสอบ subject
+                    if (empty($content['subject'])) {
+                        $content['subject'] = 'Smart Notification for ' . $recipient['name'];
+                    }
+                }
+                
+                Log::info("Sending email with content", [
+                    'email' => $recipient['email'],
+                    'subject' => $content['subject'],
+                    'has_html' => !empty($content['body_html']),
+                    'has_text' => !empty($content['body_text'])
+                ]);
+                
+                // ส่งอีเมล
+                Mail::send([], [], function ($message) use ($content, $recipient, $notification) {
+                    $message->to($recipient['email'], $recipient['name'])
+                           ->subject($content['subject']);
+                    
+                    // ใส่เนื้อหา
+                    if (!empty($content['body_html'])) {
+                        $message->html($content['body_html']);
+                    }
+                    
+                    if (!empty($content['body_text'])) {
+                        $message->text($content['body_text']);
+                    }
+                    
+                    $fromEmail = config('mail.from.address', 'noreply@company.com');
+                    $fromName = config('mail.from.name', config('app.name'));
+                    $message->from($fromEmail, $fromName);
+                });
+                
+                // อัพเดต log
+                $log->update([
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                    'content_sent' => $content
+                ]);
+                
+                Log::info("Email sent successfully", [
+                    'recipient' => $recipient['email'],
+                    'subject' => $content['subject'],
+                    'notification_id' => $notification->uuid
+                ]);
+                
+            } catch (\Exception $e) {
+                $log->update([
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                    'retry_count' => ($log->retry_count ?? 0) + 1
+                ]);
+                
+                Log::error("Failed to send email", [
+                    'recipient' => $recipient['email'],
+                    'error' => $e->getMessage(),
+                    'notification_id' => $notification->uuid
+                ]);
+            }
+        }
+        
+        Log::info("processEmailChannelEnhanced COMPLETED", [
+            'notification_id' => $notification->uuid,
+            'recipients_processed' => count($recipients)
+        ]);
+    }
+    
+
+    /**
+     * ประมวลผล Teams channel พร้อม personalization
+     */
+    private function processTeamsChannelEnhanced(Notification $notification, array $recipients)
+    {
+        foreach ($recipients as $recipient) {
+            $log = NotificationLog::where('notification_id', $notification->id)
+                                 ->where('recipient_email', $recipient['email'])
+                                 ->where('channel', 'teams')
+                                 ->first();
+            
+            if (!$log) continue;
+            
+            try {
+                // ใช้ personalized content ถ้ามี
+                $content = $recipient['personalized_content'] ?? [
+                    'subject' => $notification->subject,
+                    'body_text' => $notification->body_text,
+                ];
+                
+                // สร้าง Teams message format
+                $teamsMessage = $content['subject'];
+                $details = $this->parseContentToTeamsDetails($content['body_text'], $recipient);
+                
+                // ส่งผ่าน Teams notification service
+                $teamsNotification = new \Osama\LaravelTeamsNotification\TeamsNotification();
+                
+                // ใช้ webhook URL จาก config หรือ user settings
+                $webhookUrl = $this->getTeamsWebhookUrlForUser($recipient['email'], $notification);
+                
+                if ($webhookUrl) {
+                    $response = $teamsNotification->sendMessageSetWebhook($webhookUrl, $teamsMessage, $details);
+                    
+                    $log->update([
+                        'status' => 'sent',
+                        'sent_at' => now(),
+                        'content_sent' => $content,
+                        'webhook_url' => $webhookUrl
+                    ]);
+                } else {
+                    throw new \Exception('Teams webhook URL not configured for user');
+                }
+                
+            } catch (\Exception $e) {
+                $log->update([
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                    'retry_count' => ($log->retry_count ?? 0) + 1
+                ]);
+                
+                Log::error("Failed to send Teams message", [
+                    'recipient' => $recipient['email'],
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+    }
+
+    /**
+     * ประมวลผล Webhook channel
+     */
+    private function processWebhookChannelEnhanced(Notification $notification)
+    {
+        Log::info("processWebhookChannelEnhanced START", [
+            'notification_id' => $notification->uuid,
+            'webhook_url' => $notification->webhook_url
+        ]);
+
+        $log = NotificationLog::where('notification_id', $notification->id)
+                             ->where('channel', 'webhook')
+                             ->first();
+        
+        if (!$log) {
+            Log::error("No webhook log found for notification", [
+                'notification_id' => $notification->id
+            ]);
+            return;
+        }
+        
+        try {
+            // ใช้ body_text สำหรับ webhook (ตาม requirement)
+            $content = [
+                'subject' => $notification->subject,
+                'body_text' => $notification->body_text,
+                'variables' => $notification->variables ?? []
+            ];
+            
+            // สร้าง webhook payload
+            $payload = [
+                'notification_id' => (string) $notification->uuid,
+                'subject' => $content['subject'],
+                'message' => $content['body_text'],
+                'priority' => $notification->priority,
+                'channels' => $notification->channels,
+                'recipients_count' => $notification->total_recipients,
+                'timestamp' => now()->toISOString(),
+                'variables' => $content['variables'],
+                'status' => 'sent'
+            ];
+
+            Log::info("Webhook payload prepared", [
+                'webhook_url' => $notification->webhook_url,
+                'payload_size' => strlen(json_encode($payload)),
+                'subject' => $payload['subject'],
+                'message_preview' => substr($payload['message'], 0, 100)
+            ]);
+            
+            $teamsNotification = new \Osama\LaravelTeamsNotification\TeamsNotification();
+            
+            // ✅ เตรียม details array สำหรับ Teams
+            $teamsDetails = [];
+            $teamsDetails['Notification ID'] = (string) $notification->uuid;
+            $teamsDetails['Priority'] = strtoupper($notification->priority);
+            $teamsDetails['Sent At'] = now()->format('Y-m-d H:i:s');
+            
+            // เพิ่ม variables ถ้ามี
+            if (!empty($content['variables'])) {
+                foreach ($content['variables'] as $key => $value) {
+                    $teamsDetails[ucfirst($key)] = (string) $value;
+                }
+            }
+
+            if (!empty($content['body_text'])) {
+                // ลองแปลง JSON ก่อน
+                $jsonData = json_decode($content['body_text'], true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($jsonData)) {
+                    $teamsDetails = array_merge($teamsDetails, $jsonData);
+                } else {
+                    // แยกข้อมูลแบบ key: value
+                    $lines = explode("\n", $content['body_text']);
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (strpos($line, ':') !== false) {
+                            list($key, $value) = explode(':', $line, 2);
+                            $teamsDetails[trim($key)] = trim($value);
+                        }
+                    }
+                    
+                    // ถ้าไม่มี key: value format ให้ใช้เป็น message
+                    if (count($teamsDetails) <= 3) { // มีแค่ข้อมูลพื้นฐาน
+                        $teamsDetails['Message'] = $content['body_text'];
+                    }
+                }
+            }
+
+            $webhookMessage = $content['subject'];
+            if (empty(trim($webhookMessage))) {
+                $webhookMessage = "Smart Notification Alert";
+                Log::warning('Empty subject in enhanced webhook, using fallback', [
+                    'notification_id' => $notification->uuid,
+                    'original_subject' => $content['subject'],
+                    'fallback_message' => $webhookMessage
+                ]);
+            }
+            
+            Log::info("Teams webhook payload prepared", [
+                'message' => $webhookMessage,
+                'message_length' => strlen($webhookMessage),
+                'details_count' => count($teamsDetails),
+                'webhook_url' => substr($notification->webhook_url, -30)
+            ]);
+            
+            $response = $teamsNotification->sendMessageSetWebhook(
+                $notification->webhook_url,
+                $webhookMessage, // ใช้ validated message
+                $teamsDetails
+            );
+
+            $statusCode = $response->getStatusCode();
+            $responseBody = $response->getBody()->getContents();
+
+            Log::info("Webhook response received", [
+                'status_code' => $statusCode,
+                'response_body' => substr($responseBody, 0, 500)
+            ]);
+            
+            // ✅ อัพเดต log สำเร็จ
+            $log->update([
+                'status' => 'sent',
+                'sent_at' => now(),
+                'content_sent' => $content,
+                'webhook_response_code' => $statusCode,
+                'response_data' => [
+                    'status_code' => $statusCode,
+                    'response_body' => substr($responseBody, 0, 1000),
+                    'timestamp' => now()->toISOString()
+                ]
+            ]);
+            
+            Log::info("Webhook sent successfully", [
+                'webhook_url' => $notification->webhook_url,
+                'notification_id' => $notification->uuid,
+                'response_code' => $statusCode
+            ]);
+            
+        } catch (\GuzzleHttp\Exception\ConnectException $e) {
+            $errorMessage = "Connection error: " . $e->getMessage();
+            
+            $log->update([
+                'status' => 'failed',
+                'error_message' => substr($errorMessage, 0, 500),
+                'retry_count' => ($log->retry_count ?? 0) + 1
+            ]);
+            
+            Log::error("Webhook connection failed", [
+                'webhook_url' => $notification->webhook_url,
+                'error' => $errorMessage
+            ]);
+            
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            $statusCode = $e->getResponse() ? $e->getResponse()->getStatusCode() : 'unknown';
+            $responseBody = $e->getResponse() ? $e->getResponse()->getBody()->getContents() : '';
+            $errorMessage = "HTTP {$statusCode} error: " . $e->getMessage();
+            
+            $log->update([
+                'status' => 'failed',
+                'error_message' => substr($errorMessage, 0, 500),
+                'retry_count' => ($log->retry_count ?? 0) + 1,
+                'webhook_response_code' => $statusCode,
+                'response_data' => [
+                    'status_code' => $statusCode,
+                    'response_body' => substr($responseBody, 0, 1000),
+                    'error' => $errorMessage
+                ]
+            ]);
+            
+            Log::error("Webhook request failed", [
+                'webhook_url' => $notification->webhook_url,
+                'status_code' => $statusCode,
+                'error' => $errorMessage
+            ]);
+            
+        } catch (\Exception $e) {
+            $errorMessage = "Webhook error: " . $e->getMessage();
+            
+            $log->update([
+                'status' => 'failed',
+                'error_message' => substr($errorMessage, 0, 500),
+                'retry_count' => ($log->retry_count ?? 0) + 1
+            ]);
+            
+            Log::error("Webhook processing failed", [
+                'webhook_url' => $notification->webhook_url,
+                'error' => $errorMessage,
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+        }
+        
+        Log::info("processWebhookChannelEnhanced END", [
+            'notification_id' => $notification->uuid,
+            'final_status' => $log->fresh()->status
+        ]);
+
+    }
+
+    // ===============================================
+    // STANDARD METHODS (Admin)
+    // ===============================================
+
+    /**
+     * Get all recipients for notification with comprehensive error handling
+     */
+    private function getAllRecipientsSafely(Notification $notification)
+    {
+        try {
+            return $this->getAllRecipients($notification);
+        } catch (\Exception $e) {
+            Log::error("Failed to get recipients", [
+                'notification_id' => $notification->id,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Get all recipients for notification with webhook channel handling
      */
     private function getAllRecipients(Notification $notification)
     {
         $recipients = [];
+        $allEmails = [];
 
         // Handle webhook channel separately - send only once regardless of recipients
         if (in_array('webhook', $notification->channels)) {
@@ -425,11 +1112,17 @@ class NotificationService
             // Direct recipients for non-webhook channels
             if (!empty($notification->recipients)) {
                 foreach ($notification->recipients as $email) {
-                    if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    if (filter_var($email, FILTER_VALIDATE_EMAIL) && !in_array($email, $allEmails)) {
                         $recipients[] = [
                             'email' => $email,
                             'name' => $this->extractNameFromEmail($email)
                         ];
+                        $allEmails[] = $email;
+                        
+                        Log::debug("Added manual recipient", [
+                            'email' => $email,
+                            'source' => 'manual'
+                        ]);
                     }
                 }
             }
@@ -443,11 +1136,28 @@ class NotificationService
 
                     foreach ($groups as $group) {
                         foreach ($group->users as $user) {
-                            if ($user->email && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
+                            if ($user->email && 
+                                filter_var($user->email, FILTER_VALIDATE_EMAIL) && 
+                                !in_array($user->email, $allEmails)) { // ✅ Check for duplicates
+                                
                                 $recipients[] = [
                                     'email' => $user->email,
                                     'name' => $user->display_name ?: $user->name ?: $this->extractNameFromEmail($user->email)
                                 ];
+                                $allEmails[] = $user->email; // ✅ Track email to prevent duplicates
+                                
+                                Log::debug("Added group recipient", [
+                                    'email' => $user->email,
+                                    'group_id' => $group->id,
+                                    'group_name' => $group->name,
+                                    'source' => 'group'
+                                ]);
+                            } else if ($user->email && in_array($user->email, $allEmails)) {
+                                Log::debug("Skipped duplicate recipient", [
+                                    'email' => $user->email,
+                                    'group_id' => $group->id,
+                                    'reason' => 'already_added'
+                                ]);
                             }
                         }
                     }
@@ -461,79 +1171,182 @@ class NotificationService
         }
 
         // Remove duplicates for non-webhook recipients
-        $uniqueRecipients = [];
-        $emails = [];
-        foreach ($recipients as $recipient) {
-            if ($recipient['email'] === 'system@webhook' || !in_array($recipient['email'], $emails)) {
-                $uniqueRecipients[] = $recipient;
-                if ($recipient['email'] !== 'system@webhook') {
-                    $emails[] = $recipient['email'];
-                }
-            }
-        }
+        // $uniqueRecipients = [];
+        // $emails = [];
+        // foreach ($recipients as $recipient) {
+        //     if ($recipient['email'] === 'system@webhook' || !in_array($recipient['email'], $emails)) {
+        //         $uniqueRecipients[] = $recipient;
+        //         if ($recipient['email'] !== 'system@webhook') {
+        //             $emails[] = $recipient['email'];
+        //         }
+        //     }
+        // }
 
         Log::info("Final recipients list", [
-            'total_recipients' => count($uniqueRecipients),
-            'has_webhook_system' => in_array('system@webhook', array_column($uniqueRecipients, 'email')),
-            'actual_emails' => array_values($emails)
+            'total_recipients' => count($recipients),
+            'has_webhook_system' => in_array('system@webhook', array_column($recipients, 'email')),
+            'actual_emails' => $allEmails,
+            'unique_emails_count' => count($allEmails)
         ]);
 
-        return $uniqueRecipients;
+        return $recipients;
+    }
+
+    // ===============================================
+    // SHARED UTILITY METHODS
+    // ===============================================
+
+    /**
+     * Detect source (Admin vs API) based on notification properties
+     */
+    private function detectSource(Notification $notification): string
+    {
+        // ถ้ามี api_key_id แสดงว่ามาจาก API
+        if ($notification->api_key_id) {
+            return 'API';
+        }
+        
+        // ถ้ามี created_by แสดงว่ามาจาก Admin
+        if ($notification->created_by) {
+            return 'Admin';
+        }
+        
+        // ถ้ามี processed_content แสดงว่ามาจาก API (enhanced)
+        if (!empty($notification->processed_content)) {
+            return 'API_Enhanced';
+        }
+        
+        return 'Unknown';
     }
 
     /**
-     * Create notification log entry with webhook channel handling (updated)
+     * Extract name from email address safely
+     */
+    private function extractNameFromEmail($email)
+    {
+        try {
+            $username = explode('@', $email)[0];
+            
+            // แปลง dot, underscore, dash เป็น space
+            $name = str_replace(['.', '_', '-'], ' ', $username);
+            
+            // แปลงเป็น Title Case สำหรับแต่ละคำ
+            $words = explode(' ', $name);
+            $formattedWords = array_map(function($word) {
+                return ucfirst(strtolower($word));
+            }, $words);
+            
+            $result = implode(' ', $formattedWords);
+            
+            Log::debug("Name extraction", [
+                'original_email' => $email,
+                'username' => $username,
+                'extracted_name' => $result
+            ]);
+            
+            return $result;
+        } catch (\Exception $e) {
+            Log::error("Failed to extract name from email", [
+                'email' => $email,
+                'error' => $e->getMessage()
+            ]);
+            return $email; // Fallback to email if extraction fails
+        }
+    }
+
+    /**
+     * Create notification log entry with webhook channel handling
      */
     private function createNotificationLog(Notification $notification, array $recipient, string $channel)
     {
-        // Special handling for webhook channel
-        if ($channel === 'webhook') {
-            // Only create one webhook log per notification
-            $existingWebhookLog = NotificationLog::where('notification_id', $notification->id)
-                                            ->where('channel', 'webhook')
-                                            ->first();
-            
-            if ($existingWebhookLog) {
-                Log::info("Webhook log already exists, skipping creation", [
+        try {
+            // Special handling for webhook channel
+            if ($channel === 'webhook') {
+                // Only create one webhook log per notification
+                $existingWebhookLog = NotificationLog::where('notification_id', $notification->id)
+                                                ->where('channel', 'webhook')
+                                                ->first();
+                
+                if ($existingWebhookLog) {
+                    Log::info("Webhook log already exists, skipping creation", [
+                        'notification_id' => $notification->id,
+                        'existing_log_id' => $existingWebhookLog->id
+                    ]);
+                    return $existingWebhookLog;
+                }
+
+                $webhookLog = NotificationLog::create([
                     'notification_id' => $notification->id,
-                    'existing_log_id' => $existingWebhookLog->id
+                    'channel' => $channel,
+                    'recipient_email' => 'system@webhook',
+                    'recipient_name' => 'Webhook Endpoint',
+                    'status' => 'pending',
+                    'retry_count' => 0,
+                    'variables' => $notification->variables ?? [], // ✅ แน่ใจว่าเป็น array
+                    'webhook_url' => $notification->webhook_url
                 ]);
-                return $existingWebhookLog;
+                
+                Log::info("Created webhook log", [
+                    'notification_id' => $notification->id,
+                    'log_id' => $webhookLog->id,
+                    'webhook_url' => $notification->webhook_url
+                ]);
+                
+                return $webhookLog;
             }
 
-            $webhookLog = NotificationLog::create([
+            // Regular handling for other channels
+            $logData = [
                 'notification_id' => $notification->id,
                 'channel' => $channel,
-                'recipient_email' => 'system@webhook',
-                'recipient_name' => 'Webhook Endpoint',
+                'recipient_email' => $recipient['email'],
+                'recipient_name' => $recipient['name'],
                 'status' => 'pending',
                 'retry_count' => 0,
-                'variables' => $notification->variables
-            ]);
-            
-            Log::info("Created webhook log", [
-                'notification_id' => $notification->id,
-                'log_id' => $webhookLog->id,
-                'webhook_url' => $notification->webhook_url
-            ]);
-            
-            return $webhookLog;
-        }
+                'variables' => $notification->variables ?? [] // ✅ แน่ใจว่าเป็น array
+            ];
 
-        // Regular handling for other channels
-        return NotificationLog::create([
-            'notification_id' => $notification->id,
-            'channel' => $channel,
-            'recipient_email' => $recipient['email'],
-            'recipient_name' => $recipient['name'],
-            'status' => 'pending',
-            'retry_count' => 0,
-            'variables' => $notification->variables
-        ]);
+            // ✅ เพิ่ม personalized content ถ้ามี
+            if (!empty($notification->processed_content['personalized_content'][$recipient['email']])) {
+                $logData['personalized_content'] = $notification->processed_content['personalized_content'][$recipient['email']];
+            }
+
+            Log::info("Creating notification log", [
+                'notification_id' => $notification->id,
+                'channel' => $channel,
+                'recipient' => $recipient['email'],
+                'variables_type' => gettype($logData['variables']),
+                'variables_count' => is_array($logData['variables']) ? count($logData['variables']) : 0
+            ]);
+
+            $log = NotificationLog::create($logData);
+
+            Log::info("Notification log created successfully", [
+                'log_id' => $log->id,
+                'notification_id' => $notification->id,
+                'channel' => $channel,
+                'recipient' => $recipient['email']
+            ]);
+
+            return $log;
+
+        } catch (\Exception $e) {
+            Log::error('Failed to create notification log', [
+                'notification_id' => $notification->id,
+                'channel' => $channel,
+                'recipient' => $recipient,
+                'error' => $e->getMessage(),
+                'variables_type' => gettype($notification->variables ?? []),
+                'variables_content' => is_array($notification->variables ?? []) ? 
+                    array_slice($notification->variables ?? [], 0, 3, true) : 
+                    $notification->variables
+            ]);
+            throw $e;
+        }
     }
 
     /**
-     * Process notification - แก้ไขส่วนการสร้าง logs
+     * Create notification logs optimized
      */
     private function createNotificationLogsOptimized(Notification $notification, $recipients)
     {
@@ -549,22 +1362,12 @@ class NotificationService
                 
                 if (!$existingLog) {
                     $log = $this->createNotificationLog($notification, 
-                        ['email' => 'superadmin@smart-notification.local', 'name' => 'Webhook Endpoint'], 
+                        ['email' => 'system@webhook', 'name' => 'Webhook Endpoint'], 
                         $channel
                     );
                     $createdLogs[] = $log;
                     $totalLogs++;
-                    
-                    Log::info("Created webhook log", [
-                        'notification_id' => $notification->id,
-                        'log_id' => $log->id,
-                        'webhook_url' => $notification->webhook_url
-                    ]);
                 } else {
-                    Log::info("Webhook log already exists", [
-                        'notification_id' => $notification->id,
-                        'existing_log_id' => $existingLog->id
-                    ]);
                     $totalLogs++;
                 }
             } else {
@@ -595,34 +1398,8 @@ class NotificationService
     }
 
     /**
-     * Extract name from email address safely
+     * Queue notification safely
      */
-    private function extractNameFromEmail($email)
-    {
-        try {
-            $username = explode('@', $email)[0];
-            return ucfirst(str_replace(['.', '_', '-'], ' ', $username));
-        } catch (\Exception $e) {
-            return $email; // Fallback to email if extraction fails
-        }
-    }
-
-    /**
-     * Create notification log entry
-     */
-    // private function createNotificationLog(Notification $notification, array $recipient, string $channel)
-    // {
-    //     return NotificationLog::create([
-    //         'notification_id' => $notification->id,
-    //         'channel' => $channel,
-    //         'recipient_email' => $recipient['email'],
-    //         'recipient_name' => $recipient['name'],
-    //         'status' => 'pending',
-    //         'retry_count' => 0,
-    //         'variables' => $notification->variables
-    //     ]);
-    // }
-
     private function queueNotificationSafely(Notification $notification)
     {
         try {
@@ -673,14 +1450,6 @@ class NotificationService
     
                     switch ($log->channel) {
                         case 'email':
-                            // Check if email service is available
-                            if (!$this->emailService) {
-                                Log::warning("Email service not available, marking as failed");
-                                $this->updateLogStatus($log, 'failed', 'Email service not available');
-                                $failedToQueue++;
-                                break;
-                            }
-                            
                             SendEmailNotification::dispatch($log)
                                 ->delay($delay)
                                 ->onQueue($queueName);
@@ -688,14 +1457,6 @@ class NotificationService
                             break;
     
                         case 'teams':
-                            // Check if teams service is available
-                            if (!$this->teamsService) {
-                                Log::warning("Teams service not available, marking as failed");
-                                $this->updateLogStatus($log, 'failed', 'Teams service not available');
-                                $failedToQueue++;
-                                break;
-                            }
-                            
                             SendTeamsNotification::dispatch($log)
                                 ->delay($delay)
                                 ->onQueue($queueName);
@@ -703,7 +1464,6 @@ class NotificationService
                             break;
     
                         case 'webhook':
-                            // Webhook doesn't need external service
                             SendWebhookNotification::dispatch($log)
                                 ->delay($delay)
                                 ->onQueue('webhooks');
@@ -780,7 +1540,7 @@ class NotificationService
             }
         }
     }
-    
+
     /**
      * Helper method to update log status in separate transaction
      */
@@ -807,6 +1567,182 @@ class NotificationService
     }
 
     /**
+     * อัพเดตสถานะ notification หลังประมวลผล
+     */
+    private function updateNotificationStatusAfterProcessing(Notification $notification)
+    {
+        $logs = $notification->logs;
+        $totalLogs = $logs->count();
+        
+        if ($totalLogs === 0) {
+            $notification->update(['status' => 'failed', 'failure_reason' => 'No logs created']);
+            return;
+        }
+        
+        $sentCount = $logs->where('status', 'sent')->count();
+        $failedCount = $logs->where('status', 'failed')->count();
+        $pendingCount = $logs->where('status', 'pending')->count();
+        
+        // กำหนดสถานะตามผลลัพธ์
+        if ($sentCount === $totalLogs) {
+            $status = 'sent';
+        } elseif ($failedCount === $totalLogs) {
+            $status = 'failed';
+        } elseif ($pendingCount > 0) {
+            $status = 'processing';
+        } else {
+            $status = 'partially_sent';
+        }
+        
+        $notification->update([
+            'status' => $status,
+            'sent_at' => $sentCount > 0 ? now() : null,
+            'delivered_count' => $sentCount,
+            'failed_count' => $failedCount,
+            'failure_reason' => $status === 'failed' ? 'All deliveries failed' : null
+        ]);
+        
+        Log::info("Notification processing completed", [
+            'notification_id' => $notification->uuid,
+            'final_status' => $status,
+            'sent' => $sentCount,
+            'failed' => $failedCount,
+            'pending' => $pendingCount
+        ]);
+    }
+
+    // ===============================================
+    // HELPER METHODS FOR ENHANCED FEATURES
+    // ===============================================
+
+    /**
+     * แปลง content เป็น Teams details format
+     */
+    private function parseContentToTeamsDetails(string $content, array $recipient): array
+    {
+        $details = [];
+        
+        // เพิ่มข้อมูลผู้รับ
+        $details['Recipient'] = $recipient['name'] . ' (' . $recipient['email'] . ')';
+        
+        if (empty($content)) {
+            return $details;
+        }
+        
+        // ลองแปลงจาก JSON ก่อน
+        $jsonData = json_decode($content, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($jsonData)) {
+            return array_merge($details, $jsonData);
+        }
+        
+        // แปลงจากรูปแบบ key: value
+        $lines = explode("\n", $content);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line)) continue;
+            
+            if (strpos($line, ':') !== false) {
+                list($key, $value) = explode(':', $line, 2);
+                $details[trim($key)] = trim($value);
+            } else {
+                // ถ้าไม่มี : ให้ใช้เป็น line item
+                $details['Line ' . (count($details))] = $line;
+            }
+        }
+        
+        // ถ้าไม่มี key: value ให้ใช้เป็น message เดียว
+        if (count($details) === 1) { // มีแค่ Recipient
+            $details['Message'] = $content;
+        }
+        
+        return $details;
+    }
+
+    /**
+     * ดึง Teams webhook URL สำหรับ user
+     */
+    private function getTeamsWebhookUrlForUser(string $email, Notification $notification): ?string
+    {
+        // ลองหา webhook URL จาก user settings ก่อน
+        try {
+            $user = User::where('email', $email)->first();
+            if ($user && !empty($user->teams_webhook_url)) {
+                return $user->teams_webhook_url;
+            }
+        } catch (\Exception $e) {
+            Log::debug("Could not get user-specific Teams webhook", [
+                'email' => $email,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // ใช้ default webhook URL จาก notification หรือ config
+        return $notification->webhook_url ?? config('teams.default_webhook_url');
+    }
+
+    // ===============================================
+    // SHARED UTILITY METHODS
+    // ===============================================
+
+    /**
+     * Calculate delay based on priority safely
+     */
+    public function calculateDelay($priority)
+    {
+        try {
+            switch ($priority) {
+                case 'urgent':
+                    return now(); // Immediate
+                case 'high':
+                    return now()->addSeconds(5);
+                case 'medium':
+                    return now()->addSeconds(15);
+                case 'normal':
+                    return now()->addSeconds(30);
+                case 'low':
+                    return now()->addMinute();
+                default:
+                    return now()->addSeconds(30);
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to calculate delay", [
+                'priority' => $priority,
+                'error' => $e->getMessage()
+            ]);
+            return now()->addSeconds(30); // Safe default
+        }
+    }
+
+    /**
+     * Get queue name based on priority safely
+     */
+    public function getQueueName($priority)
+    {
+        try {
+            switch ($priority) {
+                case 'urgent':
+                    return 'urgent';
+                case 'high':
+                    return 'high';
+                case 'medium':
+                    return 'medium';
+                case 'normal':
+                    return 'default';
+                case 'low':
+                    return 'low';
+                default:
+                    return 'default';
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to get queue name", [
+                'priority' => $priority,
+                'error' => $e->getMessage()
+            ]);
+            return 'default'; // Safe default
+        }
+    }
+
+    /**
      * Queue notification for delivery (public method for backward compatibility)
      */
     public function queueNotification(Notification $notification)
@@ -814,97 +1750,83 @@ class NotificationService
         return $this->queueNotificationSafely($notification);
     }
 
-    // ===============================================
-    // Test notification methods
-    // ===============================================
+    /**
+     * Validate and normalize priority value (supports medium)
+     */
+    private function validatePriority($priority)
+    {
+        // Normalize common variations
+        $normalizedPriority = strtolower(trim($priority));
+        
+        // Priority mapping with medium support
+        $priorityMap = [
+            'low' => 'low',
+            'medium' => 'medium',      // Keep medium as is
+            'normal' => 'normal',
+            'high' => 'high',
+            'urgent' => 'urgent',
+            'critical' => 'urgent',    // Convert critical to urgent
+            'emergency' => 'urgent'    // Convert emergency to urgent
+        ];
+
+        if (isset($priorityMap[$normalizedPriority])) {
+            $validPriority = $priorityMap[$normalizedPriority];
+            
+            if (in_array($validPriority, self::VALID_PRIORITIES)) {
+                Log::info("Priority validated", [
+                    'original' => $priority,
+                    'normalized' => $validPriority
+                ]);
+                return $validPriority;
+            }
+        }
+
+        // Fallback to 'medium' if invalid
+        Log::warning("Invalid priority value, using fallback", [
+            'original' => $priority,
+            'fallback' => 'medium'
+        ]);
+        
+        return 'medium';
+    }
 
     /**
-     * Send test notification to user (existing method - keeping for compatibility)
+     * Validate and normalize status value
      */
-    public static function sendTest(User $user, array $notification)
+    private function validateStatus($status)
     {
-        try {
-            Log::info("Sending test notification to user: {$user->username}", [
-                'channels' => $notification['channels'],
-                'message' => $notification['message'] ?? 'Test message',
-                'priority' => $notification['priority'] ?? 'medium'
-            ]);
-
-            $instance = app(self::class);
-            
-            // Validate and fix priority (keeping medium as valid)
-            $priority = $instance->validatePriority($notification['priority'] ?? 'medium');
-            $notification['priority'] = $priority;
-            
-            // Get user preferences
-            $preferences = $user->preferences;
-            $enabledChannels = $instance->getEnabledChannels($user, $notification['channels']);
-            
-            if (empty($enabledChannels)) {
-                throw new \Exception('No enabled notification channels found for this user');
-            }
-
-            $results = [];
-            
-            // Send to each enabled channel without creating notification record
-            foreach ($enabledChannels as $channel) {
-                try {
-                    $result = $instance->sendTestDirectly($user, $notification, $channel);
-                    $results[$channel] = $result;
-                    
-                    Log::info("Test notification sent successfully", [
-                        'user' => $user->username,
-                        'channel' => $channel,
-                        'status' => $result['status'],
-                        'priority' => $priority
-                    ]);
-                    
-                } catch (\Exception $e) {
-                    $results[$channel] = [
-                        'status' => 'failed',
-                        'error' => $e->getMessage()
-                    ];
-                    
-                    Log::error("Test notification failed for channel: {$channel}", [
-                        'user' => $user->username,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
-
-            // Log test notification activity
-            try {
-                activity()
-                    ->performedOn($user)
-                    ->causedBy(auth()->user())
-                    ->withProperties([
-                        'channels' => $enabledChannels,
-                        'results' => $results,
-                        'test_message' => $notification['message'] ?? 'Default test message',
-                        'priority' => $priority
-                    ])
-                    ->log('Test notification sent');
-            } catch (\Exception $e) {
-                Log::warning('Failed to log test notification activity: ' . $e->getMessage());
-            }
-
-            return [
-                'success' => true,
-                'channels_tested' => $enabledChannels,
-                'results' => $results,
-                'priority' => $priority,
-                'message' => 'Test notification sent to ' . count($enabledChannels) . ' channel(s)'
-            ];
-
-        } catch (\Exception $e) {
-            Log::error("Test notification failed for user: {$user->username}", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            throw new \Exception('Failed to send test notification: ' . $e->getMessage());
+        $normalizedStatus = strtolower(trim($status));
+        
+        if (in_array($normalizedStatus, self::VALID_STATUSES)) {
+            return $normalizedStatus;
         }
+
+        // Map common variations
+        $statusMap = [
+            'test' => 'sent',
+            'pending' => 'queued',
+            'completed' => 'sent',
+            'delivered' => 'sent',
+            'success' => 'sent',
+            'error' => 'failed'
+        ];
+
+        if (isset($statusMap[$normalizedStatus])) {
+            return $statusMap[$normalizedStatus];
+        }
+
+        // Fallback to 'draft'
+        Log::warning("Invalid status value, using fallback", [
+            'original' => $status,
+            'fallback' => 'draft'
+        ]);
+        
+        return 'draft';
     }
+
+    // ===============================================
+    // TEST NOTIFICATION METHODS (Existing)
+    // ===============================================
 
     /**
      * Send test notification with enhanced error handling
@@ -1114,297 +2036,6 @@ class NotificationService
     }
 
     /**
-     * Send test email
-     */
-    private function sendTestEmail(NotificationLog $log)
-    {
-        return $this->sendTestEmailSafely($log);
-    }
-
-    /**
-     * Send test webhook
-     */
-    private function sendTestWebhook(NotificationLog $log, array $webhookConfig)
-    {
-        return $this->sendTestWebhookSafely($log, $webhookConfig);
-    }
-
-    /**
-     * Validate and normalize priority value (supports medium)
-     */
-    private function validatePriority($priority)
-    {
-        // Normalize common variations
-        $normalizedPriority = strtolower(trim($priority));
-        
-        // Priority mapping with medium support
-        $priorityMap = [
-            'low' => 'low',
-            'medium' => 'medium',      // Keep medium as is
-            'normal' => 'normal',
-            'high' => 'high',
-            'urgent' => 'urgent',
-            'critical' => 'urgent',    // Convert critical to urgent
-            'emergency' => 'urgent'    // Convert emergency to urgent
-        ];
-
-        if (isset($priorityMap[$normalizedPriority])) {
-            $validPriority = $priorityMap[$normalizedPriority];
-            
-            if (in_array($validPriority, self::VALID_PRIORITIES)) {
-                Log::info("Priority validated", [
-                    'original' => $priority,
-                    'normalized' => $validPriority
-                ]);
-                return $validPriority;
-            }
-        }
-
-        // Fallback to 'medium' if invalid
-        Log::warning("Invalid priority value, using fallback", [
-            'original' => $priority,
-            'fallback' => 'medium'
-        ]);
-        
-        return 'medium';
-    }
-
-    /**
-     * Validate and normalize status value
-     */
-    private function validateStatus($status)
-    {
-        $normalizedStatus = strtolower(trim($status));
-        
-        if (in_array($normalizedStatus, self::VALID_STATUSES)) {
-            return $normalizedStatus;
-        }
-
-        // Map common variations
-        $statusMap = [
-            'test' => 'sent',
-            'pending' => 'queued',
-            'completed' => 'sent',
-            'delivered' => 'sent',
-            'success' => 'sent',
-            'error' => 'failed'
-        ];
-
-        if (isset($statusMap[$normalizedStatus])) {
-            return $statusMap[$normalizedStatus];
-        }
-
-        // Fallback to 'draft'
-        Log::warning("Invalid status value, using fallback", [
-            'original' => $status,
-            'fallback' => 'draft'
-        ]);
-        
-        return 'draft';
-    }
-
-    /**
-     * Send test directly without database record
-     */
-    private function sendTestDirectly(User $user, array $notification, string $channel)
-    {
-        switch ($channel) {
-            case 'email':
-                return $this->sendTestEmailDirectly($user, $notification);
-                
-            case 'teams':
-                return $this->sendTestTeamsDirectly($user, $notification);
-                
-            case 'webhook':
-                return $this->sendTestWebhookDirectly($user, $notification);
-                
-            default:
-                throw new \Exception("Unsupported channel: {$channel}");
-        }
-    }
-
-    /**
-     * Send test email directly without notification record
-     */
-    private function sendTestEmailDirectly(User $user, array $notification)
-    {
-        try {
-            $preferences = $user->preferences;
-            $emailAddress = $preferences && $preferences->email_address 
-                ? $preferences->email_address 
-                : $user->email;
-
-            if (!$emailAddress) {
-                throw new \Exception('No email address configured for user');
-            }
-
-            $emailFormat = $preferences && $preferences->email_format 
-                ? $preferences->email_format 
-                : 'html';
-
-            // Prepare test content
-            $testSubject = '[TEST] ' . ($notification['title'] ?? 'Test Notification');
-            $testBodyHtml = $this->generateTestHtmlBodyDirect($notification, $user);
-            $testBodyText = $this->generateTestTextBodyDirect($notification, $user);
-
-            $emailData = [
-                'to' => $emailAddress,
-                'subject' => $testSubject,
-                'body_html' => $emailFormat === 'html' ? $testBodyHtml : null,
-                'body_text' => $testBodyText,
-                'variables' => [
-                    'user_name' => $user->display_name ?? $user->username,
-                    'test_time' => now()->format('Y-m-d H:i:s'),
-                    'user_preferences' => $user->preferences ? 'Configured' : 'Default'
-                ],
-                'user_preferences' => [
-                    'format' => $emailFormat,
-                    'language' => $preferences ? $preferences->language : 'th',
-                    'timezone' => $preferences ? $preferences->timezone : 'Asia/Bangkok'
-                ]
-            ];
-
-            // Send immediately (not queued for test)
-            $result = $this->emailService->sendDirect($emailData);
-
-            Log::info("Email service result", [
-                'success' => $result['success'],
-                'error' => $result['error'] ?? null,
-                'method' => $result['method'] ?? 'unknown'
-            ]);
-
-            return [
-                'status' => $result['success'] ? 'sent' : 'failed',
-                'recipient' => $emailAddress,
-                'format' => $emailFormat,
-                'priority' => $notification['priority'],
-                'details' => $result
-            ];
-
-        } catch (\Exception $e) {
-            Log::error("Test email failed", [
-                'user' => $user->username,
-                'error' => $e->getMessage()
-            ]);
-
-            throw new \Exception("Email test failed: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Send test Teams message directly without notification record
-     */
-    private function sendTestTeamsDirectly(User $user, array $notification)
-    {
-        try {
-            $preferences = $user->preferences;
-            
-            // Determine Teams delivery method
-            $deliveryMethod = $preferences && $preferences->teams_channel_preference 
-                ? $preferences->teams_channel_preference 
-                : 'direct';
-
-            // Prepare test content
-            $testSubject = '[TEST] ' . ($notification['title'] ?? 'Test Notification');
-            $testMessage = $this->generateTestTextBodyDirect($notification, $user);
-            $testHtmlContent = $this->generateTestHtmlBodyDirect($notification, $user);
-
-            $teamsData = [
-                'user' => $user,
-                'subject' => $testSubject,
-                'message' => $testMessage,
-                'html_content' => $testHtmlContent,
-                'variables' => [
-                    'user_name' => $user->display_name ?? $user->username,
-                    'test_time' => now()->format('Y-m-d H:i:s'),
-                    'user_preferences' => $user->preferences ? 'Configured' : 'Default'
-                ],
-                'delivery_method' => $deliveryMethod,
-                'teams_user_id' => $preferences ? $preferences->teams_user_id : null,
-                'priority' => $notification['priority']
-            ];
-
-            // Send immediately (not queued for test)
-            $result = $this->teamsService->sendDirect($teamsData);
-
-            return [
-                'status' => $result['success'] ? 'sent' : 'failed',
-                'delivery_method' => $deliveryMethod,
-                'teams_user_id' => $preferences ? $preferences->teams_user_id : 'auto-detect',
-                'priority' => $notification['priority'],
-                'details' => $result
-            ];
-
-        } catch (\Exception $e) {
-            Log::error("Test Teams message failed", [
-                'user' => $user->username,
-                'error' => $e->getMessage()
-            ]);
-
-            throw new \Exception("Teams test failed: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Send test webhook directly
-     */
-    private function sendTestWebhookDirectly(User $user, array $notification)
-    {
-        try {
-            $webhookConfig = $notification['webhook_config'] ?? [];
-            
-            if (empty($webhookConfig['url'])) {
-                throw new \Exception('Webhook URL not configured');
-            }
-
-            // Prepare test payload
-            $testPayload = [
-                'test' => true,
-                'user' => $user->username,
-                'email' => $user->email,
-                'message' => $notification['message'] ?? 'Test webhook notification',
-                'priority' => $notification['priority'] ?? 'medium',
-                'timestamp' => now()->toISOString()
-            ];
-
-            // Use configured payload if available
-            if (!empty($webhookConfig['payload_template'])) {
-                $testPayload = array_merge($testPayload, $webhookConfig['payload_template']);
-            }
-
-            // Send webhook
-            $client = new \GuzzleHttp\Client(['timeout' => 30]);
-            $response = $client->request(
-                $webhookConfig['method'] ?? 'POST',
-                $webhookConfig['url'],
-                [
-                    'headers' => array_merge([
-                        'Content-Type' => 'application/json',
-                        'User-Agent' => 'Smart-Notification-System/1.0 (Test)'
-                    ], $webhookConfig['headers'] ?? []),
-                    'json' => $testPayload,
-                    'verify' => false
-                ]
-            );
-
-            return [
-                'status' => $response->getStatusCode() >= 200 && $response->getStatusCode() < 300 ? 'sent' : 'failed',
-                'webhook_url' => $webhookConfig['url'],
-                'response_code' => $response->getStatusCode(),
-                'priority' => $notification['priority']
-            ];
-
-        } catch (\Exception $e) {
-            Log::error("Test webhook failed", [
-                'user' => $user->username,
-                'error' => $e->getMessage()
-            ]);
-
-            throw new \Exception("Webhook test failed: " . $e->getMessage());
-        }
-    }
-
-    /**
      * Get template variables for notification safely
      */
     private function getTemplateVariables(Notification $notification, NotificationLog $log)
@@ -1520,486 +2151,13 @@ class NotificationService
         }
     }
 
-    /**
-     * Calculate delay based on priority safely
-     */
-    public function calculateDelay($priority)
-    {
-        try {
-            switch ($priority) {
-                case 'urgent':
-                    return now(); // Immediate
-                case 'high':
-                    return now()->addSeconds(5);
-                case 'medium':
-                    return now()->addSeconds(15);
-                case 'normal':
-                    return now()->addSeconds(30);
-                case 'low':
-                    return now()->addMinute();
-                default:
-                    return now()->addSeconds(30);
-            }
-        } catch (\Exception $e) {
-            Log::error("Failed to calculate delay", [
-                'priority' => $priority,
-                'error' => $e->getMessage()
-            ]);
-            return now()->addSeconds(30); // Safe default
-        }
-    }
-
-    /**
-     * Get queue name based on priority safely
-     */
-    public function getQueueName($priority)
-    {
-        try {
-            switch ($priority) {
-                case 'urgent':
-                    return 'urgent';
-                case 'high':
-                    return 'high';
-                case 'medium':
-                    return 'medium';
-                case 'normal':
-                    return 'default';
-                case 'low':
-                    return 'low';
-                default:
-                    return 'default';
-            }
-        } catch (\Exception $e) {
-            Log::error("Failed to get queue name", [
-                'priority' => $priority,
-                'error' => $e->getMessage()
-            ]);
-            return 'default'; // Safe default
-        }
-    }
-    /**
-     * Generate test HTML body directly with variables replaced
-     */
-    private function generateTestHtmlBodyDirect(array $notification, User $user)
-    {
-        $message = $notification['message'] ?? 'This is a test notification to verify your notification preferences.';
-        $testTime = now()->format('Y-m-d H:i:s');
-        $priority = $notification['priority'] ?? 'medium';
-        $userName = $user->display_name ?? $user->username;
-        $userPreferences = $user->preferences ? 'Configured' : 'Default';
-        $title = $notification['title'] ?? 'Test Notification';
-        
-        // Priority badge color
-        $priorityColor = $this->getPriorityColor($priority);
-        $priorityLabel = $this->getPriorityLabel($priority);
-        
-        return "
-        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e1e5e9; border-radius: 8px; overflow: hidden;'>
-            <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center;'>
-                <h1 style='margin: 0; font-size: 24px;'>🔔 Test Notification</h1>
-                <p style='margin: 10px 0 0 0; opacity: 0.9;'>Smart Notification System</p>
-                <div style='margin-top: 10px;'>
-                    <span style='background: {$priorityColor}; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;'>
-                        {$priorityLabel}
-                    </span>
-                </div>
-            </div>
-            
-            <div style='padding: 30px; background: #f8f9fa;'>
-                <h2 style='color: #2d3748; margin-top: 0;'>{$title}</h2>
-                
-                <div style='background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid {$priorityColor};'>
-                    <p style='margin: 0; color: #4a5568; line-height: 1.6;'>{$message}</p>
-                </div>
-                
-                <div style='background: #e2e8f0; padding: 15px; border-radius: 6px; font-size: 14px;'>
-                    <strong style='color: #2d3748;'>📋 Test Information:</strong><br><br>
-                    <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>
-                        <div>👤 <strong>Sent to:</strong> {$userName}</div>
-                        <div>⏰ <strong>Test time:</strong> {$testTime}</div>
-                        <div>⚙️ <strong>User preferences:</strong> {$userPreferences}</div>
-                        <div>🔥 <strong>Priority:</strong> {$priorityLabel}</div>
-                    </div>
-                </div>
-                
-                <div style='background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; margin-top: 20px;'>
-                    <div style='color: #155724; font-weight: bold; margin-bottom: 5px;'>✅ Test Successful!</div>
-                    <div style='color: #155724; font-size: 13px;'>
-                        This is a test notification. If you received this, your notification settings are working correctly.
-                    </div>
-                </div>
-                
-                <div style='margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #718096;'>
-                    Generated by Smart Notification System | 
-                    <a href='#' style='color: #667eea; text-decoration: none;'>Manage Preferences</a>
-                </div>
-            </div>
-        </div>";
-    }
-
-    /**
-     * Generate test text body directly with variables replaced
-     */
-    private function generateTestTextBodyDirect(array $notification, User $user)
-    {
-        $message = $notification['message'] ?? 'This is a test notification to verify your notification preferences.';
-        $testTime = now()->format('Y-m-d H:i:s');
-        $priority = $notification['priority'] ?? 'medium';
-        $userName = $user->display_name ?? $user->username;
-        $userPreferences = $user->preferences ? 'Configured' : 'Default';
-        $title = $notification['title'] ?? 'Test Notification';
-        $priorityLabel = $this->getPriorityLabel($priority);
-        
-        return "
-🔔 TEST NOTIFICATION - Smart Notification System
-
-{$title}
-Priority: {$priorityLabel}
-
-{$message}
-
-📋 Test Information:
-• Sent to: {$userName}
-• Test time: {$testTime}
-• User preferences: {$userPreferences}
-• Priority: {$priorityLabel}
-
-✅ Test Successful!
-This is a test notification. If you received this, your notification settings are working correctly.
-
----
-Generated by Smart Notification System
-        ";
-    }
-
-    /**
-     * Get priority color for HTML display
-     */
-    private function getPriorityColor($priority)
-    {
-        switch ($priority) {
-            case 'low':
-                return '#28a745';
-            case 'medium':
-                return '#ffc107';
-            case 'normal':
-                return '#17a2b8';
-            case 'high':
-                return '#fd7e14';
-            case 'urgent':
-                return '#dc3545';
-            default:
-                return '#6c757d';
-        }
-    }
-
-    /**
-     * Get priority label for display
-     */
-    private function getPriorityLabel($priority)
-    {
-        switch ($priority) {
-            case 'low':
-                return 'LOW PRIORITY';
-            case 'medium':
-                return 'MEDIUM PRIORITY';
-            case 'normal':
-                return 'NORMAL PRIORITY';
-            case 'high':
-                return 'HIGH PRIORITY';
-            case 'urgent':
-                return 'URGENT PRIORITY';
-            default:
-                return strtoupper($priority) . ' PRIORITY';
-        }
-    }
-
-    /**
-     * Get enabled channels for user
-     */
-    private function getEnabledChannels(User $user, array $requestedChannels)
-    {
-        $preferences = $user->preferences;
-        $enabledChannels = [];
-
-        foreach ($requestedChannels as $channel) {
-            switch ($channel) {
-                case 'email':
-                    if (!$preferences || $preferences->enable_email) {
-                        if ($user->email) {
-                            $enabledChannels[] = 'email';
-                        } else {
-                            Log::warning("Email channel requested but user has no email address: {$user->username}");
-                        }
-                    } else {
-                        Log::info("Email channel disabled in user preferences: {$user->username}");
-                    }
-                    break;
-
-                case 'teams':
-                    if (!$preferences || $preferences->enable_teams) {
-                        $enabledChannels[] = 'teams';
-                    } else {
-                        Log::info("Teams channel disabled in user preferences: {$user->username}");
-                    }
-                    break;
-
-                case 'webhook':
-                    // Webhook is always enabled if requested (no user preferences for webhook)
-                    $enabledChannels[] = 'webhook';
-                    break;
-
-                default:
-                    Log::warning("Unknown channel requested: {$channel}");
-                    break;
-            }
-        }
-
-        return $enabledChannels;
-    }
-
     // ===============================================
-    // Production notification methods
+    // ADDITIONAL UTILITY METHODS
     // ===============================================
-
-    /**
-     * Create notification record with template support
-     */
-    public function createNotification(array $data)
-    {
-        // If template_id is provided, render the template
-        if (!empty($data['template_id'])) {
-            $template = \App\Models\NotificationTemplate::find($data['template_id']);
-            
-            if (!$template || !$template->is_active) {
-                throw new \Exception('Template not found or inactive');
-            }
-
-            // Render template with provided variables
-            $rendered = $template->render($data['variables'] ?? []);
-            
-            // Override content with rendered template
-            $data['subject'] = $rendered['subject'];
-            $data['body_html'] = $rendered['body_html'];
-            $data['body_text'] = $rendered['body_text'];
-            
-            // Use template's channels if not specified
-            if (empty($data['channels'])) {
-                $data['channels'] = $template->supported_channels;
-            }
-            
-            // Use template's priority if not specified
-            if (empty($data['priority'])) {
-                $data['priority'] = $template->priority ?? 'medium';
-            }
-
-            Log::info("Notification created using template", [
-                'template_id' => $template->id,
-                'template_name' => $template->name,
-                'variables_count' => count($data['variables'] ?? [])
-            ]);
-        }
-
-        $notification = Notification::create([
-            'uuid' => Str::uuid(),
-            'template_id' => $data['template_id'] ?? null,
-            'subject' => $data['subject'],
-            'body_html' => $data['body_html'] ?? null,
-            'body_text' => $data['body_text'] ?? null,
-            'channels' => $data['channels'] ?? ['email'],
-            'recipients' => $data['recipients'] ?? [],
-            'recipient_groups' => $data['recipient_groups'] ?? [],
-            'variables' => $data['variables'] ?? [],
-            'webhook_config' => $data['webhook_config'] ?? null,
-            'priority' => $this->validatePriority($data['priority'] ?? 'medium'),
-            'status' => $this->validateStatus($data['status'] ?? 'draft'),
-            'scheduled_at' => $data['scheduled_at'] ?? null,
-            'api_key_id' => $data['api_key_id'] ?? null,
-            'created_by' => $data['created_by'] ?? null,
-        ]);
-
-        Log::info("Notification created", [
-            'uuid' => $notification->uuid,
-            'template_id' => $notification->template_id,
-            'priority' => $notification->priority,
-            'status' => $notification->status,
-            'channels' => $notification->channels
-        ]);
-
-        return $notification;
-    }
-
-    /**
-     * Schedule notification for delivery
-     */
-    public function scheduleNotification(Notification $notification)
-    {
-        // Get all recipient users
-        $recipients = $notification->getRecipientUsers();
-        
-        if ($recipients->isEmpty()) {
-            $notification->update([
-                'status' => 'failed',
-                'failure_reason' => 'No valid recipients found'
-            ]);
-            return false;
-        }
-
-        // Create notification logs for each recipient
-        foreach ($recipients as $recipient) {
-            foreach ($notification->channels as $channel) {
-                NotificationLog::create([
-                    'notification_id' => $notification->id,
-                    'recipient_email' => $recipient->email,
-                    'recipient_name' => $recipient->full_name ?? $recipient->display_name,
-                    'channel' => $channel,
-                    'status' => 'pending',
-                ]);
-            }
-        }
-
-        // Update notification status
-        $notification->update([
-            'status' => $notification->scheduled_at ? 'scheduled' : 'queued',
-            'total_recipients' => $recipients->count() * count($notification->channels),
-        ]);
-
-        // Queue notification if not scheduled for future
-        if (!$notification->scheduled_at || $notification->scheduled_at->isPast()) {
-            $this->queueNotification($notification);
-        }
-
-        Log::info("Notification scheduled", [
-            'uuid' => $notification->uuid,
-            'recipients_count' => $recipients->count(),
-            'status' => $notification->status
-        ]);
-
-        return true;
-    }
-
-    /**
-     * Process scheduled notifications
-     */
-    public function processScheduledNotifications()
-    {
-        $notifications = Notification::where('status', 'scheduled')
-            ->where('scheduled_at', '<=', now())
-            ->get();
-
-        foreach ($notifications as $notification) {
-            $this->queueNotification($notification);
-        }
-
-        Log::info("Processed scheduled notifications", [
-            'count' => $notifications->count()
-        ]);
-
-        return $notifications->count();
-    }
-
-    /**
-     * Retry failed notifications
-     */
-    public function retryFailedNotifications()
-    {
-        $logs = NotificationLog::where('status', 'failed')
-            ->where('retry_count', '<', 3)
-            ->where('created_at', '>', now()->subHours(24))
-            ->get();
-
-        foreach ($logs as $log) {
-            switch ($log->channel) {
-                case 'email':
-                    SendEmailNotification::dispatch($log)->onQueue('retry');
-                    break;
-                    
-                case 'teams':
-                    SendTeamsNotification::dispatch($log)->onQueue('retry');
-                    break;
-
-                case 'webhook':
-                    SendWebhookNotification::dispatch($log)->onQueue('retry');
-                    break;
-            }
-            
-            $log->increment('retry_count');
-        }
-
-        Log::info("Retried failed notifications", [
-            'count' => $logs->count()
-        ]);
-
-        return $logs->count();
-    }
-    /**
-     * Get notification delivery status
-     */
-    public function getNotificationStatus($notificationId)
-    {
-        $notification = Notification::where('uuid', $notificationId)->first();
-        
-        if (!$notification) {
-            return null; 
-        }
-
-        $stats = $notification->logs()
-            ->selectRaw('
-                channel,
-                COUNT(*) as total,
-                SUM(CASE WHEN status = "delivered" THEN 1 ELSE 0 END) as delivered,
-                SUM(CASE WHEN status = "failed" THEN 1 ELSE 0 END) as failed,
-                SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending
-            ')
-            ->groupBy('channel')
-            ->get()
-            ->keyBy('channel');
-
-        return [
-            'notification_id' => $notification->uuid,
-            'status' => $notification->status,
-            'priority' => $notification->priority,
-            'sent_at' => $notification->sent_at,
-            'delivery_stats' => [
-                'total' => $notification->total_recipients,
-                'delivered' => $notification->delivered_count,
-                'failed' => $notification->failed_count,
-                'pending' => $notification->total_recipients - $notification->delivered_count - $notification->failed_count,
-            ],
-            'channels' => $stats->toArray(),
-        ];
-    }
 
     /**
      * Update notification status based on logs
      */
-    public function updateNotificationStatusx(Notification $notification)
-    {
-        $logs = $notification->logs;
-        $totalLogs = $logs->count();
-
-        if ($totalLogs === 0) {
-            return;
-        }
-
-        $sentLogs = $logs->whereIn('status', ['sent', 'delivered'])->count();
-        $failedLogs = $logs->where('status', 'failed')->count();
-        $pendingLogs = $logs->whereIn('status', ['pending', 'processing'])->count();
-
-        if ($pendingLogs > 0) {
-            $notification->update(['status' => 'processing']);
-        } elseif ($sentLogs === $totalLogs) {
-            $notification->update(['status' => 'sent']);
-        } elseif ($failedLogs === $totalLogs) {
-            $notification->update([
-                'status' => 'failed',
-                'failure_reason' => 'All deliveries failed'
-            ]);
-        } elseif ($sentLogs > 0) {
-            $notification->update(['status' => 'partially_sent']);
-        }
-    }
-
     public function updateNotificationStatus($notificationId)
     {
         $notification = Notification::where('uuid', $notificationId)->first();
@@ -2045,240 +2203,40 @@ Generated by Smart Notification System
     }
 
     /**
-     * Retry failed notifications (for specific notification)
+     * Get notification delivery status
      */
-    public function retryFailedNotificationsForNotification(Notification $notification)
+    public function getNotificationStatus($notificationId)
     {
-        $failedLogs = $notification->logs()->where('status', 'failed')->get();
-
-        foreach ($failedLogs as $log) {
-            $log->update([
-                'status' => 'pending',
-                'retry_count' => 0,
-                'error_message' => null,
-                'next_retry_at' => null
-            ]);
+        $notification = Notification::where('uuid', $notificationId)->first();
+        
+        if (!$notification) {
+            return null; 
         }
 
-        if ($failedLogs->count() > 0) {
-            $notification->update(['status' => 'processing']);
-            $this->queueNotification($notification);
-        }
-
-        return $failedLogs->count();
-    }
-
-    /**
-     * Cancel scheduled notification
-     */
-    public function cancelNotification(Notification $notification)
-    {
-        if (!in_array($notification->status, ['scheduled', 'queued'])) {
-            throw new \Exception('Only scheduled or queued notifications can be cancelled');
-        }
-
-        // Update notification status
-        $notification->update([
-            'status' => 'cancelled',
-            'cancelled_at' => now()
-        ]);
-
-        // Update pending logs
-        $notification->logs()
-                    ->where('status', 'pending')
-                    ->update([
-                        'status' => 'cancelled',
-                        'cancelled_at' => now()
-                    ]);
-
-        return true;
-    }
-
-    /**
-     * Get notification statistics
-     */
-    public function getNotificationStats($dateFrom = null, $dateTo = null)
-    {
-        $query = Notification::query();
-
-        if ($dateFrom) {
-            $query->whereDate('created_at', '>=', $dateFrom);
-        }
-
-        if ($dateTo) {
-            $query->whereDate('created_at', '<=', $dateTo);
-        }
-
-        $stats = [
-            'total' => $query->count(),
-            'sent' => (clone $query)->where('status', 'sent')->count(),
-            'failed' => (clone $query)->where('status', 'failed')->count(),
-            'processing' => (clone $query)->whereIn('status', ['queued', 'processing'])->count(),
-            'scheduled' => (clone $query)->where('status', 'scheduled')->count(),
-            'cancelled' => (clone $query)->where('status', 'cancelled')->count(),
-        ];
-
-        // Channel statistics
-        $channelStats = NotificationLog::selectRaw('channel, count(*) as count')
-                                      ->groupBy('channel')
-                                      ->pluck('count', 'channel')
-                                      ->toArray();
-
-        // Priority statistics
-        $priorityStats = $query->selectRaw('priority, count(*) as count')
-                              ->groupBy('priority')
-                              ->pluck('count', 'priority')
-                              ->toArray();
+        $stats = $notification->logs()
+            ->selectRaw('
+                channel,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = "delivered" THEN 1 ELSE 0 END) as delivered,
+                SUM(CASE WHEN status = "failed" THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending
+            ')
+            ->groupBy('channel')
+            ->get()
+            ->keyBy('channel');
 
         return [
-            'general' => $stats,
-            'channels' => $channelStats,
-            'priorities' => $priorityStats
+            'notification_id' => $notification->uuid,
+            'status' => $notification->status,
+            'priority' => $notification->priority,
+            'sent_at' => $notification->sent_at,
+            'delivery_stats' => [
+                'total' => $notification->total_recipients,
+                'delivered' => $notification->delivered_count,
+                'failed' => $notification->failed_count,
+                'pending' => $notification->total_recipients - $notification->delivered_count - $notification->failed_count,
+            ],
+            'channels' => $stats->toArray(),
         ];
-    }
-
-    /**
-     * Get priority statistics
-     */
-    public function getPriorityStats()
-    {
-        $stats = Notification::selectRaw('
-                priority,
-                COUNT(*) as total,
-                SUM(CASE WHEN status = "sent" THEN 1 ELSE 0 END) as sent,
-                SUM(CASE WHEN status = "failed" THEN 1 ELSE 0 END) as failed,
-                AVG(CASE WHEN sent_at IS NOT NULL THEN EXTRACT(EPOCH FROM (sent_at - created_at)) ELSE NULL END) as avg_delivery_time
-            ')
-            ->groupBy('priority')
-            ->get()
-            ->keyBy('priority');
-
-        return $stats->toArray();
-    }
-
-    // ===============================================
-    // API Key notification methods
-    // ===============================================
-
-    /**
-     * Send API key created notification
-     */
-    public function sendApiKeyCreatedNotification(User $user, ApiKey $apiKey, User $createdBy): void
-    {
-        try {
-            Log::info('API Key created notification sent', [
-                'recipient' => $user->email,
-                'api_key_name' => $apiKey->name,
-                'created_by' => $createdBy->username
-            ]);
-
-            // TODO: Implement actual email notification
-            // Mail::to($user)->send(new ApiKeyCreatedMail($apiKey, $createdBy));
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to send API key created notification', [
-                'recipient' => $user->email,
-                'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Send API key regenerated notification
-     */
-    public function sendApiKeyRegeneratedNotification(User $user, ApiKey $apiKey, User $regeneratedBy): void
-    {
-        try {
-            Log::info('API Key regenerated notification sent', [
-                'recipient' => $user->email,
-                'api_key_name' => $apiKey->name,
-                'regenerated_by' => $regeneratedBy->username
-            ]);
-
-            // TODO: Implement actual email notification
-            // Mail::to($user)->send(new ApiKeyRegeneratedMail($apiKey, $regeneratedBy));
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to send API key regenerated notification', [
-                'recipient' => $user->email,
-                'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Send API key revoked notification
-     */
-    public function sendApiKeyRevokedNotification(User $user, ApiKey $apiKey, User $revokedBy): void
-    {
-        try {
-            Log::info('API Key revoked notification sent', [
-                'recipient' => $user->email,
-                'api_key_name' => $apiKey->name,
-                'revoked_by' => $revokedBy->username
-            ]);
-
-            // TODO: Implement actual email notification
-            // Mail::to($user)->send(new ApiKeyRevokedMail($apiKey, $revokedBy));
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to send API key revoked notification', [
-                'recipient' => $user->email,
-                'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Send API key status changed notification
-     */
-    public function sendApiKeyStatusChangedNotification(User $user, ApiKey $apiKey, bool $newStatus, User $changedBy): void
-    {
-        try {
-            $status = $newStatus ? 'activated' : 'deactivated';
-            
-            Log::info('API Key status changed notification sent', [
-                'recipient' => $user->email,
-                'api_key_name' => $apiKey->name,
-                'new_status' => $status,
-                'changed_by' => $changedBy->username
-            ]);
-
-            // TODO: Implement actual email notification
-            // Mail::to($user)->send(new ApiKeyStatusChangedMail($apiKey, $newStatus, $changedBy));
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to send API key status changed notification', [
-                'recipient' => $user->email,
-                'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Send API key assignment notification
-     */
-    public function sendApiKeyAssignmentNotification(User $user, ApiKey $apiKey): void
-    {
-        try {
-            Log::info('API Key assignment notification sent', [
-                'recipient' => $user->email,
-                'api_key_name' => $apiKey->name
-            ]);
-
-            // TODO: Implement actual email notification
-            // Mail::to($user)->send(new ApiKeyAssignedMail($apiKey));
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to send API key assignment notification', [
-                'recipient' => $user->email,
-                'api_key_id' => $apiKey->id,
-                'error' => $e->getMessage()
-            ]);
-        }
     }
 }
