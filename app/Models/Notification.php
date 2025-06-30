@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class Notification extends Model
 {
@@ -24,6 +25,7 @@ class Notification extends Model
         'recipient_groups',
         'variables',
         'attachments',
+        'attachment_urls',
         'attachments_size',
         'priority',
         'status',
@@ -46,6 +48,7 @@ class Notification extends Model
         'recipient_groups' => 'array',
         'variables' => 'array',
         'attachments' => 'array',
+        'attachment_urls' => 'array',
         'scheduled_at' => 'datetime',
         'sent_at' => 'datetime',
         'total_recipients' => 'integer',
@@ -572,7 +575,221 @@ class Notification extends Model
     }
 
     /**
-     * ได้รับไฟล์แนบทั้งหมด
+     * จัดการไฟล์แนบทุกประเภท (files, base64, URLs)
+     */
+    public function processAllAttachments($fileAttachments = null, $base64Attachments = null, $urlAttachments = null)
+    {
+        $processedAttachments = [];
+        $totalSize = 0;
+
+        try {
+            // 1. จัดการ file uploads
+            if ($fileAttachments) {
+                foreach ($fileAttachments as $file) {
+                    $filename = time() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs('attachments/' . $this->uuid, $filename, 'local');
+                    
+                    $attachment = [
+                        'name' => $file->getClientOriginalName(),
+                        'filename' => $filename,
+                        'path' => $path,
+                        'size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType(),
+                        'type' => 'file'
+                    ];
+                    
+                    $processedAttachments[] = $attachment;
+                    $totalSize += $file->getSize();
+                }
+            }
+
+            // 2. จัดการ base64 attachments
+            if ($base64Attachments) {
+                foreach ($base64Attachments as $base64File) {
+                    $filename = time() . '_' . $base64File['name'];
+                    $data = base64_decode($base64File['data']);
+                    $path = 'attachments/' . $this->uuid . '/' . $filename;
+                    
+                    Storage::disk('local')->put($path, $data);
+                    
+                    $attachment = [
+                        'name' => $base64File['name'],
+                        'filename' => $filename,
+                        'path' => $path,
+                        'size' => strlen($data),
+                        'mime_type' => $base64File['mime_type'],
+                        'type' => 'base64'
+                    ];
+                    
+                    $processedAttachments[] = $attachment;
+                    $totalSize += strlen($data);
+                }
+            }
+
+            // 3. จัดการ URL attachments
+            if ($urlAttachments) {
+                foreach ($urlAttachments as $url) {
+                    try {
+                        $urlAttachment = $this->downloadAndStoreFromUrl($url);
+                        if ($urlAttachment) {
+                            $processedAttachments[] = $urlAttachment;
+                            $totalSize += $urlAttachment['size'];
+                        }
+                    } catch (\Exception $e) {
+                        \Log::warning('Failed to download URL attachment', [
+                            'url' => $url,
+                            'notification_id' => $this->uuid,
+                            'error' => $e->getMessage()
+                        ]);
+                        
+                        // เก็บ URL ที่ล้มเหลวไว้
+                        $processedAttachments[] = [
+                            'name' => basename(parse_url($url, PHP_URL_PATH)) ?: 'failed_download',
+                            'filename' => null,
+                            'path' => null,
+                            'size' => 0,
+                            'mime_type' => 'application/octet-stream',
+                            'type' => 'url_failed',
+                            'original_url' => $url,
+                            'error' => $e->getMessage()
+                        ];
+                    }
+                }
+            }
+
+            // บันทึกข้อมูล
+            $this->update([
+                'attachments' => $processedAttachments,
+                'attachment_urls' => $urlAttachments ?: [],
+                'attachments_size' => $totalSize
+            ]);
+
+            return $processedAttachments;
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to process attachments', [
+                'notification_id' => $this->uuid,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * ดาวน์โหลดไฟล์จาก URL
+     */
+    private function downloadAndStoreFromUrl($url)
+    {
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \Exception('Invalid URL format: ' . $url);
+        }
+
+        try {
+            // ใช้ Guzzle HTTP Client
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'verify' => false // สำหรับ localhost testing
+            ]);
+
+            $response = $client->get($url, [
+                'headers' => [
+                    'User-Agent' => 'Smart-Notification-System/1.0'
+                ]
+            ]);
+
+            if ($response->getStatusCode() !== 200) {
+                throw new \Exception('HTTP ' . $response->getStatusCode() . ' response');
+            }
+
+            $fileData = $response->getBody()->getContents();
+            
+            if (empty($fileData)) {
+                throw new \Exception('Downloaded file is empty');
+            }
+
+            $fileSize = strlen($fileData);
+            if ($fileSize > 25 * 1024 * 1024) { // 25MB limit
+                throw new \Exception('File too large: ' . number_format($fileSize) . ' bytes');
+            }
+
+            // กำหนดชื่อไฟล์
+            $urlPath = parse_url($url, PHP_URL_PATH);
+            $originalName = $urlPath ? basename($urlPath) : 'downloaded_file_' . time();
+            
+            // ถ้าไม่มี extension ให้เดาจาก Content-Type
+            if (strpos($originalName, '.') === false) {
+                $contentType = $response->getHeaderLine('Content-Type');
+                $extension = $this->getExtensionFromMimeType($contentType);
+                if ($extension) {
+                    $originalName .= '.' . $extension;
+                }
+            }
+
+            $filename = time() . '_' . $originalName;
+            $path = 'attachments/' . $this->uuid . '/' . $filename;
+
+            // บันทึกไฟล์
+            Storage::disk('local')->put($path, $fileData);
+
+            // ตรวจหา MIME type
+            $tempFile = tempnam(sys_get_temp_dir(), 'attachment');
+            file_put_contents($tempFile, $fileData);
+            $mimeType = mime_content_type($tempFile) ?: 'application/octet-stream';
+            unlink($tempFile);
+
+            \Log::info('URL attachment downloaded successfully', [
+                'url' => $url,
+                'filename' => $filename,
+                'size' => $fileSize,
+                'mime_type' => $mimeType
+            ]);
+
+            return [
+                'name' => $originalName,
+                'filename' => $filename,
+                'path' => $path,
+                'size' => $fileSize,
+                'mime_type' => $mimeType,
+                'type' => 'url',
+                'original_url' => $url
+            ];
+
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            throw new \Exception('Failed to download from URL: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            throw new \Exception('Error processing URL attachment: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * เดา file extension จาก MIME type
+     */
+    private function getExtensionFromMimeType($mimeType)
+    {
+        $mimeToExt = [
+            'application/pdf' => 'pdf',
+            'text/plain' => 'txt',
+            'text/csv' => 'csv',
+            'application/vnd.ms-excel' => 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            'application/vnd.ms-powerpoint' => 'ppt',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'application/zip' => 'zip',
+            'application/x-zip-compressed' => 'zip'
+        ];
+
+        $mimeType = strtolower(explode(';', $mimeType)[0]); // ลบ charset ออก
+        return $mimeToExt[$mimeType] ?? null;
+    }
+
+    /**
+     * ได้รับ attachment paths ทั้งหมด (รวมที่ดาวน์โหลดจาก URL)
      */
     public function getAttachmentPaths()
     {
@@ -581,7 +798,33 @@ class Notification extends Model
         }
 
         return array_map(function($attachment) {
+            // ข้าม attachments ที่ล้มเหลว
+            if ($attachment['type'] === 'url_failed' || empty($attachment['path'])) {
+                return null;
+            }
             return storage_path('app/' . $attachment['path']);
         }, $this->attachments);
+    }
+
+    /**
+     * ตรวจสอบว่ามี attachments หรือไม่
+     */
+    public function hasAttachments(): bool
+    {
+        return !empty($this->attachments) || !empty($this->attachment_urls);
+    }
+
+    /**
+     * นับจำนวน attachments ที่ใช้งานได้
+     */
+    public function getValidAttachmentCount(): int
+    {
+        if (!$this->attachments) {
+            return 0;
+        }
+
+        return count(array_filter($this->attachments, function($attachment) {
+            return $attachment['type'] !== 'url_failed' && !empty($attachment['path']);
+        }));
     }
 }

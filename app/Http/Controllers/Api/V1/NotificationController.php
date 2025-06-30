@@ -153,50 +153,53 @@ class NotificationController extends Controller
     public function send(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'template_id'            => 'nullable|exists:notification_templates,id',
+            'template_id'                    => 'nullable|exists:notification_templates,id',
             // 'recipient_type' => 'required|in:manual,groups,all_users',
-            'recipient_type'         => 'sometimes|in:manual,groups,all_users,mixed',
+            'recipient_type'                 => 'sometimes|in:manual,groups,all_users,mixed',
 
             // 'recipients' => 'required_if:recipient_type,manual|array',
             // 'recipients.*' => 'email',
             // 'recipient_groups' => 'required_if:recipient_type,groups|array',
             // 'recipient_groups.*' => 'exists:notification_groups,id',
-            'recipients'             => 'sometimes|array',
-            'recipients.*'           => 'email',
-            'recipient_groups'       => 'sometimes|array',
-            'recipient_groups.*'     => 'exists:notification_groups,id',
-            'include_all_users'      => 'sometimes|boolean',
+            'recipients'                     => 'sometimes|array',
+            'recipients.*'                   => 'email',
+            'recipient_groups'               => 'sometimes|array',
+            'recipient_groups.*'             => 'exists:notification_groups,id',
+            'include_all_users'              => 'sometimes|boolean',
 
-            'channels'               => 'required|array|min:1',
-            'channels.*'             => 'in:email,teams,webhook',
-            'subject'                => 'required|string|max:255',
-            'message'                => 'nullable|string',
-            'body_html'              => 'nullable|string',
-            'body_text'              => 'nullable|string',
-            'priority'               => 'sometimes|in:low,normal,high,urgent',
-            'variables'              => 'sometimes|array',
-            'webhook_url'            => 'required_if:channels.*,webhook|url',
-            'scheduled_at'           => 'sometimes|date|after:now',
-            'save_as_draft'          => 'sometimes|boolean',
-            'enable_personalization' => 'sometimes|boolean',
+            'channels'                       => 'required|array|min:1',
+            'channels.*'                     => 'in:email,teams,webhook',
+            'subject'                        => 'required|string|max:255',
+            'message'                        => 'nullable|string',
+            'body_html'                      => 'nullable|string',
+            'body_text'                      => 'nullable|string',
+            'priority'                       => 'sometimes|in:low,normal,high,urgent',
+            'variables'                      => 'sometimes|array',
+            'webhook_url'                    => 'required_if:channels.*,webhook|url',
+            'scheduled_at'                   => 'sometimes|date|after:now',
+            'save_as_draft'                  => 'sometimes|boolean',
+            'enable_personalization'         => 'sometimes|boolean',
 
             // เพิ่ม validation สำหรับ attachments
-            'attachments'            => 'sometimes|array|max:5', // สูงสุด 5 ไฟล์
-            'attachments.*'          => 'file|max:10240', // สูงสุด 10MB ต่อไฟล์
+            'attachments'                    => 'sometimes|array|max:5',
+            'attachments.*'                  => 'file|max:10240',
+
+            'attachment_urls'                => 'sometimes|array|max:5',
+            'attachment_urls.*'              => 'url',
             // หรือใช้ base64 encoding
-            'attachments_base64'     => 'sometimes|array|max:5',
-            'attachments_base64.*.name' => 'required_with:attachments_base64|string|max:255',
-            'attachments_base64.*.data' => 'required_with:attachments_base64|string',
+            'attachments_base64'             => 'sometimes|array|max:5',
+            'attachments_base64.*.name'      => 'required_with:attachments_base64|string|max:255',
+            'attachments_base64.*.data'      => 'required_with:attachments_base64|string',
             'attachments_base64.*.mime_type' => 'required_with:attachments_base64|string|in:application/pdf,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png',
 
         ]);
 
-        $validator->after(function ($validator) use ($request) {
-            if (($request->has('attachments') || $request->has('attachments_base64')) && 
-                !in_array('email', $request->get('channels', []))) {
-                $validator->errors()->add('attachments', 'Attachments are only supported for email channel');
-            }
-        });
+        // $validator->after(function ($validator) use ($request) {
+        //     if (($request->has('attachments') || $request->has('attachments_base64')) &&
+        //         \in_array('email', $request->get('channels', []))) {
+        //         $validator->errors()->add('attachments', 'Attachments are only supported for email channel');
+        //     }
+        // });
 
         $validator->after(function ($validator) use ($request) {
             $hasRecipients = $request->has('recipients') && ! empty($request->recipients);
@@ -207,6 +210,30 @@ class NotificationController extends Controller
             if (! $hasRecipients && ! $hasGroups && ! $hasAllUsers && ! $hasWebhook) {
                 $validator->errors()->add('recipients', 'Must specify at least one recipient type or webhook');
             }
+
+            $hasAnyAttachments = $request->hasFile('attachments') ||
+            $request->has('attachments_base64') ||
+            $request->has('attachment_urls');
+
+            if ($hasAnyAttachments && ! in_array('email', $request->get('channels', []))) {
+                $validator->errors()->add('attachments', 'Attachments are only supported for email channel');
+            }
+
+            $totalAttachments = 0;
+            if ($request->hasFile('attachments')) {
+                $totalAttachments += count($request->file('attachments'));
+            }
+            if ($request->has('attachments_base64')) {
+                $totalAttachments += count($request->input('attachments_base64'));
+            }
+            if ($request->has('attachment_urls')) {
+                $totalAttachments += count($request->input('attachment_urls'));
+            }
+            
+            if ($totalAttachments > 5) {
+                $validator->errors()->add('attachments', 'Maximum 5 attachments allowed (all types combined)');
+            }
+
         });
 
         if ($validator->fails()) {
@@ -321,21 +348,44 @@ class NotificationController extends Controller
             // ]);
 
             $attachmentInfo = [];
-            if ($request->hasFile('attachments') || $request->has('attachments_base64')) {
+            if ($request->hasFile('attachments') || 
+                $request->has('attachments_base64') || 
+                $request->has('attachment_urls')) {
+                
                 try {
-                    $attachments = $notification->processAttachments(
+                    Log::info('Processing all attachment types', [
+                        'notification_id' => $notification->uuid,
+                        'has_files' => $request->hasFile('attachments'),
+                        'has_base64' => $request->has('attachments_base64'),
+                        'has_urls' => $request->has('attachment_urls'),
+                        'url_count' => count($request->input('attachment_urls', [])),
+                        'urls' => $request->input('attachment_urls', [])
+                    ]);
+
+                    $attachments = $notification->processAllAttachments(
                         $request->file('attachments'),
-                        $request->input('attachments_base64')
+                        $request->input('attachments_base64'),
+                        $request->input('attachment_urls') // ✅ ส่ง URLs
                     );
                     
                     $attachmentInfo = [
                         'count' => count($attachments),
                         'total_size' => $notification->attachments_size,
+                        'successful_downloads' => count(array_filter($attachments, function($att) {
+                            return $att['type'] !== 'url_failed';
+                        })),
+                        'failed_downloads' => count(array_filter($attachments, function($att) {
+                            return $att['type'] === 'url_failed';
+                        })),
                         'files' => array_map(function($att) {
                             return [
                                 'name' => $att['name'],
                                 'size' => $att['size'],
-                                'type' => $att['mime_type']
+                                'type' => $att['mime_type'],
+                                'source' => $att['type'],
+                                'success' => $att['type'] !== 'url_failed',
+                                'error' => $att['error'] ?? null,
+                                'original_url' => $att['original_url'] ?? null
                             ];
                         }, $attachments)
                     ];
@@ -343,7 +393,9 @@ class NotificationController extends Controller
                     Log::info("Attachments processed", [
                         'notification_id' => $notification->uuid,
                         'attachment_count' => count($attachments),
-                        'total_size' => $notification->attachments_size
+                        'total_size' => $notification->attachments_size,
+                        'successful_downloads' => $attachmentInfo['successful_downloads'],
+                        'failed_downloads' => $attachmentInfo['failed_downloads']
                     ]);
 
                 } catch (\Exception $e) {
@@ -408,13 +460,19 @@ class NotificationController extends Controller
                     'variables_processed'     => count($baseVariables),
                     'personalization_enabled' => $enablePersonalization,
                     'personalized_recipients' => $enablePersonalization ? count($processedContent['personalized_content'] ?? []) : 0,
-                    'attachments' => $attachmentInfo,
+                    'attachments'             => $attachmentInfo,
                     'content_preview'         => [
                         'subject'           => $this->cleanUtf8String(substr($processedContent['subject'], 0, 100) . '...'),
                         'body_text_preview' => $this->cleanUtf8String(substr(strip_tags($processedContent['body_text']), 0, 200) . '...'),
                     ]
                 ],
             ];
+
+            if (!empty($attachmentInfo['failed_downloads'])) {
+                $responseData['warnings'] = [
+                    'Some URL attachments failed to download. Check the attachment details for specific errors.'
+                ];
+            }
 
             // ✅ ทำความสะอาด UTF-8 ใน response data
             $cleanResponseData = $this->cleanUtf8Recursively($responseData);
@@ -444,6 +502,149 @@ class NotificationController extends Controller
             ], 500, [
                 'Content-Type' => 'application/json; charset=utf-8',
             ])->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+    }
+
+    private function processAllAttachmentTypes($fileUploads, $base64Attachments, $urlAttachments, $notification)
+    {
+        $allAttachments = [];
+
+        // 1. ประมวลผลไฟล์ที่อัพโหลด
+        if ($fileUploads) {
+            foreach ($fileUploads as $file) {
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path     = $file->storeAs('attachments/' . $notification->uuid, $filename, 'local');
+
+                $allAttachments[] = [
+                    'name'      => $file->getClientOriginalName(),
+                    'filename'  => $filename,
+                    'path'      => $path,
+                    'size'      => $file->getSize(),
+                    'mime_type' => $file->getMimeType(),
+                    'type'      => 'file',
+                ];
+            }
+        }
+
+        // 2. ประมวลผล Base64 attachments
+        if ($base64Attachments) {
+            foreach ($base64Attachments as $base64File) {
+                $filename = time() . '_' . $base64File['name'];
+                $data     = base64_decode($base64File['data']);
+                $path     = 'attachments/' . $notification->uuid . '/' . $filename;
+
+                Storage::disk('local')->put($path, $data);
+
+                $allAttachments[] = [
+                    'name'      => $base64File['name'],
+                    'filename'  => $filename,
+                    'path'      => $path,
+                    'size'      => strlen($data),
+                    'mime_type' => $base64File['mime_type'],
+                    'type'      => 'base64',
+                ];
+            }
+        }
+
+        // 3. ประมวลผล URL attachments (ดาวน์โหลดและเก็บ)
+        if ($urlAttachments) {
+            foreach ($urlAttachments as $url) {
+                try {
+                    $urlAttachment = $this->downloadAndStoreAttachment($url, $notification->uuid);
+                    if ($urlAttachment) {
+                        $allAttachments[] = $urlAttachment;
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to download URL attachment', [
+                        'url'   => $url,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    // สร้าง placeholder attachment
+                    $allAttachments[] = [
+                        'name'         => basename(parse_url($url, PHP_URL_PATH)) ?: 'downloaded_file',
+                        'filename'     => null,
+                        'path'         => null,
+                        'size'         => 0,
+                        'mime_type'    => 'application/octet-stream',
+                        'type'         => 'url_failed',
+                        'original_url' => $url,
+                        'error'        => $e->getMessage(),
+                    ];
+                }
+            }
+        }
+
+        return $allAttachments;
+    }
+
+    /**
+     * ดาวน์โหลดไฟล์จาก URL และเก็บไว้
+     */
+    private function downloadAndStoreAttachment($url, $notificationUuid)
+    {
+        try {
+            // ตรวจสอบ URL
+            if (! filter_var($url, FILTER_VALIDATE_URL)) {
+                throw new \Exception('Invalid URL format');
+            }
+
+            // ดาวน์โหลดไฟล์
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 30,
+                'verify'  => false, // สำหรับ localhost
+            ]);
+
+            $response = $client->get($url);
+            $fileData = $response->getBody()->getContents();
+
+            if (empty($fileData)) {
+                throw new \Exception('Downloaded file is empty');
+            }
+
+            // ตรวจสอบขนาดไฟล์
+            $fileSize = strlen($fileData);
+            if ($fileSize > 10 * 1024 * 1024) { // 10MB limit
+                throw new \Exception('File too large: ' . number_format($fileSize) . ' bytes');
+            }
+
+            // กำหนดชื่อไฟล์
+            $originalName = basename(parse_url($url, PHP_URL_PATH)) ?: 'downloaded_file';
+            $filename     = time() . '_' . $originalName;
+            $path         = 'attachments/' . $notificationUuid . '/' . $filename;
+
+            // บันทึกไฟล์
+            Storage::disk('local')->put($path, $fileData);
+
+            // ตรวจหา MIME type
+            $tempFile = tempnam(sys_get_temp_dir(), 'attachment');
+            file_put_contents($tempFile, $fileData);
+            $mimeType = mime_content_type($tempFile) ?: 'application/octet-stream';
+            unlink($tempFile);
+
+            Log::info('URL attachment downloaded successfully', [
+                'url'       => $url,
+                'filename'  => $filename,
+                'size'      => $fileSize,
+                'mime_type' => $mimeType,
+            ]);
+
+            return [
+                'name'         => $originalName,
+                'filename'     => $filename,
+                'path'         => $path,
+                'size'         => $fileSize,
+                'mime_type'    => $mimeType,
+                'type'         => 'url',
+                'original_url' => $url,
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Failed to download URL attachment', [
+                'url'   => $url,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
         }
     }
 
@@ -492,7 +693,6 @@ class NotificationController extends Controller
             return $data;
         }
     }
-
 
     private function prepareContentForRecipients(Request $request, $template, array $baseVariables, array $recipients): array
     {

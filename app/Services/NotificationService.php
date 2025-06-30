@@ -684,27 +684,13 @@ class NotificationService
             }
             
             try {
-                // ✅ ใช้ personalized content ที่ถูกต้อง
+
                 $personalizedData = $notification->processed_content['personalized_content'][$recipient['email']] ?? null;
-                
-                Log::debug("Processing email for recipient", [
-                    'email' => $recipient['email'],
-                    'has_personalized_data' => !empty($personalizedData),
-                    'personalized_subject' => !empty($personalizedData) ? substr($personalizedData['subject'], 0, 100) : 'N/A'
-                ]);
                 
                 if ($personalizedData && !empty($personalizedData['subject'])) {
                     // ✅ ใช้ personalized content
                     $content = $personalizedData;
-                    // Log::info("Using personalized content for email", [
-                    //     'email' => $recipient['email'],
-                    //     'subject' => substr($content['subject'], 0, 100)
-                    // ]);
                 } else {
-                    // Fallback: สร้าง content ใหม่สำหรับ recipient นี้
-                    Log::warning("No personalized content found, creating fallback", [
-                        'email' => $recipient['email']
-                    ]);
                     
                     $template = $notification->template;
                     $recipientVariables = array_merge(
@@ -736,45 +722,112 @@ class NotificationService
                         $content['subject'] = 'Smart Notification for ' . $recipient['name'];
                     }
                 }
-                
-                Log::info("Sending email with content", [
-                    'email' => $recipient['email'],
-                    'subject' => $content['subject'],
-                    'has_html' => !empty($content['body_html']),
-                    'has_text' => !empty($content['body_text'])
-                ]);
-                
-                // ส่งอีเมล
-                Mail::send([], [], function ($message) use ($content, $recipient, $notification) {
-                    $message->to($recipient['email'], $recipient['name'])
-                           ->subject($content['subject']);
-                    
-                    // ใส่เนื้อหา
-                    if (!empty($content['body_html'])) {
-                        $message->html($content['body_html']);
+
+                // ✅ เตรียม attachments
+                $attachmentPaths = [];
+                if (!empty($notification->attachments)) {
+                    foreach ($notification->attachments as $attachment) {
+                        if ($attachment['type'] !== 'url_failed' && !empty($attachment['path'])) {
+                            $fullPath = storage_path('app/' . $attachment['path']);
+                            if (file_exists($fullPath)) {
+                                $attachmentPaths[] = $fullPath;
+                            }
+                        }
                     }
                     
-                    if (!empty($content['body_text'])) {
-                        $message->text($content['body_text']);
-                    }
-                    
-                    $fromEmail = config('mail.from.address', 'noreply@company.com');
-                    $fromName = config('mail.from.name', config('app.name'));
-                    $message->from($fromEmail, $fromName);
-                });
+                    Log::info("Prepared attachments for email", [
+                        'recipient' => $recipient['email'],
+                        'attachment_count' => count($attachmentPaths),
+                        'total_attachments' => count($notification->attachments),
+                        'attachment_paths' => $attachmentPaths
+                    ]);
+                }
                 
-                // อัพเดต log
+                // Log::info("Sending email with content", [
+                //     'email' => $recipient['email'],
+                //     'subject' => $content['subject'],
+                //     'has_html' => !empty($content['body_html']),
+                //     'has_text' => !empty($content['body_text'])
+                // ]);
+                
+                // // ส่งอีเมล
+                // Mail::send([], [], function ($message) use ($content, $recipient, $notification) {
+                //     $message->to($recipient['email'], $recipient['name'])
+                //            ->subject($content['subject']);
+                    
+                //     // ใส่เนื้อหา
+                //     if (!empty($content['body_html'])) {
+                //         $message->html($content['body_html']);
+                //     }
+                    
+                //     if (!empty($content['body_text'])) {
+                //         $message->text($content['body_text']);
+                //     }
+                    
+                //     $fromEmail = config('mail.from.address', 'noreply@company.com');
+                //     $fromName = config('mail.from.name', config('app.name'));
+                //     $message->from($fromEmail, $fromName);
+                // });
+                
+                // // อัพเดต log
+                // $log->update([
+                //     'status' => 'sent',
+                //     'sent_at' => now(),
+                //     'content_sent' => $content
+                // ]);
+                
+                // Log::info("Email sent successfully", [
+                //     'recipient' => $recipient['email'],
+                //     'subject' => $content['subject'],
+                //     'notification_id' => $notification->uuid
+                // ]);
+
+                // $log->update([
+                // 'content_sent' => array_merge($content, [
+                //     'attachment_paths' => $attachmentPaths,
+                //     'has_attachments' => !empty($attachmentPaths)
+                // ])
+
                 $log->update([
-                    'status' => 'sent',
-                    'sent_at' => now(),
-                    'content_sent' => $content
+                    'personalized_content' => $content,
+                    'attachment_paths' => $attachmentPaths,
+                    'attachment_info' => [
+                        'count' => count($attachmentPaths),
+                        'has_attachments' => !empty($attachmentPaths),
+                        'paths' => $attachmentPaths
+                    ]
                 ]);
                 
-                Log::info("Email sent successfully", [
+                // ส่งผ่าน SendEmailNotification Job
+                // SendEmailNotification::dispatch($log)
+                //     ->delay($this->calculateDelay($notification->priority))
+                //     ->onQueue($this->getQueueName($notification->priority));
+                
+                // Log::info("Email job dispatched with attachments", [
+                //     'recipient' => $recipient['email'],
+                //     'subject' => substr($content['subject'], 0, 100),
+                //     'attachment_count' => count($attachmentPaths)
+                // ]);
+
+                Log::info("Sending email directly (enhanced)", [
                     'recipient' => $recipient['email'],
-                    'subject' => $content['subject'],
-                    'notification_id' => $notification->uuid
+                    'subject' => substr($content['subject'], 0, 100),
+                    'attachment_count' => count($attachmentPaths)
                 ]);
+                
+                $this->sendEmailDirectlyFromService($content, $recipient, $attachmentPaths, $log);
+            // ]);
+            
+            // ส่งผ่าน SendEmailNotification Job
+            // SendEmailNotification::dispatch($log)
+            //     ->delay($this->calculateDelay($notification->priority))
+            //     ->onQueue($this->getQueueName($notification->priority));
+            
+            // Log::info("Email job dispatched with attachments", [
+            //     'recipient' => $recipient['email'],
+            //     'subject' => substr($content['subject'], 0, 100),
+            //     'attachment_count' => count($attachmentPaths)
+            // ]);
                 
             } catch (\Exception $e) {
                 $log->update([
@@ -797,6 +850,93 @@ class NotificationService
         ]);
     }
     
+    private function sendEmailDirectlyFromService($content, $recipient, $attachmentPaths, $log)
+    {
+        try {
+            Log::info("Sending email directly from service with attachments", [
+                'recipient' => $recipient['email'],
+                'subject' => substr($content['subject'], 0, 100),
+                'attachment_count' => count($attachmentPaths),
+                'attachment_paths' => $attachmentPaths
+            ]);
+
+            // ✅ ส่งพร้อมไฟล์แนบถ้ามี
+            if (!empty($attachmentPaths)) {
+                $emailData = [
+                    'subject' => $content['subject'],
+                    'body_html' => $content['body_html'],
+                    'body_text' => $content['body_text'],
+                    'recipient_name' => $recipient['name'],
+                    'recipient_email' => $recipient['email'],
+                    'format' => !empty($content['body_html']) ? 'html' : 'text',
+                ];
+
+                // ส่งผ่าน NotificationMail พร้อมไฟล์แนบ
+                \Illuminate\Support\Facades\Mail::to($recipient['email'], $recipient['name'])
+                    ->send(new \App\Mail\NotificationMail($emailData, 'notification', $attachmentPaths));
+                    
+            } else {
+                // ส่งแบบไม่มีไฟล์แนบ
+                \Illuminate\Support\Facades\Mail::send([], [], function ($message) use ($content, $recipient) {
+                    $message->to($recipient['email'], $recipient['name'])
+                        ->subject($content['subject']);
+                    
+                    if (!empty($content['body_html'])) {
+                        $message->html($content['body_html']);
+                    }
+                    
+                    if (!empty($content['body_text'])) {
+                        $message->text($content['body_text']);
+                    }
+                    
+                    $fromEmail = config('mail.from.address', 'noreply@company.com');
+                    $fromName = config('mail.from.name', config('app.name'));
+                    $message->from($fromEmail, $fromName);
+                });
+            }
+            
+            // อัพเดตสถานะสำเร็จ
+            $log->update([
+                'status' => 'sent',
+                'sent_at' => now(),
+                'delivered_at' => now(),
+                'content_sent' => array_merge($content, [
+                    'attachment_count' => count($attachmentPaths),
+                    'attachments_sent' => array_map('basename', $attachmentPaths)
+                ]),
+                'response_data' => [
+                    'success' => true,
+                    'method' => 'service_direct_with_attachments',
+                    'attachment_count' => count($attachmentPaths),
+                    'timestamp' => now()->toISOString()
+                ]
+            ]);
+            
+            Log::info("Email sent successfully from service with attachments", [
+                'recipient' => $recipient['email'],
+                'subject' => $content['subject'],
+                'attachment_count' => count($attachmentPaths),
+                'method' => 'service_direct_with_attachments'
+            ]);
+            
+        } catch (\Exception $e) {
+            // อัพเดตสถานะล้มเหลว
+            $log->update([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'retry_count' => ($log->retry_count ?? 0) + 1,
+                'failed_at' => now()
+            ]);
+            
+            Log::error("Failed to send email from service", [
+                'recipient' => $recipient['email'],
+                'error' => $e->getMessage(),
+                'attachment_count' => count($attachmentPaths)
+            ]);
+            
+            throw $e;
+        }
+    }
 
     /**
      * ประมวลผล Teams channel พร้อม personalization
@@ -1303,29 +1443,60 @@ class NotificationService
                 'recipient_name' => $recipient['name'],
                 'status' => 'pending',
                 'retry_count' => 0,
-                'variables' => $notification->variables ?? [] // ✅ แน่ใจว่าเป็น array
+                'variables' => $notification->variables ?? []
             ];
+
+            // ✅ เพิ่ม attachment paths สำหรับ email channel
+            if ($channel === 'email' && !empty($notification->attachments)) {
+                $attachmentPaths = [];
+                $attachmentInfo = [];
+                
+                foreach ($notification->attachments as $attachment) {
+                    if ($attachment['type'] !== 'url_failed' && !empty($attachment['path'])) {
+                        $fullPath = storage_path('app/' . $attachment['path']);
+                        $attachmentPaths[] = $fullPath;
+                        
+                        $attachmentInfo[] = [
+                            'name' => $attachment['name'],
+                            'size' => $attachment['size'],
+                            'mime_type' => $attachment['mime_type'],
+                            'path' => $fullPath,
+                            'relative_path' => $attachment['path']
+                        ];
+                    }
+                }
+                
+                if (!empty($attachmentPaths)) {
+                    $logData['attachment_paths'] = $attachmentPaths;
+                    $logData['attachment_info'] = [
+                        'count' => count($attachmentPaths),
+                        'total_size' => array_sum(array_column($attachmentInfo, 'size')),
+                        'files' => $attachmentInfo
+                    ];
+                    
+                    Log::info("Adding attachment paths to log", [
+                        'notification_id' => $notification->id,
+                        'recipient' => $recipient['email'],
+                        'attachment_count' => count($attachmentPaths),
+                        'paths' => $attachmentPaths
+                    ]);
+                }
+            }
 
             // ✅ เพิ่ม personalized content ถ้ามี
             if (!empty($notification->processed_content['personalized_content'][$recipient['email']])) {
                 $logData['personalized_content'] = $notification->processed_content['personalized_content'][$recipient['email']];
             }
 
-            Log::info("Creating notification log", [
-                'notification_id' => $notification->id,
-                'channel' => $channel,
-                'recipient' => $recipient['email'],
-                'variables_type' => gettype($logData['variables']),
-                'variables_count' => is_array($logData['variables']) ? count($logData['variables']) : 0
-            ]);
-
             $log = NotificationLog::create($logData);
 
-            Log::info("Notification log created successfully", [
+            Log::info("Notification log created with attachments", [
                 'log_id' => $log->id,
                 'notification_id' => $notification->id,
                 'channel' => $channel,
-                'recipient' => $recipient['email']
+                'recipient' => $recipient['email'],
+                'has_attachments' => !empty($logData['attachment_paths']),
+                'attachment_count' => count($logData['attachment_paths'] ?? [])
             ]);
 
             return $log;

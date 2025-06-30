@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 class NotificationLog extends Model
 {
@@ -30,7 +31,9 @@ class NotificationLog extends Model
         'content_sent',
         'webhook_url',
         'webhook_response_code',
-        'variables'
+        'variables',
+        'attachment_paths',
+        'attachment_info'
     ];
 
     protected $casts = [
@@ -42,7 +45,9 @@ class NotificationLog extends Model
         'delivered_at' => 'datetime',
         'next_retry_at' => 'datetime',
         'retry_count' => 'integer',
-        'webhook_response_code' => 'integer'
+        'webhook_response_code' => 'integer',
+        'attachment_paths' => 'array',
+        'attachment_info' => 'array'
     ];
 
     // ========== RELATIONSHIPS ==========
@@ -361,4 +366,120 @@ class NotificationLog extends Model
               });
         });
     }
+
+    /**
+     * ตรวจสอบว่ามี attachments หรือไม่
+     */
+    public function hasAttachments(): bool
+    {
+        return !empty($this->attachment_paths) || 
+               !empty($this->content_sent['attachment_paths'] ?? []);
+    }
+
+    public function getAttachmentPaths(): array
+    {
+        $paths = [];
+        
+        // 1. ลองจาก attachment_paths ใน log ก่อน
+        if (!empty($this->attachment_paths)) {
+            $paths = $this->attachment_paths;
+            Log::debug("Found attachment paths in log", [
+                'log_id' => $this->id,
+                'paths' => $paths
+            ]);
+        }
+        
+        // 2. ถ้าไม่มี ลองจาก content_sent
+        if (empty($paths) && !empty($this->content_sent['attachment_paths'])) {
+            $paths = $this->content_sent['attachment_paths'];
+            Log::debug("Found attachment paths in content_sent", [
+                'log_id' => $this->id,
+                'paths' => $paths
+            ]);
+        }
+        
+        // 3. ถ้ายังไม่มี ลองจาก notification
+        if (empty($paths) && $this->notification) {
+            $notificationAttachments = $this->notification->attachments;
+            if (!empty($notificationAttachments)) {
+                foreach ($notificationAttachments as $attachment) {
+                    if (!empty($attachment['path']) && $attachment['type'] !== 'url_failed') {
+                        // แปลง relative path เป็น absolute path
+                        $fullPath = storage_path('app/' . $attachment['path']);
+                        $paths[] = $fullPath;
+                    }
+                }
+                Log::debug("Found attachment paths from notification", [
+                    'log_id' => $this->id,
+                    'notification_id' => $this->notification->id,
+                    'paths' => $paths
+                ]);
+            }
+        }
+        
+        // 4. ตรวจสอบและทำความสะอาด paths
+        $validPaths = [];
+        foreach ($paths as $path) {
+            if (empty($path)) {
+                continue;
+            }
+            
+            // ถ้า path ไม่ใช่ absolute path ให้แปลง
+            if (!str_starts_with($path, '/') && !str_starts_with($path, storage_path())) {
+                $path = storage_path('app/' . $path);
+            }
+            
+            $validPaths[] = $path;
+        }
+        
+        Log::debug("Final attachment paths", [
+            'log_id' => $this->id,
+            'original_count' => count($paths),
+            'valid_count' => count($validPaths),
+            'paths' => $validPaths
+        ]);
+        
+        return $validPaths;
+    }
+
+    /**
+     * ได้รับข้อมูล attachment info
+     */
+    public function getAttachmentInfo(): array
+    {
+        if (!empty($this->attachment_info)) {
+            return $this->attachment_info;
+        }
+        
+        if (!empty($this->content_sent['attachment_info'])) {
+            return $this->content_sent['attachment_info'];
+        }
+        
+        // สร้างจาก attachment paths
+        $paths = $this->getAttachmentPaths();
+        if (!empty($paths)) {
+            return [
+                'count' => count($paths),
+                'files' => array_map(function($path) {
+                    return [
+                        'path' => $path,
+                        'exists' => file_exists($path),
+                        'size' => file_exists($path) ? filesize($path) : 0
+                    ];
+                }, $paths)
+            ];
+        }
+        
+        return [];
+    }
+
+    /**
+     * นับจำนวน attachments
+     */
+    public function getAttachmentCount(): int
+    {
+        $paths = $this->getAttachmentPaths();
+        return count($paths);
+    }
+
 }

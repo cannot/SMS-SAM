@@ -29,28 +29,37 @@ class SendEmailNotification implements ShouldQueue
 
     public function handle()
     {
-        try {
-            Log::info('Processing email notification', [
-                'log_id' => $this->notificationLog->id,
-                'recipient' => $this->notificationLog->recipient_email,
-                'recipient_name' => $this->notificationLog->recipient_name,
-                'current_status' => $this->notificationLog->status,
-                'has_personalized_content' => !empty($this->notificationLog->personalized_content)
-            ]);
+        // ✅ เพิ่ม Debug Log เมื่อเริ่มทำงาน
+        Log::info('SendEmailNotification Job STARTED', [
+            'log_id' => $this->notificationLog->id,
+            'recipient' => $this->notificationLog->recipient_email,
+            'current_status' => $this->notificationLog->status,
+            'queue_connection' => config('queue.default'),
+            'job_id' => $this->job->getJobId() ?? 'unknown'
+        ]);
 
+        try {
+            
             $notification = $this->notificationLog->notification;
             
-            // ตรวจสอบว่าควรส่งอีเมลหรือไม่
+            if (!$notification) {
+                throw new Exception('Notification not found for log ID: ' . $this->notificationLog->id);
+            }
+            
+            // ตรวจสอบสถานะปัจจุบัน
+            if ($this->notificationLog->status !== 'pending') {
+                Log::warning('Job skipped - status not pending', [
+                    'log_id' => $this->notificationLog->id,
+                    'current_status' => $this->notificationLog->status
+                ]);
+                return;
+            }
+            
             if (!$this->shouldSendEmail()) {
                 $this->notificationLog->update([
                     'status' => 'failed',
                     'error_message' => 'User preferences do not allow email notifications',
                     'failed_at' => now()
-                ]);
-                
-                Log::info('Email notification skipped due to user preferences', [
-                    'log_id' => $this->notificationLog->id,
-                    'recipient' => $this->notificationLog->recipient_email
                 ]);
                 
                 $this->updateNotificationStatus();
@@ -59,6 +68,7 @@ class SendEmailNotification implements ShouldQueue
 
             // ✅ เตรียมเนื้อหาอีเมลโดยใช้ personalized content ก่อน
             $emailContent = $this->prepareEmailContent($notification);
+            $attachmentPaths = $this->prepareAttachments();
             
             $recipient = [
                 'email' => $this->notificationLog->recipient_email,
@@ -72,11 +82,15 @@ class SendEmailNotification implements ShouldQueue
                 'has_html' => !empty($emailContent['body_html']),
                 'has_text' => !empty($emailContent['body_text']),
                 'subject_length' => strlen($emailContent['subject']),
-                'content_source' => $this->detectContentSource()
+                'content_source' => $this->detectContentSource(),
+                'attachment_count' => count($attachmentPaths),
+                'attachment_paths' => $attachmentPaths,
             ]);
 
             // ส่งอีเมลโดยใช้ Laravel Mail หรือ EmailService
-            $result = $this->sendEmail($recipient, $emailContent);
+            // $result = $this->sendEmail($recipient, $emailContent);
+            // $result = $this->sendEmailWithAttachments($recipient, $emailContent, $attachmentPaths);
+            $result = $this->sendEmailDirect($recipient, $emailContent, $attachmentPaths);
 
             if ($result['success']) {
                 // สำเร็จ - ใส่ delivered_at
@@ -84,11 +98,12 @@ class SendEmailNotification implements ShouldQueue
                     'status' => 'sent',
                     'sent_at' => now(),
                     'delivered_at' => now(),
-                    'content_sent' => $emailContent, // ✅ บันทึก content ที่ส่งจริง
+                    'content_sent' => $emailContent,
                     'response_data' => [
                         'success' => true,
                         'method' => $result['method'] ?? 'mail',
                         'message_id' => $result['message_id'] ?? null,
+                        'attachment_count' => count($attachmentPaths),
                         'timestamp' => now()->toISOString()
                     ]
                 ]);
@@ -121,13 +136,88 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
+    private function sendEmailDirect($recipient, $emailContent, $attachmentPaths = [])
+    {
+        try {
+            Log::info('Attempting direct email send with attachments', [
+                'recipient' => $recipient['email'],
+                'has_attachments' => !empty($attachmentPaths),
+                'attachment_count' => count($attachmentPaths),
+                'attachment_paths' => $attachmentPaths
+            ]);
+
+            // ✅ วิธีที่ 1: ใช้ Mail::send แบบเดียวกับที่ทำงาน
+            if (empty($attachmentPaths)) {
+                // ไม่มีไฟล์แนับ - ใช้วิธีเดิมที่ทำงาน
+                Mail::send([], [], function ($message) use ($recipient, $emailContent) {
+                    $message->to($recipient['email'], $recipient['name'])
+                           ->subject($emailContent['subject']);
+                    
+                    if (!empty($emailContent['body_html'])) {
+                        $message->html($emailContent['body_html']);
+                    }
+                    
+                    if (!empty($emailContent['body_text'])) {
+                        $message->text($emailContent['body_text']);
+                    }
+                    
+                    $fromEmail = config('mail.from.address', 'noreply@company.com');
+                    $fromName = config('mail.from.name', config('app.name'));
+                    $message->from($fromEmail, $fromName);
+                });
+                
+                return [
+                    'success' => true,
+                    'method' => 'mail_send_direct',
+                    'message_id' => 'direct_' . time()
+                ];
+            } else {
+                // มีไฟล์แนบ - ใช้ NotificationMail
+                $emailData = [
+                    'subject' => $emailContent['subject'],
+                    'body_html' => $emailContent['body_html'],
+                    'body_text' => $emailContent['body_text'],
+                    'recipient_name' => $recipient['name'],
+                    'recipient_email' => $recipient['email'],
+                    'format' => !empty($emailContent['body_html']) ? 'html' : 'text',
+                ];
+
+                Mail::to($recipient['email'], $recipient['name'])
+                    ->send(new NotificationMail($emailData, 'notification', $attachmentPaths));
+
+                return [
+                    'success' => true,
+                    'method' => 'notification_mail_with_attachments',
+                    'message_id' => 'notification_' . time(),
+                    'attachments_count' => count($attachmentPaths)
+                ];
+            }
+            
+        } catch (Exception $e) {
+            Log::error("Direct email sending failed", [
+                'recipient' => $recipient['email'],
+                'error' => $e->getMessage(),
+                'mail_config' => [
+                    'driver' => config('mail.default'),
+                    'from_address' => config('mail.from.address'),
+                    'from_name' => config('mail.from.name')
+                ]
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Direct email failed: ' . $e->getMessage(),
+                'method' => 'direct_failed'
+            ];
+        }
+    }
+
     /**
      * ✅ เตรียมเนื้อหาอีเมล - ใช้ personalized content ก่อน
      */
     private function prepareEmailContent($notification)
     {
         try {
-            // ✅ ลำดับความสำคัญ: personalized_content > template > notification content
             
             // 1. ลองใช้ personalized content จาก log ก่อน
             if (!empty($this->notificationLog->personalized_content)) {
@@ -170,6 +260,205 @@ class SendEmailNotification implements ShouldQueue
                 'subject' => $notification->subject ?: 'Smart Notification',
                 'body_html' => $notification->body_html ?: '',
                 'body_text' => $notification->body_text ?: 'Notification content'
+            ];
+        }
+    }
+
+    private function prepareAttachmentsx(): array
+    {
+        try {
+            $attachmentPaths = $this->notificationLog->getAttachmentPaths();
+            
+            if (empty($attachmentPaths)) {
+                Log::info("No attachments found for email", [
+                    'log_id' => $this->notificationLog->id
+                ]);
+                return [];
+            }
+            
+            // ตรวจสอบว่าไฟล์ยังมีอยู่จริง
+            $validPaths = [];
+            $invalidPaths = [];
+            
+            foreach ($attachmentPaths as $path) {
+                if (file_exists($path)) {
+                    $fileSize = filesize($path);
+                    $maxSize = 25 * 1024 * 1024; // 25MB limit
+                    
+                    if ($fileSize <= $maxSize) {
+                        $validPaths[] = $path;
+                    } else {
+                        Log::warning("Attachment file too large", [
+                            'path' => $path,
+                            'size' => $fileSize,
+                            'max_size' => $maxSize
+                        ]);
+                        $invalidPaths[] = $path;
+                    }
+                } else {
+                    Log::warning("Attachment file not found", [
+                        'path' => $path
+                    ]);
+                    $invalidPaths[] = $path;
+                }
+            }
+            
+            if (!empty($invalidPaths)) {
+                Log::warning("Some attachments are invalid", [
+                    'valid_count' => count($validPaths),
+                    'invalid_count' => count($invalidPaths),
+                    'invalid_paths' => $invalidPaths
+                ]);
+            }
+            
+            Log::info("Attachments prepared", [
+                'total_requested' => count($attachmentPaths),
+                'valid_attachments' => count($validPaths),
+                'invalid_attachments' => count($invalidPaths)
+            ]);
+            
+            return $validPaths;
+            
+        } catch (\Exception $e) {
+            Log::error("Error preparing attachments", [
+                'log_id' => $this->notificationLog->id,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    private function prepareAttachments(): array
+{
+    try {
+        $validPaths = [];
+        
+        // 1. ลองจาก log ก่อน
+        $logAttachmentPaths = $this->notificationLog->getAttachmentPaths();
+        
+        // 2. ถ้าไม่มีใน log ให้ลองจาก notification
+        if (empty($logAttachmentPaths)) {
+            $notification = $this->notificationLog->notification;
+            if ($notification && $notification->attachments) {
+                $logAttachmentPaths = $notification->getAttachmentPaths();
+            }
+        }
+        
+        Log::info("Preparing attachments from multiple sources", [
+            'log_id' => $this->notificationLog->id,
+            'log_attachment_paths' => $logAttachmentPaths,
+            'notification_attachments' => $this->notificationLog->notification->attachments ?? []
+        ]);
+        
+        if (empty($logAttachmentPaths)) {
+            Log::info("No attachment paths found", [
+                'log_id' => $this->notificationLog->id
+            ]);
+            return [];
+        }
+        
+        // ตรวจสอบไฟล์ทั้งหมด
+        foreach ($logAttachmentPaths as $path) {
+            if (empty($path)) {
+                continue;
+            }
+            
+            Log::debug("Checking attachment path", [
+                'path' => $path,
+                'exists' => file_exists($path),
+                'full_path' => $path
+            ]);
+            
+            if (file_exists($path)) {
+                $fileSize = filesize($path);
+                $maxSize = 25 * 1024 * 1024; // 25MB limit
+                
+                if ($fileSize <= $maxSize) {
+                    $validPaths[] = $path;
+                    Log::info("Valid attachment added", [
+                        'path' => $path,
+                        'size' => $fileSize
+                    ]);
+                } else {
+                    Log::warning("Attachment file too large", [
+                        'path' => $path,
+                        'size' => $fileSize,
+                        'max_size' => $maxSize
+                    ]);
+                }
+            } else {
+                Log::warning("Attachment file not found", [
+                    'path' => $path
+                ]);
+            }
+        }
+        
+        Log::info("Final attachments prepared", [
+            'total_requested' => count($logAttachmentPaths),
+            'valid_attachments' => count($validPaths),
+            'paths' => $validPaths
+        ]);
+        
+        return $validPaths;
+        
+    } catch (\Exception $e) {
+        Log::error("Error preparing attachments", [
+            'log_id' => $this->notificationLog->id,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        return [];
+    }
+}
+
+    /**
+     * ✅ ส่งอีเมลพร้อม attachments
+     */
+    private function sendEmailWithAttachments($recipient, $emailContent, $attachmentPaths)
+    {
+        try {
+            // ✅ ใช้ NotificationMail class ที่รองรับ attachments
+            $emailData = [
+                'subject' => $emailContent['subject'],
+                'body_html' => $emailContent['body_html'],
+                'body_text' => $emailContent['body_text'],
+                'recipient_name' => $recipient['name'],
+                'recipient_email' => $recipient['email'],
+                'format' => !empty($emailContent['body_html']) ? 'html' : 'text',
+            ];
+
+            // ส่งผ่าน NotificationMail
+            Mail::to($recipient['email'], $recipient['name'])
+                ->send(new NotificationMail($emailData, 'notification', $attachmentPaths));
+
+            // เตรียมข้อมูล attachments ที่ส่งไป
+            $attachmentsInfo = array_map(function($path) {
+                return [
+                    'path' => $path,
+                    'name' => basename($path),
+                    'size' => file_exists($path) ? filesize($path) : 0,
+                    'sent' => true
+                ];
+            }, $attachmentPaths);
+
+            return [
+                'success' => true,
+                'method' => 'notification_mail',
+                'message_id' => 'notification_' . time(),
+                'attachments_info' => $attachmentsInfo
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to send email with attachments", [
+                'recipient' => $recipient['email'],
+                'attachment_count' => count($attachmentPaths),
+                'error' => $e->getMessage()
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Email with attachments failed: ' . $e->getMessage(),
+                'method' => 'notification_mail'
             ];
         }
     }
