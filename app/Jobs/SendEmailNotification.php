@@ -11,6 +11,8 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use App\Mail\NotificationMail;
+use App\Services\ImprovedEmailService;
 
 class SendEmailNotification implements ShouldQueue
 {
@@ -90,7 +92,8 @@ class SendEmailNotification implements ShouldQueue
             // ส่งอีเมลโดยใช้ Laravel Mail หรือ EmailService
             // $result = $this->sendEmail($recipient, $emailContent);
             // $result = $this->sendEmailWithAttachments($recipient, $emailContent, $attachmentPaths);
-            $result = $this->sendEmailDirect($recipient, $emailContent, $attachmentPaths);
+            // $result = $this->sendEmailDirect($recipient, $emailContent, $attachmentPaths);
+            $result = $this->sendEmailViaImprovedService($recipient, $emailContent, $attachmentPaths);
 
             if ($result['success']) {
                 // สำเร็จ - ใส่ delivered_at
@@ -101,7 +104,7 @@ class SendEmailNotification implements ShouldQueue
                     'content_sent' => $emailContent,
                     'response_data' => [
                         'success' => true,
-                        'method' => $result['method'] ?? 'mail',
+                        'method' => $result['method'] ?? 'improved_email_service',
                         'message_id' => $result['message_id'] ?? null,
                         'attachment_count' => count($attachmentPaths),
                         'timestamp' => now()->toISOString()
@@ -136,6 +139,146 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
+    private function sendEmailViaImprovedService($recipient, $emailContent, $attachmentPaths = [])
+    {
+        try {
+            Log::info('Using ImprovedEmailService for complete attachment support', [
+                'recipient' => $recipient['email'],
+                'has_legacy_attachments' => !empty($attachmentPaths),
+                'legacy_attachment_count' => count($attachmentPaths)
+            ]);
+
+            // สร้าง ImprovedEmailService instance
+            $emailService = new ImprovedEmailService();
+            
+            // ✅ เตรียมข้อมูลอีเมลพร้อมไฟล์แนบทั้ง 3 ประเภท
+            $emailData = [
+                'to' => $recipient['email'],
+                'subject' => $emailContent['subject'],
+                'body_html' => $emailContent['body_html'],
+                'body_text' => $emailContent['body_text'],
+                'from_address' => config('mail.from.address'),
+                'from_name' => config('mail.from.name'),
+                'recipient_name' => $recipient['name'],
+                
+                // ✅ รองรับไฟล์แนบทั้ง 3 ประเภท
+                'attachments' => $attachmentPaths, // File paths (legacy)
+                'attachment_urls' => $this->getAttachmentUrls(), // URL downloads 
+                'attachments_base64' => $this->getBase64Attachments() // Base64 encoded
+            ];
+
+            Log::info("Complete attachment data prepared", [
+                'file_paths' => count($attachmentPaths),
+                'url_attachments' => count($emailData['attachment_urls']),
+                'base64_attachments' => count($emailData['attachments_base64'])
+            ]);
+
+            // ✅ ส่งผ่าน ImprovedEmailService ที่รองรับครบ 3 ประเภท
+            $result = $emailService->sendEmail($emailData);
+            
+            if ($result['success']) {
+                Log::info("Email sent successfully with complete attachment support", [
+                    'recipient' => $recipient['email'],
+                    'method' => $result['method'],
+                    'attachment_summary' => $result['attachment_summary'] ?? []
+                ]);
+                
+                return [
+                    'success' => true,
+                    'method' => $result['method'] ?? 'improved_email_service_complete',
+                    'message_id' => 'complete_' . time(),
+                    'attachment_summary' => $result['attachment_summary'] ?? []
+                ];
+            } else {
+                Log::warning("ImprovedEmailService failed, trying fallback", [
+                    'recipient' => $recipient['email'],
+                    'error' => $result['error'] ?? 'Unknown error'
+                ]);
+                
+                // ถ้า ImprovedEmailService ล้มเหลว ลอง fallback method (เฉพาะ file paths)
+                return $this->sendEmailFallback($recipient, $emailContent, $attachmentPaths);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("ImprovedEmailService exception, trying fallback", [
+                'recipient' => $recipient['email'],
+                'error' => $e->getMessage(),
+                'attachment_count' => count($attachmentPaths)
+            ]);
+            
+            // ลอง fallback method
+            return $this->sendEmailFallback($recipient, $emailContent, $attachmentPaths);
+        }
+    }
+
+    private function sendEmailFallback($recipient, $emailContent, $attachmentPaths = [])
+    {
+        try {
+            Log::info('Using fallback email method', [
+                'recipient' => $recipient['email'],
+                'has_attachments' => !empty($attachmentPaths)
+            ]);
+
+            if (empty($attachmentPaths)) {
+                // ไม่มีไฟล์แนบ - ใช้ Laravel Mail
+                Mail::send([], [], function ($message) use ($recipient, $emailContent) {
+                    $message->to($recipient['email'], $recipient['name'])
+                           ->subject($emailContent['subject']);
+                    
+                    if (!empty($emailContent['body_html'])) {
+                        $message->html($emailContent['body_html']);
+                    }
+                    
+                    if (!empty($emailContent['body_text'])) {
+                        $message->text($emailContent['body_text']);
+                    }
+                    
+                    $fromEmail = config('mail.from.address', 'noreply@company.com');
+                    $fromName = config('mail.from.name', config('app.name'));
+                    $message->from($fromEmail, $fromName);
+                });
+                
+                return [
+                    'success' => true,
+                    'method' => 'laravel_mail_fallback',
+                    'message_id' => 'fallback_' . time()
+                ];
+            } else {
+                // มีไฟล์แนบ - ใช้ NotificationMail
+                $emailData = [
+                    'subject' => $emailContent['subject'],
+                    'body_html' => $emailContent['body_html'],
+                    'body_text' => $emailContent['body_text'],
+                    'recipient_name' => $recipient['name'],
+                    'recipient_email' => $recipient['email'],
+                    'format' => !empty($emailContent['body_html']) ? 'html' : 'text',
+                ];
+
+                Mail::to($recipient['email'], $recipient['name'])
+                    ->send(new NotificationMail($emailData, 'notification', $attachmentPaths));
+
+                return [
+                    'success' => true,
+                    'method' => 'notification_mail_fallback',
+                    'message_id' => 'fallback_notification_' . time(),
+                    'attachments_count' => count($attachmentPaths)
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("Fallback email method also failed", [
+                'recipient' => $recipient['email'],
+                'error' => $e->getMessage()
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'All email methods failed: ' . $e->getMessage(),
+                'method' => 'all_failed'
+            ];
+        }
+    }
+
     private function sendEmailDirect($recipient, $emailContent, $attachmentPaths = [])
     {
         try {
@@ -146,7 +289,6 @@ class SendEmailNotification implements ShouldQueue
                 'attachment_paths' => $attachmentPaths
             ]);
 
-            // ✅ วิธีที่ 1: ใช้ Mail::send แบบเดียวกับที่ทำงาน
             if (empty($attachmentPaths)) {
                 // ไม่มีไฟล์แนับ - ใช้วิธีเดิมที่ทำงาน
                 Mail::send([], [], function ($message) use ($recipient, $emailContent) {
@@ -213,12 +355,100 @@ class SendEmailNotification implements ShouldQueue
     }
 
     /**
-     * ✅ เตรียมเนื้อหาอีเมล - ใช้ personalized content ก่อน
+     * ✅ ดึง URL attachments จาก notification
      */
+    private function getAttachmentUrls(): array
+    {
+        try {
+            $notification = $this->notificationLog->notification;
+            
+            // ลองหาจาก notification data
+            if (!empty($notification->attachment_urls)) {
+                Log::info("Found attachment URLs in notification", [
+                    'urls' => $notification->attachment_urls
+                ]);
+                return $notification->attachment_urls;
+            }
+            
+            // ลองหาจาก attachments metadata
+            if (!empty($notification->attachments)) {
+                $urls = [];
+                foreach ($notification->attachments as $attachment) {
+                    if (isset($attachment['type']) && $attachment['type'] === 'url' && !empty($attachment['url'])) {
+                        $urls[] = $attachment['url'];
+                    }
+                }
+                
+                if (!empty($urls)) {
+                    Log::info("Found attachment URLs in attachments metadata", [
+                        'urls' => $urls
+                    ]);
+                    return $urls;
+                }
+            }
+            
+            return [];
+            
+        } catch (\Exception $e) {
+            Log::error("Error getting attachment URLs", [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * ✅ ดึง Base64 attachments จาก notification
+     */
+    private function getBase64Attachments(): array
+    {
+        try {
+            $notification = $this->notificationLog->notification;
+            
+            // ลองหาจาก notification data
+            if (!empty($notification->attachments_base64)) {
+                Log::info("Found base64 attachments in notification", [
+                    'count' => count($notification->attachments_base64)
+                ]);
+                return $notification->attachments_base64;
+            }
+            
+            // ลองหาจาก attachments metadata
+            if (!empty($notification->attachments)) {
+                $base64Attachments = [];
+                foreach ($notification->attachments as $attachment) {
+                    if (isset($attachment['type']) && $attachment['type'] === 'base64' && 
+                        !empty($attachment['name']) && !empty($attachment['data'])) {
+                        
+                        $base64Attachments[] = [
+                            'name' => $attachment['name'],
+                            'data' => $attachment['data'],
+                            'mime_type' => $attachment['mime_type'] ?? 'application/octet-stream'
+                        ];
+                    }
+                }
+                
+                if (!empty($base64Attachments)) {
+                    Log::info("Found base64 attachments in attachments metadata", [
+                        'count' => count($base64Attachments)
+                    ]);
+                    return $base64Attachments;
+                }
+            }
+            
+            return [];
+            
+        } catch (\Exception $e) {
+            Log::error("Error getting base64 attachments", [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
     private function prepareEmailContent($notification)
     {
         try {
-            
             // 1. ลองใช้ personalized content จาก log ก่อน
             if (!empty($this->notificationLog->personalized_content)) {
                 $personalizedContent = $this->notificationLog->personalized_content;
@@ -263,6 +493,7 @@ class SendEmailNotification implements ShouldQueue
             ];
         }
     }
+
 
     private function prepareAttachmentsx(): array
     {
@@ -328,88 +559,161 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
-    private function prepareAttachments(): array
-{
-    try {
-        $validPaths = [];
-        
-        // 1. ลองจาก log ก่อน
-        $logAttachmentPaths = $this->notificationLog->getAttachmentPaths();
-        
-        // 2. ถ้าไม่มีใน log ให้ลองจาก notification
-        if (empty($logAttachmentPaths)) {
-            $notification = $this->notificationLog->notification;
-            if ($notification && $notification->attachments) {
-                $logAttachmentPaths = $notification->getAttachmentPaths();
+    private function prepareAttachmentsy(): array
+    {
+        try {
+            $validPaths = [];
+            
+            // 1. ลองจาก log ก่อน
+            $logAttachmentPaths = $this->notificationLog->getAttachmentPaths();
+            
+            // 2. ถ้าไม่มีใน log ให้ลองจาก notification
+            if (empty($logAttachmentPaths)) {
+                $notification = $this->notificationLog->notification;
+                if ($notification && $notification->attachments) {
+                    $logAttachmentPaths = $notification->getAttachmentPaths();
+                }
             }
-        }
-        
-        Log::info("Preparing attachments from multiple sources", [
-            'log_id' => $this->notificationLog->id,
-            'log_attachment_paths' => $logAttachmentPaths,
-            'notification_attachments' => $this->notificationLog->notification->attachments ?? []
-        ]);
-        
-        if (empty($logAttachmentPaths)) {
-            Log::info("No attachment paths found", [
-                'log_id' => $this->notificationLog->id
+            
+            Log::info("Preparing attachments from multiple sources", [
+                'log_id' => $this->notificationLog->id,
+                'log_attachment_paths' => $logAttachmentPaths,
+                'notification_attachments' => $this->notificationLog->notification->attachments ?? []
+            ]);
+            
+            if (empty($logAttachmentPaths)) {
+                Log::info("No attachment paths found", [
+                    'log_id' => $this->notificationLog->id
+                ]);
+                return [];
+            }
+            
+            // ตรวจสอบไฟล์ทั้งหมด
+            foreach ($logAttachmentPaths as $path) {
+                if (empty($path)) {
+                    continue;
+                }
+                
+                Log::debug("Checking attachment path", [
+                    'path' => $path,
+                    'exists' => file_exists($path),
+                    'full_path' => $path
+                ]);
+                
+                if (file_exists($path)) {
+                    $fileSize = filesize($path);
+                    $maxSize = 25 * 1024 * 1024; // 25MB limit
+                    
+                    if ($fileSize <= $maxSize) {
+                        $validPaths[] = $path;
+                        Log::info("Valid attachment added", [
+                            'path' => $path,
+                            'size' => $fileSize
+                        ]);
+                    } else {
+                        Log::warning("Attachment file too large", [
+                            'path' => $path,
+                            'size' => $fileSize,
+                            'max_size' => $maxSize
+                        ]);
+                    }
+                } else {
+                    Log::warning("Attachment file not found", [
+                        'path' => $path
+                    ]);
+                }
+            }
+            
+            Log::info("Final attachments prepared", [
+                'total_requested' => count($logAttachmentPaths),
+                'valid_attachments' => count($validPaths),
+                'paths' => $validPaths
+            ]);
+            
+            return $validPaths;
+            
+        } catch (\Exception $e) {
+            Log::error("Error preparing attachments", [
+                'log_id' => $this->notificationLog->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return [];
         }
-        
-        // ตรวจสอบไฟล์ทั้งหมด
-        foreach ($logAttachmentPaths as $path) {
-            if (empty($path)) {
-                continue;
+    }
+
+    private function prepareAttachments(): array
+    {
+        try {
+            $validPaths = [];
+            
+            // 1. ลองจาก log ก่อน
+            $logAttachmentPaths = $this->notificationLog->getAttachmentPaths();
+            
+            // 2. ถ้าไม่มีใน log ให้ลองจาก notification
+            if (empty($logAttachmentPaths)) {
+                $notification = $this->notificationLog->notification;
+                if ($notification && $notification->attachments) {
+                    $logAttachmentPaths = $notification->getAttachmentPaths();
+                }
             }
             
-            Log::debug("Checking attachment path", [
-                'path' => $path,
-                'exists' => file_exists($path),
-                'full_path' => $path
+            Log::info("Preparing attachments from multiple sources", [
+                'log_id' => $this->notificationLog->id,
+                'log_attachment_paths' => $logAttachmentPaths,
+                'notification_attachments' => $this->notificationLog->notification->attachments ?? []
             ]);
             
-            if (file_exists($path)) {
-                $fileSize = filesize($path);
-                $maxSize = 25 * 1024 * 1024; // 25MB limit
+            if (empty($logAttachmentPaths)) {
+                return [];
+            }
+            
+            // ตรวจสอบไฟล์ทั้งหมด
+            foreach ($logAttachmentPaths as $path) {
+                if (empty($path)) {
+                    continue;
+                }
                 
-                if ($fileSize <= $maxSize) {
-                    $validPaths[] = $path;
-                    Log::info("Valid attachment added", [
-                        'path' => $path,
-                        'size' => $fileSize
-                    ]);
+                if (file_exists($path)) {
+                    $fileSize = filesize($path);
+                    $maxSize = 25 * 1024 * 1024; // 25MB limit
+                    
+                    if ($fileSize <= $maxSize) {
+                        $validPaths[] = $path;
+                        Log::info("Valid attachment added", [
+                            'path' => $path,
+                            'size' => $fileSize
+                        ]);
+                    } else {
+                        Log::warning("Attachment file too large", [
+                            'path' => $path,
+                            'size' => $fileSize,
+                            'max_size' => $maxSize
+                        ]);
+                    }
                 } else {
-                    Log::warning("Attachment file too large", [
-                        'path' => $path,
-                        'size' => $fileSize,
-                        'max_size' => $maxSize
+                    Log::warning("Attachment file not found", [
+                        'path' => $path
                     ]);
                 }
-            } else {
-                Log::warning("Attachment file not found", [
-                    'path' => $path
-                ]);
             }
+            
+            Log::info("Final attachments prepared", [
+                'total_requested' => count($logAttachmentPaths),
+                'valid_attachments' => count($validPaths),
+                'paths' => $validPaths
+            ]);
+            
+            return $validPaths;
+            
+        } catch (\Exception $e) {
+            Log::error("Error preparing attachments", [
+                'log_id' => $this->notificationLog->id,
+                'error' => $e->getMessage()
+            ]);
+            return [];
         }
-        
-        Log::info("Final attachments prepared", [
-            'total_requested' => count($logAttachmentPaths),
-            'valid_attachments' => count($validPaths),
-            'paths' => $validPaths
-        ]);
-        
-        return $validPaths;
-        
-    } catch (\Exception $e) {
-        Log::error("Error preparing attachments", [
-            'log_id' => $this->notificationLog->id,
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
-        return [];
     }
-}
 
     /**
      * ✅ ส่งอีเมลพร้อม attachments
@@ -718,27 +1022,9 @@ class SendEmailNotification implements ShouldQueue
         }
 
         try {
-            // ✅ ตรวจสอบ UTF-8 encoding ของ input
-            if (!mb_check_encoding($content, 'UTF-8')) {
-                $content = mb_convert_encoding($content, 'UTF-8', 'auto');
-                Log::debug("Fixed input content encoding to UTF-8");
-            }
-
-            Log::debug("replaceVariables START", [
-                'content_length' => mb_strlen($content),
-                'content_preview' => mb_substr($content, 0, 100),
-                'variables_count' => count($variables),
-                'key_variables' => array_slice($variables, 0, 3, true), // แสดงแค่ 3 ตัวแรก
-                'recipient_name' => $variables['recipient_name'] ?? 'NOT_SET',
-                'has_sample_recipient' => isset($variables['recipient_name']) && strpos($variables['recipient_name'], 'Sample') !== false
-            ]);
-
             $processedContent = $content;
-            $replacements = [];
-            $sampleReplacements = []; // ✅ เก็บ sample values ที่ถูกแทนที่
 
             foreach ($variables as $key => $value) {
-                // ✅ จัดการ value types
                 if (is_array($value)) {
                     $value = implode(', ', $value);
                 } elseif (is_bool($value)) {
@@ -749,102 +1035,29 @@ class SendEmailNotification implements ShouldQueue
                     $value = $value->format('Y-m-d H:i:s');
                 }
 
-                // ✅ ตรวจสอบ UTF-8 encoding ของ value
-                if (is_string($value)) {
-                    if (!mb_check_encoding($value, 'UTF-8')) {
-                        $value = mb_convert_encoding($value, 'UTF-8', 'auto');
-                    }
-                    // ✅ แปลง encoding ให้แน่ใจ
-                    $value = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
-                }
-
-                // ✅ ข้าม Sample values
+                // ข้าม Sample values
                 if (is_string($value) && strpos(strtolower($value), 'sample') !== false) {
-                    $sampleReplacements[$key] = $value;
-                    Log::debug("Skipping sample value", [
-                        'variable' => $key,
-                        'sample_value' => $value
-                    ]);
-                    continue; // ไม่แทนที่ sample values
+                    continue;
                 }
 
-                // ✅ นับ matches ก่อน replace
                 $pattern = '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/u';
-                $beforeCount = preg_match_all($pattern, $processedContent);
-
-                if ($beforeCount > 0) {
-                    $processedContent = preg_replace($pattern, $value, $processedContent);
-                    $afterCount = preg_match_all($pattern, $processedContent);
-
-                    $replacements[$key] = [
-                        'value' => $value,
-                        'matches' => $beforeCount,
-                        'remaining' => $afterCount
-                    ];
-
-                    Log::debug("Variable replaced", [
-                        'variable' => $key,
-                        'value' => mb_substr($value, 0, 50), // ใช้ mb_substr
-                        'matches_found' => $beforeCount,
-                        'matches_remaining' => $afterCount
-                    ]);
-                }
+                $processedContent = preg_replace($pattern, $value, $processedContent);
             }
 
-            // ✅ ทำความสะอาด variables ที่เหลือ (รวม sample variables)
-            $unreplacedPattern = '/\{\{[^}]+\}\}/u';
-            $unreplacedMatches = [];
-            preg_match_all($unreplacedPattern, $processedContent, $unreplacedMatches);
-            
-            if (!empty($unreplacedMatches[0])) {
-                Log::debug("Cleaning unreplaced variables", [
-                    'unreplaced_variables' => $unreplacedMatches[0],
-                    'count' => count($unreplacedMatches[0])
-                ]);
-            }
-            
-            $processedContent = preg_replace($unreplacedPattern, '', $processedContent);
-
-            // ✅ ตรวจสอบ UTF-8 encoding ของผลลัพธ์
-            if (!mb_check_encoding($processedContent, 'UTF-8')) {
-                $processedContent = mb_convert_encoding($processedContent, 'UTF-8', 'UTF-8');
-                Log::debug("Fixed output content encoding to UTF-8");
-            }
-
-            // ✅ ลบ whitespace ที่เกินจาก variables ที่ถูกลบ
+            // ทำความสะอาด variables ที่เหลือ
+            $processedContent = preg_replace('/\{\{[^}]+\}\}/u', '', $processedContent);
             $processedContent = preg_replace('/\s+/', ' ', $processedContent);
             $processedContent = trim($processedContent);
-
-            Log::debug("replaceVariables RESULT", [
-                'replacements_made' => count($replacements),
-                'sample_values_skipped' => count($sampleReplacements),
-                'final_content_length' => mb_strlen($processedContent),
-                'final_content_preview' => mb_substr($processedContent, 0, 100),
-                'contains_sample' => strpos(strtolower($processedContent), 'sample') !== false
-            ]);
-
-            // ✅ Warning ถ้ายังมี 'sample' ใน content
-            if (strpos(strtolower($processedContent), 'sample') !== false) {
-                Log::warning("Final content still contains 'sample' text", [
-                    'content_preview' => mb_substr($processedContent, 0, 200),
-                    'skipped_samples' => $sampleReplacements
-                ]);
-            }
 
             return $processedContent;
 
         } catch (\Exception $e) {
             Log::error("Failed to replace variables", [
                 'error' => $e->getMessage(),
-                'content_length' => mb_strlen($content ?? ''),
+                'content_length' => strlen($content ?? ''),
                 'variables_count' => count($variables),
-                'line' => $e->getLine()
             ]);
             
-            // ✅ Return original content with UTF-8 fix
-            if (!mb_check_encoding($content, 'UTF-8')) {
-                $content = mb_convert_encoding($content, 'UTF-8', 'UTF-8');
-            }
             return $content;
         }
     }
@@ -867,9 +1080,6 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
-    /**
-     * Extract first name from full name safely
-     */
     private function extractFirstName($fullName)
     {
         try {
@@ -881,9 +1091,6 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
-    /**
-     * Extract last name from full name safely
-     */
     private function extractLastName($fullName)
     {
         try {
@@ -899,26 +1106,19 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
-    /**
-     * ตรวจสอบว่าควรส่งอีเมลหรือไม่
-     */
     protected function shouldSendEmail()
     {
         try {
-            // หาผู้ใช้จากอีเมล
             $user = \App\Models\User::where('email', $this->notificationLog->recipient_email)->first();
             
             if (!$user) {
-                // ถ้าไม่มีผู้ใช้ในระบบ ให้ส่งได้ (external email)
                 return true;
             }
 
-            // ตรวจสอบ user preferences
             if (!$user->preferences) {
-                return true; // ไม่มี preferences ให้ส่งได้
+                return true;
             }
 
-            // ตรวจสอบการตั้งค่าต่างๆ
             if (method_exists($user->preferences, 'allowsEmailNotifications')) {
                 if (!$user->preferences->allowsEmailNotifications()) {
                     return false;
@@ -945,21 +1145,16 @@ class SendEmailNotification implements ShouldQueue
                 'error' => $e->getMessage()
             ]);
             
-            // หากเกิดข้อผิดพลาด ให้ส่งได้
             return true;
         }
     }
 
-    /**
-     * จัดการความล้มเหลว
-     */
     private function handleFailure($errorMessage)
     {
         $retryCount = $this->notificationLog->retry_count + 1;
         $maxRetries = $this->tries;
 
         if ($retryCount < $maxRetries) {
-            // ยังสามารถ retry ได้
             $nextRetryAt = now()->addSeconds($this->backoff[$retryCount - 1] ?? 900);
             
             $this->notificationLog->update([
@@ -975,11 +1170,9 @@ class SendEmailNotification implements ShouldQueue
                 'retry_at' => $nextRetryAt->format('Y-m-d H:i:s')
             ]);
 
-            // ปล่อยให้ Laravel Queue จัดการ retry เอง
             throw new \Exception($errorMessage);
             
         } else {
-            // ล้มเหลวถาวร
             $this->notificationLog->update([
                 'status' => 'failed',
                 'retry_count' => $retryCount,
@@ -996,9 +1189,6 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
-    /**
-     * อัปเดตสถานะ notification
-     */
     private function updateNotificationStatus()
     {
         try {
@@ -1010,14 +1200,13 @@ class SendEmailNotification implements ShouldQueue
             $failedLogs = $logs->where('status', 'failed')->count();
             $pendingLogs = $logs->where('status', 'pending')->count();
 
-            // คำนวณสถานะใหม่
             if ($pendingLogs == 0) {
                 if ($failedLogs == 0) {
                     $status = 'sent';
                 } elseif ($sentLogs == 0) {
                     $status = 'failed';
                 } else {
-                    $status = 'sent'; // บางส่วนสำเร็จ
+                    $status = 'sent';
                 }
             } else {
                 $status = 'queued';
@@ -1045,9 +1234,6 @@ class SendEmailNotification implements ShouldQueue
         }
     }
 
-    /**
-     * เมื่อ job ล้มเหลวถาวร
-     */
     public function failed(\Throwable $exception)
     {
         Log::error('Email notification job permanently failed', [

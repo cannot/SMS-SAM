@@ -577,7 +577,7 @@ class Notification extends Model
     /**
      * จัดการไฟล์แนบทุกประเภท (files, base64, URLs)
      */
-    public function processAllAttachments($fileAttachments = null, $base64Attachments = null, $urlAttachments = null)
+    public function processAllAttachmentsz($fileAttachments = null, $base64Attachments = null, $urlAttachments = null)
     {
         $processedAttachments = [];
         $totalSize = 0;
@@ -678,7 +678,7 @@ class Notification extends Model
     /**
      * ดาวน์โหลดไฟล์จาก URL
      */
-    private function downloadAndStoreFromUrl($url)
+    private function downloadAndStoreFromUrlz($url)
     {
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             throw new \Exception('Invalid URL format: ' . $url);
@@ -762,6 +762,482 @@ class Notification extends Model
         }
     }
 
+    public function processAllAttachments($fileAttachments = null, $base64Attachments = null, $urlAttachments = null)
+    {
+        $processedAttachments = [];
+        $totalSize = 0;
+
+        try {
+            Log::info('Starting synchronous attachment processing', [
+                'notification_id' => $this->uuid,
+                'file_count' => $fileAttachments ? count($fileAttachments) : 0,
+                'base64_count' => $base64Attachments ? count($base64Attachments) : 0,
+                'url_count' => $urlAttachments ? count($urlAttachments) : 0
+            ]);
+
+            // 1. จัดการ file uploads
+            if ($fileAttachments) {
+                foreach ($fileAttachments as $file) {
+                    try {
+                        $filename = time() . '_' . $file->getClientOriginalName();
+                        $path = $file->storeAs('attachments/' . $this->uuid, $filename, 'local');
+                        
+                        // ตรวจสอบว่าไฟล์ถูกบันทึกแล้ว
+                        $fullPath = storage_path('app/' . $path);
+                        if (!file_exists($fullPath)) {
+                            throw new \Exception("Failed to save uploaded file: {$filename}");
+                        }
+                        
+                        $attachment = [
+                            'name' => $file->getClientOriginalName(),
+                            'filename' => $filename,
+                            'path' => $path,
+                            'size' => $file->getSize(),
+                            'mime_type' => $file->getMimeType(),
+                            'type' => 'file'
+                        ];
+                        
+                        $processedAttachments[] = $attachment;
+                        $totalSize += $file->getSize();
+                        
+                        Log::info('File attachment processed', [
+                            'filename' => $filename,
+                            'size' => $file->getSize(),
+                            'path' => $path
+                        ]);
+                        
+                    } catch (\Exception $e) {
+                        Log::error('Failed to process file attachment', [
+                            'filename' => $file->getClientOriginalName(),
+                            'error' => $e->getMessage()
+                        ]);
+                        
+                        // เพิ่ม failed attachment
+                        $processedAttachments[] = [
+                            'name' => $file->getClientOriginalName(),
+                            'filename' => null,
+                            'path' => null,
+                            'size' => 0,
+                            'mime_type' => 'application/octet-stream',
+                            'type' => 'file_failed',
+                            'error' => $e->getMessage()
+                        ];
+                    }
+                }
+            }
+
+            // 2. จัดการ base64 attachments
+            if ($base64Attachments) {
+                foreach ($base64Attachments as $base64File) {
+                    try {
+                        Log::info('Processing base64 attachment', [
+                            'name' => $base64File['name'],
+                            'mime_type' => $base64File['mime_type'] ?? 'unknown',
+                            'data_length' => isset($base64File['data']) ? strlen($base64File['data']) : 0
+                        ]);
+    
+                        // ตรวจสอบข้อมูล base64
+                        if (empty($base64File['data'])) {
+                            throw new \Exception('Base64 data is empty');
+                        }
+    
+                        if (empty($base64File['name'])) {
+                            throw new \Exception('Filename is required');
+                        }
+    
+                        // ทำการ decode base64
+                        $data = base64_decode($base64File['data'], true);
+                        if ($data === false) {
+                            throw new \Exception('Invalid base64 data');
+                        }
+    
+                        $fileSize = strlen($data);
+                        if ($fileSize === 0) {
+                            throw new \Exception('Decoded file is empty');
+                        }
+    
+                        // ตรวจสอบขนาดไฟล์
+                        $maxSize = 10 * 1024 * 1024; // 10MB limit
+                        if ($fileSize > $maxSize) {
+                            throw new \Exception('File too large: ' . number_format($fileSize / 1024 / 1024, 2) . ' MB');
+                        }
+    
+                        $filename = $base64File['name'];
+                        $path = 'attachments/' . $this->uuid . '/' . $filename;
+                        $fullPath = storage_path('app/' . $path);
+    
+                        // สร้าง directory ถ้าไม่มี
+                        $directory = dirname($fullPath);
+                        if (!is_dir($directory)) {
+                            if (!mkdir($directory, 0755, true)) {
+                                throw new \Exception("Failed to create directory: {$directory}");
+                            }
+                        }
+    
+                        // บันทึกไฟล์ด้วย file_put_contents
+                        $written = file_put_contents($fullPath, $data);
+                        if ($written === false) {
+                            throw new \Exception("Failed to write file: {$fullPath}");
+                        }
+    
+                        // ตรวจสอบว่าไฟล์ถูกบันทึกแล้ว
+                        if (!file_exists($fullPath)) {
+                            throw new \Exception("File not found after write: {$fullPath}");
+                        }
+    
+                        $actualSize = filesize($fullPath);
+                        if ($actualSize !== $fileSize) {
+                            Log::warning('File size mismatch after write', [
+                                'expected' => $fileSize,
+                                'actual' => $actualSize,
+                                'path' => $fullPath
+                            ]);
+                        }
+    
+                        $attachment = [
+                            'name' => $base64File['name'],
+                            'filename' => $filename,
+                            'path' => $path,
+                            'size' => $actualSize,
+                            'mime_type' => $base64File['mime_type'] ?? 'application/octet-stream',
+                            'type' => 'base64'
+                        ];
+                        
+                        $processedAttachments[] = $attachment;
+                        $totalSize += $actualSize;
+                        
+                        Log::info('Base64 attachment processed successfully', [
+                            'filename' => $filename,
+                            'size' => $actualSize,
+                            'path' => $path,
+                            'full_path' => $fullPath
+                        ]);
+                        
+                    } catch (\Exception $e) {
+                        Log::error('Failed to process base64 attachment', [
+                            'filename' => $base64File['name'] ?? 'unknown',
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                        
+                        $processedAttachments[] = [
+                            'name' => $base64File['name'] ?? 'unknown',
+                            'filename' => null,
+                            'path' => null,
+                            'size' => 0,
+                            'mime_type' => 'application/octet-stream',
+                            'type' => 'base64_failed',
+                            'error' => $e->getMessage()
+                        ];
+                    }
+                }
+            }
+
+            // 3. 🔧 **แก้ไขหลัก: จัดการ URL attachments แบบ synchronous**
+            if ($urlAttachments) {
+                foreach ($urlAttachments as $url) {
+                    try {
+                        Log::info('Starting URL download (synchronous)', [
+                            'url' => $url,
+                            'notification_id' => $this->uuid
+                        ]);
+                        
+                        // ⚠️ สำคัญ: รอให้ดาวน์โหลดเสร็จก่อน
+                        $urlAttachment = $this->downloadAndStoreFromUrl($url);
+                        
+                        if ($urlAttachment) {
+                            // ตรวจสอบว่าไฟล์ถูกบันทึกแล้วจริง
+                            $fullPath = storage_path('app/' . $urlAttachment['path']);
+                            if (!file_exists($fullPath)) {
+                                throw new \Exception("Downloaded file not found at: {$fullPath}");
+                            }
+                            
+                            $actualSize = filesize($fullPath);
+                            if ($actualSize !== $urlAttachment['size']) {
+                                Log::warning('File size mismatch after download', [
+                                    'expected' => $urlAttachment['size'],
+                                    'actual' => $actualSize,
+                                    'path' => $fullPath
+                                ]);
+                            }
+                            
+                            $processedAttachments[] = $urlAttachment;
+                            $totalSize += $urlAttachment['size'];
+                            
+                            Log::info('URL attachment downloaded successfully', [
+                                'url' => $url,
+                                'filename' => $urlAttachment['filename'],
+                                'size' => $urlAttachment['size'],
+                                'path' => $urlAttachment['path'],
+                                'file_exists' => file_exists($fullPath),
+                                'actual_size' => $actualSize
+                            ]);
+                        } else {
+                            throw new \Exception('downloadAndStoreFromUrl returned null');
+                        }
+                        
+                    } catch (\Exception $e) {
+                        Log::error('Failed to download URL attachment', [
+                            'url' => $url,
+                            'notification_id' => $this->uuid,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                        
+                        // เก็บ URL ที่ล้มเหลวไว้
+                        $processedAttachments[] = [
+                            'name' => basename(parse_url($url, PHP_URL_PATH)) ?: 'downloaded_file',
+                            'filename' => null,
+                            'path' => null,
+                            'size' => 0,
+                            'mime_type' => 'application/octet-stream',
+                            'type' => 'url_failed',
+                            'original_url' => $url,
+                            'error' => $e->getMessage()
+                        ];
+                    }
+                }
+            }
+
+            // บันทึกข้อมูล attachments
+            $this->update([
+                'attachments' => $processedAttachments,
+                'attachments_size' => $totalSize
+            ]);
+
+            $successCount = count(array_filter($processedAttachments, function($att) {
+                return !in_array($att['type'], ['url_failed', 'file_failed', 'base64_failed']);
+            }));
+
+            Log::info('Attachment processing completed', [
+                'notification_id' => $this->uuid,
+                'total_attachments' => count($processedAttachments),
+                'successful_attachments' => $successCount,
+                'failed_attachments' => count($processedAttachments) - $successCount,
+                'total_size' => $totalSize
+            ]);
+
+            return $processedAttachments;
+
+        } catch (\Exception $e) {
+            Log::error('Failed to process attachments', [
+                'notification_id' => $this->uuid,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * แก้ไข downloadAndStoreFromUrl ให้ timeout เหมาะสม
+     */
+    private function downloadAndStoreFromUrl($url)
+    {
+        try {
+            Log::info('Starting URL download', [
+                'url' => $url,
+                'notification_id' => $this->uuid
+            ]);
+
+            // ตรวจสอบ URL
+            if (!filter_var($url, FILTER_VALIDATE_URL)) {
+                throw new \Exception('Invalid URL format');
+            }
+
+            // ดาวน์โหลดไฟล์พร้อม timeout ที่เหมาะสม
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 60, // เพิ่มเป็น 60 วินาที
+                'connect_timeout' => 10,
+                'verify' => false,
+                'headers' => [
+                    'User-Agent' => 'Smart-Notification-System/1.0'
+                ]
+            ]);
+
+            $response = $client->get($url);
+            
+            if ($response->getStatusCode() !== 200) {
+                throw new \Exception("HTTP error: " . $response->getStatusCode());
+            }
+
+            $fileData = $response->getBody()->getContents();
+
+            if (empty($fileData)) {
+                throw new \Exception('Downloaded file is empty');
+            }
+
+            // ตรวจสอบขนาดไฟล์
+            $fileSize = strlen($fileData);
+            if ($fileSize > 10 * 1024 * 1024) { // 10MB limit
+                throw new \Exception('File too large: ' . number_format($fileSize / 1024 / 1024, 2) . ' MB');
+            }
+
+            // สร้างชื่อไฟล์
+            $urlPath = parse_url($url, PHP_URL_PATH);
+            $originalName = $urlPath ? basename($urlPath) : 'downloaded_file_' . time();
+
+            // ถ้าไม่มี extension ให้เดาจาก Content-Type
+            if (strpos($originalName, '.') === false) {
+                $contentType = $response->getHeaderLine('Content-Type');
+                $extension = $this->getExtensionFromMimeType($contentType);
+                if ($extension) {
+                    $originalName .= '.' . $extension;
+                }
+            }
+
+            $filename = time() . '_' . $originalName;
+            $relativePath = 'attachments/' . $this->uuid . '/' . $filename;
+
+            Log::info('Preparing to save file', [
+                'original_name' => $originalName,
+                'filename' => $filename,
+                'relative_path' => $relativePath,
+                'file_size' => $fileSize
+            ]);
+
+            $fullPath = storage_path('app/' . $relativePath);
+            $directory = dirname($fullPath);
+
+            Log::info('Directory info', [
+                'full_path' => $fullPath,
+                'directory' => $directory,
+                'directory_exists' => is_dir($directory),
+                'storage_path' => storage_path('app'),
+                'is_writable' => is_writable(storage_path('app'))
+            ]);
+
+            // สร้าง directory ถ้าไม่มี
+            if (!is_dir($directory)) {
+                $created = mkdir($directory, 0755, true);
+                Log::info('Directory creation', [
+                    'directory' => $directory,
+                    'created' => $created,
+                    'exists_after' => is_dir($directory)
+                ]);
+                
+                if (!$created || !is_dir($directory)) {
+                    throw new \Exception("Failed to create directory: {$directory}");
+                }
+            }
+
+            // ตรวจสอบสิทธิ์เขียน
+            if (!is_writable($directory)) {
+                // พยายามเปลี่ยน permission
+                chmod($directory, 0755);
+                
+                if (!is_writable($directory)) {
+                    throw new \Exception("Directory not writable: {$directory}");
+                }
+            }
+
+            // 🔧 **ใช้ file_put_contents แทน Storage::put เพื่อ debug**
+            $written = file_put_contents($fullPath, $fileData);
+            
+            Log::info('File write result', [
+                'full_path' => $fullPath,
+                'bytes_written' => $written,
+                'expected_size' => $fileSize,
+                'file_exists' => file_exists($fullPath),
+                'actual_size' => file_exists($fullPath) ? filesize($fullPath) : 0
+            ]);
+
+            if ($written === false) {
+                throw new \Exception("Failed to write file to: {$fullPath}");
+            }
+
+            if (!file_exists($fullPath)) {
+                throw new \Exception("File not found after write: {$fullPath}");
+            }
+
+            $actualSize = filesize($fullPath);
+            if ($actualSize !== $fileSize) {
+                Log::warning('File size mismatch', [
+                    'expected' => $fileSize,
+                    'actual' => $actualSize,
+                    'path' => $fullPath
+                ]);
+            }
+
+            // ตรวจหา MIME type
+            $mimeType = mime_content_type($fullPath) ?: 'application/octet-stream';
+
+            $result = [
+                'name' => $originalName,
+                'filename' => $filename,
+                'path' => $relativePath, // บันทึก relative path
+                'size' => $actualSize,
+                'mime_type' => $mimeType,
+                'type' => 'url',
+                'original_url' => $url
+            ];
+
+            Log::info('URL attachment saved successfully', $result);
+
+            return $result;
+
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            $errorMsg = 'HTTP request failed: ' . $e->getMessage();
+            Log::error('HTTP request error', [
+                'url' => $url,
+                'error' => $errorMsg,
+                'has_response' => $e->hasResponse(),
+                'response_code' => $e->hasResponse() ? $e->getResponse()->getStatusCode() : null
+            ]);
+            throw new \Exception($errorMsg);
+            
+        } catch (\Exception $e) {
+            $errorMsg = 'File processing error: ' . $e->getMessage();
+            Log::error('File processing error', [
+                'url' => $url,
+                'error' => $errorMsg,
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw new \Exception($errorMsg);
+        }
+    }
+
+    public function testStorageWrite()
+    {
+        try {
+            $testPath = 'attachments/test_' . time() . '.txt';
+            $testContent = 'Test file content ' . date('Y-m-d H:i:s');
+            
+            // ทดสอบด้วย Storage facade
+            $storagePutResult = Storage::disk('local')->put($testPath, $testContent);
+            
+            // ทดสอบด้วย file_put_contents
+            $fullPath = storage_path('app/' . $testPath);
+            $filePutResult = file_put_contents($fullPath . '_direct', $testContent);
+            
+            Log::info('Storage test results', [
+                'storage_put_result' => $storagePutResult,
+                'file_put_result' => $filePutResult,
+                'storage_file_exists' => Storage::disk('local')->exists($testPath),
+                'direct_file_exists' => file_exists($fullPath . '_direct'),
+                'storage_path' => storage_path('app'),
+                'test_path' => $testPath,
+                'full_path' => $fullPath
+            ]);
+            
+            // ลบไฟล์ทดสอบ
+            if (Storage::disk('local')->exists($testPath)) {
+                Storage::disk('local')->delete($testPath);
+            }
+            if (file_exists($fullPath . '_direct')) {
+                unlink($fullPath . '_direct');
+            }
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            Log::error('Storage test failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
     /**
      * เดา file extension จาก MIME type
      */

@@ -425,11 +425,29 @@ class NotificationLog extends Model
             }
             
             // ถ้า path ไม่ใช่ absolute path ให้แปลง
-            if (!str_starts_with($path, '/') && !str_starts_with($path, storage_path())) {
-                $path = storage_path('app/' . $path);
+            // if (!str_starts_with($path, '/') && !str_starts_with($path, storage_path())) {
+            //     $path = storage_path('app/' . $path);
+            // }
+            
+            // $validPaths[] = $path;
+
+            if (file_exists($path)) {
+                $validPaths[] = $path;
+                continue;
             }
             
-            $validPaths[] = $path;
+            // ถ้าเป็น relative path ให้ลองหาในหลายตำแหน่ง
+            $possiblePaths = [
+                storage_path('app/' . $path),
+                storage_path('app/private/' . $path)
+            ];
+            
+            foreach ($possiblePaths as $fullPath) {
+                if (file_exists($fullPath)) {
+                    $validPaths[] = $fullPath;
+                    break;
+                }
+            }
         }
         
         Log::debug("Final attachment paths", [

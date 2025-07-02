@@ -8,6 +8,8 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Mail\Mailables\Attachment;
 
 class NotificationMail extends Mailable
 {
@@ -20,7 +22,7 @@ class NotificationMail extends Mailable
     /**
      * Create a new message instance.
      */
-    public function __construct(array $emailData, string $type = 'notification')
+    public function __construct(array $emailData, string $type = 'notification', array $attachmentPaths = [])
     {
         $this->emailData = $emailData;
         $this->mailType = $type;
@@ -46,32 +48,52 @@ class NotificationMail extends Mailable
         $format = $this->emailData['format'] ?? 'html';
 
         $attachmentInfo = $this->getAttachmentInfo();
+        $viewData = [
+            'emailData' => $this->emailData,
+            'mailType' => $this->mailType,
+            'hasAttachments' => !empty($this->attachmentPaths),
+            'attachmentCount' => count($this->attachmentPaths),
+            'attachmentInfo' => $attachmentInfo,
+            'htmlContent' => $this->emailData['body_html'] ?? '',
+            'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html'] ?? '')
+        ];
         
-        if ($format === 'html' && !empty($this->emailData['body_html'])) {
+        // if ($format === 'html' && !empty($this->emailData['body_html'])) {
+        //     return new Content(
+        //         view: 'emails.notification-html',
+        //         text: 'emails.notification-text',
+        //         with: [
+        //             'emailData' => $this->emailData,
+        //             'mailType' => $this->mailType,
+        //             'htmlContent' => $this->emailData['body_html'],
+        //             'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html']),
+        //             'hasAttachments' => !empty($this->attachmentPaths),
+        //             'attachmentCount' => count($this->attachmentPaths),
+        //             'attachmentInfo' => $attachmentInfo
+        //         ]
+        //     );
+        // } else {
+        //     return new Content(
+        //         text: 'emails.notification-text',
+        //         with: [
+        //             'emailData' => $this->emailData,
+        //             'mailType' => $this->mailType,
+        //             'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html'] ?? ''),
+        //             'hasAttachments' => !empty($this->attachmentPaths),
+        //             'attachmentCount' => count($this->attachmentPaths),
+        //             'attachmentInfo' => $attachmentInfo
+        //         ]
+        //     );
+        // }
+        if (!empty($this->emailData['body_html'])) {
             return new Content(
                 view: 'emails.notification-html',
-                text: 'emails.notification-text',
-                with: [
-                    'emailData' => $this->emailData,
-                    'mailType' => $this->mailType,
-                    'htmlContent' => $this->emailData['body_html'],
-                    'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html']),
-                    'hasAttachments' => !empty($this->attachmentPaths),
-                    'attachmentCount' => count($this->attachmentPaths),
-                    'attachmentInfo' => $attachmentInfo
-                ]
+                with: $viewData
             );
         } else {
             return new Content(
-                text: 'emails.notification-text',
-                with: [
-                    'emailData' => $this->emailData,
-                    'mailType' => $this->mailType,
-                    'textContent' => $this->emailData['body_text'] ?? strip_tags($this->emailData['body_html'] ?? ''),
-                    'hasAttachments' => !empty($this->attachmentPaths),
-                    'attachmentCount' => count($this->attachmentPaths),
-                    'attachmentInfo' => $attachmentInfo
-                ]
+                text: 'emails.notification-text', 
+                with: $viewData
             );
         }
     }

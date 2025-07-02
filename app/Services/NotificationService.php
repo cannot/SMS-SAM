@@ -850,7 +850,7 @@ class NotificationService
         ]);
     }
     
-    private function sendEmailDirectlyFromService($content, $recipient, $attachmentPaths, $log)
+    private function sendEmailDirectlyFromServicex($content, $recipient, $attachmentPaths, $log)
     {
         try {
             Log::info("Sending email directly from service with attachments", [
@@ -929,6 +929,80 @@ class NotificationService
             ]);
             
             Log::error("Failed to send email from service", [
+                'recipient' => $recipient['email'],
+                'error' => $e->getMessage(),
+                'attachment_count' => count($attachmentPaths)
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    private function sendEmailDirectlyFromService($content, $recipient, $attachmentPaths, $log)
+    {
+        try {
+            Log::info("Sending email directly from service with ImprovedEmailService", [
+                'recipient' => $recipient['email'],
+                'subject' => substr($content['subject'], 0, 100),
+                'attachment_count' => count($attachmentPaths),
+                'attachment_paths' => $attachmentPaths
+            ]);
+
+            // ✅ ใช้ ImprovedEmailService แทน Laravel Mail โดยตรง
+            $emailService = new \App\Services\ImprovedEmailService();
+            
+            // เตรียมข้อมูลอีเมล
+            $emailData = [
+                'to' => $recipient['email'],
+                'subject' => $content['subject'],
+                'body_html' => $content['body_html'],
+                'body_text' => $content['body_text'],
+                'from_address' => config('mail.from.address'),
+                'from_name' => config('mail.from.name'),
+                'attachments' => $attachmentPaths
+            ];
+
+            // ส่งผ่าน ImprovedEmailService ที่มี auto-fallback
+            $result = $emailService->sendEmail($emailData);
+            
+            if ($result['success']) {
+                // อัพเดตสถานะสำเร็จ
+                $log->update([
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                    'delivered_at' => now(),
+                    'content_sent' => array_merge($content, [
+                        'attachment_count' => count($attachmentPaths),
+                        'attachments_sent' => array_map('basename', $attachmentPaths)
+                    ]),
+                    'response_data' => [
+                        'success' => true,
+                        'method' => $result['method'] ?? 'improved_email_service',
+                        'attachment_count' => count($attachmentPaths),
+                        'timestamp' => now()->toISOString()
+                    ]
+                ]);
+                
+                Log::info("Email sent successfully from service with ImprovedEmailService", [
+                    'recipient' => $recipient['email'],
+                    'subject' => $content['subject'],
+                    'attachment_count' => count($attachmentPaths),
+                    'method' => $result['method'] ?? 'improved_email_service'
+                ]);
+            } else {
+                throw new \Exception($result['error'] ?? 'ImprovedEmailService failed');
+            }
+            
+        } catch (\Exception $e) {
+            // อัพเดตสถานะล้มเหลว
+            $log->update([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'retry_count' => ($log->retry_count ?? 0) + 1,
+                'failed_at' => now()
+            ]);
+            
+            Log::error("Failed to send email from service with ImprovedEmailService", [
                 'recipient' => $recipient['email'],
                 'error' => $e->getMessage(),
                 'attachment_count' => count($attachmentPaths)
