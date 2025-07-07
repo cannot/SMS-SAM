@@ -79,8 +79,9 @@ class NotificationTemplate extends Model
      */
     public function render(array $variables = []): array
     {
-        // Merge with default variables
-        $allVariables = array_merge($this->default_variables ?? [], $variables);
+        // Merge with default variables - ใช้เมธอด helper
+        $defaultVars = $this->getDefaultVariablesArray();
+        $allVariables = array_merge($defaultVars, $variables);
         
         // Add system variables
         $systemVariables = $this->getSystemVariables();
@@ -105,9 +106,17 @@ class NotificationTemplate extends Model
 
         $content = $template;
 
+        // ตรวจสอบว่า variables เป็น array
+        if (!is_array($variables)) {
+            $variables = [];
+        }
+
         // Replace simple variables {{variable}}
         foreach ($variables as $key => $value) {
-            $content = str_replace('{{' . $key . '}}', $value, $content);
+            // ตรวจสอบให้แน่ใจว่า key เป็น string และ value สามารถแปลงเป็น string ได้
+            if (is_string($key) && (is_string($value) || is_numeric($value) || is_bool($value))) {
+                $content = str_replace('{{' . $key . '}}', (string)$value, $content);
+            }
         }
 
         // Handle conditional blocks {{#if variable}} content {{/if}}
@@ -243,7 +252,7 @@ class NotificationTemplate extends Model
         return $this->renderContent($this->body_text_template, $variables);
     }
 
-    /**
+/**
      * Validate template syntax
      */
     public function validateTemplate(): array
@@ -251,7 +260,7 @@ class NotificationTemplate extends Model
         $errors = [];
 
         // Check for unclosed tags
-        $content = $this->subject_template . ' ' . $this->body_html_template . ' ' . $this->body_text_template;
+        $content = ($this->subject_template ?? '') . ' ' . ($this->body_html_template ?? '') . ' ' . ($this->body_text_template ?? '');
         
         // Check for unmatched if statements
         $ifCount = preg_match_all('/\{\{#if\s+[^}]+\}\}/', $content);
@@ -269,20 +278,35 @@ class NotificationTemplate extends Model
             $errors[] = 'Unmatched {{#each}} and {{/each}} tags';
         }
 
-        // Check required variables
-        $requiredVars = $this->variables ?? [];
+        // Check required variables - ใช้เมธอด helper ที่ปลอดภัย
+        $requiredVars = $this->getVariablesArray();
         $foundVars = [];
         
-        preg_match_all('/\{\{([^}#\/][^}]*)\}\}/', $content, $matches);
-        foreach ($matches[1] as $match) {
-            $varName = trim(explode(':', $match)[0]); // Handle date formatting
-            $varName = trim(explode('|', $varName)[0]); // Handle pipes
-            $foundVars[] = $varName;
+        // ตรวจสอบให้แน่ใจว่า $content ไม่เป็น null
+        if (!empty($content)) {
+            preg_match_all('/\{\{([^}#\/][^}]*)\}\}/', $content, $matches);
+            
+            if (isset($matches[1]) && is_array($matches[1])) {
+                foreach ($matches[1] as $match) {
+                    $varName = trim(explode(':', $match)[0]); // Handle date formatting
+                    $varName = trim(explode('|', $varName)[0]); // Handle pipes
+                    if (!empty($varName)) {
+                        $foundVars[] = $varName;
+                    }
+                }
+            }
         }
 
-        $missingRequired = array_diff($requiredVars, $foundVars);
-        if (!empty($missingRequired)) {
-            $errors[] = 'Missing required variables: ' . implode(', ', $missingRequired);
+        // ตรวจสอบให้แน่ใจว่าทั้ง $requiredVars และ $foundVars เป็น array
+        if (is_array($requiredVars) && is_array($foundVars)) {
+            $missingRequired = array_diff($requiredVars, $foundVars);
+            if (!empty($missingRequired)) {
+                // แปลง array elements เป็น string ก่อน implode
+                $missingStrings = array_map(function($item) {
+                    return is_string($item) ? $item : (string)$item;
+                }, $missingRequired);
+                $errors[] = 'Missing required variables: ' . implode(', ', $missingStrings);
+            }
         }
 
         return $errors;
@@ -293,39 +317,50 @@ class NotificationTemplate extends Model
      */
     public function extractVariables(): array
     {
-        $content = $this->subject_template . ' ' . $this->body_html_template . ' ' . $this->body_text_template;
+        $content = ($this->subject_template ?? '') . ' ' . ($this->body_html_template ?? '') . ' ' . ($this->body_text_template ?? '');
         $variables = [];
+
+        // ตรวจสอบว่า content ไม่เป็นค่าว่าง
+        if (empty($content)) {
+            return [];
+        }
 
         // Extract simple variables {{variable}}
         preg_match_all('/\{\{([^}#\/][^}]*)\}\}/', $content, $matches);
         
-        foreach ($matches[1] as $match) {
-            // Clean up variable name
-            $varName = trim($match);
-            $varName = explode(':', $varName)[0]; // Remove date formatting
-            $varName = explode('|', $varName)[0]; // Remove pipes
-            $varName = trim($varName);
-            
-            if (!in_array($varName, $variables) && !$this->isSystemVariable($varName)) {
-                $variables[] = $varName;
+        if (isset($matches[1]) && is_array($matches[1])) {
+            foreach ($matches[1] as $match) {
+                // Clean up variable name
+                $varName = trim($match);
+                $varName = explode(':', $varName)[0]; // Remove date formatting
+                $varName = explode('|', $varName)[0]; // Remove pipes
+                $varName = trim($varName);
+                
+                if (!empty($varName) && !in_array($varName, $variables) && !$this->isSystemVariable($varName)) {
+                    $variables[] = $varName;
+                }
             }
         }
 
         // Extract conditional variables {{#if variable}}
         preg_match_all('/\{\{#if\s+([^}]+)\}\}/', $content, $ifMatches);
-        foreach ($ifMatches[1] as $match) {
-            $varName = trim($match);
-            if (!in_array($varName, $variables) && !$this->isSystemVariable($varName)) {
-                $variables[] = $varName;
+        if (isset($ifMatches[1]) && is_array($ifMatches[1])) {
+            foreach ($ifMatches[1] as $match) {
+                $varName = trim($match);
+                if (!empty($varName) && !in_array($varName, $variables) && !$this->isSystemVariable($varName)) {
+                    $variables[] = $varName;
+                }
             }
         }
 
         // Extract loop variables {{#each items}}
         preg_match_all('/\{\{#each\s+([^}]+)\}\}/', $content, $eachMatches);
-        foreach ($eachMatches[1] as $match) {
-            $varName = trim($match);
-            if (!in_array($varName, $variables) && !$this->isSystemVariable($varName)) {
-                $variables[] = $varName;
+        if (isset($eachMatches[1]) && is_array($eachMatches[1])) {
+            foreach ($eachMatches[1] as $match) {
+                $varName = trim($match);
+                if (!empty($varName) && !in_array($varName, $variables) && !$this->isSystemVariable($varName)) {
+                    $variables[] = $varName;
+                }
             }
         }
 
@@ -344,7 +379,7 @@ class NotificationTemplate extends Model
     /**
      * Create preview with sample data
      */
-    public function preview($sampleData = [])
+    public function previewx($sampleData = [])
     {
         $preview = [
             'subject' => $this->subject_template,
@@ -366,6 +401,65 @@ class NotificationTemplate extends Model
                         (string)$value,      // replace (แปลงเป็น string)
                         $preview[$key]       // subject
                     );
+                }
+            }
+        }
+
+        return $preview;
+    }
+
+    /**
+     * Create preview with sample data
+     */
+    public function preview($sampleData = [])
+    {
+        $preview = [
+            'subject' => $this->subject_template,
+            'body_html' => $this->body_html_template,
+            'body_text' => $this->body_text_template
+        ];
+
+        // ตรวจสอบและแปลง $sampleData ให้เป็น array
+        if (is_string($sampleData)) {
+            // ลองแปลงจาก JSON string
+            $decoded = json_decode($sampleData, true);
+            $sampleData = is_array($decoded) ? $decoded : [];
+        } elseif (!is_array($sampleData)) {
+            // ถ้าไม่ใช่ array ให้ใช้ array เปล่า
+            $sampleData = [];
+        }
+
+        // ถ้าไม่มี sample data ให้ใช้ default variables
+        if (empty($sampleData)) {
+            $defaultVars = $this->default_variables;
+            
+            // ตรวจสอบ default_variables ด้วย
+            if (is_string($defaultVars)) {
+                $decoded = json_decode($defaultVars, true);
+                $defaultVars = is_array($decoded) ? $decoded : [];
+            } elseif (!is_array($defaultVars)) {
+                $defaultVars = [];
+            }
+            
+            $sampleData = $defaultVars;
+        }
+
+        // เพิ่ม system variables
+        $systemVars = $this->getSystemVariables();
+        $sampleData = array_merge($systemVars, $sampleData);
+
+        // แทนที่ตัวแปรในแต่ละส่วน
+        foreach ($preview as $key => $content) {
+            if ($content && is_array($sampleData)) {
+                foreach ($sampleData as $var => $value) {
+                    // ตรวจสอบว่า $var และ $value เป็น string
+                    if (is_string($var) && (is_string($value) || is_numeric($value))) {
+                        $preview[$key] = str_replace(
+                            '{{' . $var . '}}',     // search
+                            (string)$value,         // replace (แปลงเป็น string)
+                            $preview[$key]          // subject
+                        );
+                    }
                 }
             }
         }
@@ -506,5 +600,248 @@ class NotificationTemplate extends Model
         //     'priority' => 'ระดับความสำคัญ',
         //     'status' => 'ข้อมูลสถานะ'
         // ];
+    }
+
+/**
+     * Safely get variables as array
+     */
+    public function getVariablesArray()
+    {
+        $vars = $this->variables;
+        
+        // ถ้าเป็น null หรือ empty ให้คืน array เปล่า
+        if (empty($vars)) {
+            return [];
+        }
+        
+        if (is_string($vars)) {
+            $decoded = json_decode($vars, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        
+        if (is_array($vars)) {
+            // ตรวจสอบให้แน่ใจว่า array elements เป็น string
+            return array_filter($vars, function($item) {
+                return is_string($item) || is_numeric($item);
+            });
+        }
+        
+        return [];
+    }
+
+    /**
+     * Safely get default variables as array
+     */
+    public function getDefaultVariablesArray()
+    {
+        $vars = $this->default_variables;
+        
+        // ถ้าเป็น null หรือ empty ให้คืน array เปล่า
+        if (empty($vars)) {
+            return [];
+        }
+        
+        if (is_string($vars)) {
+            $decoded = json_decode($vars, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        
+        if (is_array($vars)) {
+            // ตรวจสอบและทำความสะอาด array
+            $cleaned = [];
+            foreach ($vars as $key => $value) {
+                if (is_string($key) || is_numeric($key)) {
+                    $cleaned[$key] = is_string($value) || is_numeric($value) || is_bool($value) ? $value : (string)$value;
+                }
+            }
+            return $cleaned;
+        }
+        
+        return [];
+    }
+
+    /**
+     * Safely get supported channels as array
+     */
+    public function getSupportedChannelsArray()
+    {
+        $channels = $this->supported_channels;
+        
+        // ถ้าเป็น null หรือ empty ให้คืน array เปล่า
+        if (empty($channels)) {
+            return [];
+        }
+        
+        if (is_string($channels)) {
+            $decoded = json_decode($channels, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        
+        if (is_array($channels)) {
+            // ตรวจสอบให้แน่ใจว่า array elements เป็น string
+            return array_filter($channels, function($item) {
+                return is_string($item);
+            });
+        }
+        
+        return [];
+    }
+
+    /**
+     * Clean and validate variable data
+     */
+    public function cleanVariableData($data)
+    {
+        if (is_string($data)) {
+            $decoded = json_decode($data, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Generate sample data for preview
+     */
+    public function generateSampleData()
+    {
+        $extractedVars = $this->extractVariables();
+        $defaultVars = $this->getDefaultVariablesArray();
+        $systemVars = $this->getSystemVariables();
+        
+        $sampleData = [];
+        
+        // เพิ่ม system variables
+        $sampleData = array_merge($sampleData, $systemVars);
+        
+        // เพิ่ม default variables
+        $sampleData = array_merge($sampleData, $defaultVars);
+        
+        // สร้างข้อมูลตัวอย่างสำหรับตัวแปรที่ยังไม่มี
+        foreach ($extractedVars as $var) {
+            if (!isset($sampleData[$var])) {
+                $sampleData[$var] = $this->generateSampleValueForVariable($var);
+            }
+        }
+        
+        return $sampleData;
+    }
+
+    /**
+     * Generate sample value for a variable
+     */
+    private function generateSampleValueForVariable($varName)
+    {
+        $samples = [
+            'user_name' => 'นายสมชาย ใจดี',
+            'user_email' => 'somchai@company.com',
+            'user_first_name' => 'สมชาย',
+            'user_last_name' => 'ใจดี',
+            'user_department' => 'เทคโนโลยีสารสนเทศ',
+            'user_title' => 'นักพัฒนาระบบ',
+            'company' => 'บริษัท เทคโนโลยี จำกัด',
+            'message' => 'นี่คือข้อความแจ้งเตือนตัวอย่าง',
+            'subject' => 'การแจ้งเตือนระบบที่สำคัญ',
+            'url' => 'https://example.com/action',
+            'deadline' => now()->addDays(7)->format('Y-m-d'),
+            'amount' => '1,250.00',
+            'priority' => 'สูง',
+            'status' => 'ใช้งาน',
+            'project_name' => 'โครงการพัฒนาระบบ',
+            'meeting_title' => 'ประชุมทีมประจำสัปดาห์',
+            'meeting_date' => now()->addDays(1)->format('Y-m-d'),
+            'meeting_time' => '10:00 - 11:00 น.',
+            'meeting_location' => 'ห้องประชุม A',
+            'agenda' => '1. ทบทวนความคืบหน้า\n2. วางแผนสัปดาห์หน้า'
+        ];
+        
+        return $samples[$varName] ?? "ตัวอย่าง {$varName}";
+    }
+
+    /**
+     * Accessor for variables attribute
+     */
+    public function getVariablesAttribute($value)
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Accessor for default_variables attribute
+     */
+    public function getDefaultVariablesAttribute($value)
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Accessor for supported_channels attribute
+     */
+    public function getSupportedChannelsAttribute($value)
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Mutator for variables attribute
+     */
+    public function setVariablesAttribute($value)
+    {
+        if (is_array($value)) {
+            $this->attributes['variables'] = json_encode($value);
+        } else {
+            $this->attributes['variables'] = $value;
+        }
+    }
+
+    /**
+     * Mutator for default_variables attribute
+     */
+    public function setDefaultVariablesAttribute($value)
+    {
+        if (is_array($value)) {
+            $this->attributes['default_variables'] = json_encode($value);
+        } else {
+            $this->attributes['default_variables'] = $value;
+        }
+    }
+
+    /**
+     * Mutator for supported_channels attribute
+     */
+    public function setSupportedChannelsAttribute($value)
+    {
+        if (is_array($value)) {
+            $this->attributes['supported_channels'] = json_encode($value);
+        } else {
+            $this->attributes['supported_channels'] = $value;
+        }
     }
 }

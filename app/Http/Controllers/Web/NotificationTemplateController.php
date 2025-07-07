@@ -115,10 +115,25 @@ class NotificationTemplateController extends Controller
     public function show(NotificationTemplate $template)
     {
         $template->load(['creator', 'updater', 'notifications']);
-        $preview = $template->preview();
+        
+        // สร้างข้อมูลตัวอย่างสำหรับ preview
+        $sampleData = $template->generateSampleData();
+        
+        // สร้าง preview
+        $preview = $template->preview($sampleData);
+        
+        // ดึงตัวแปรที่ตรวจพบ
         $extractedVariables = $template->extractVariables();
         
-        return view('templates.show', compact('template', 'preview', 'extractedVariables'));
+        // ข้อมูลเพิ่มเติมสำหรับ view
+        $defaultTestData = $sampleData;
+        
+        return view('templates.show', compact(
+            'template', 
+            'preview', 
+            'extractedVariables',
+            'defaultTestData'
+        ));
     }
 
     public function edit(NotificationTemplate $template)
@@ -126,13 +141,72 @@ class NotificationTemplateController extends Controller
         $categories = NotificationTemplate::getCategories();
         $availableVariables = NotificationTemplate::getAvailableVariables();
         $extractedVariables = $template->extractVariables();
+
+        $processedVariables = $this->processTemplateVariables($template);
         
-        return view('templates.edit', compact('template', 'categories', 'availableVariables', 'extractedVariables'));
+        return view('templates.edit', compact('template', 'categories', 'availableVariables', 'extractedVariables', 'processedVariables'));
     }
 
-    public function update(Request $request, NotificationTemplate $template)
+    private function processTemplateVariables(NotificationTemplate $template)
+{
+    $result = [
+        'variables' => [],
+        'default_variables' => [],
+        'variables_json' => '{}',
+        'has_variables' => false
+    ];
+    
+    // ประมวลผล variables column
+    if (!empty($template->variables)) {
+        if (is_string($template->variables)) {
+            $decoded = json_decode($template->variables, true);
+            if (is_array($decoded)) {
+                $result['variables'] = $decoded;
+                $result['has_variables'] = true;
+            }
+        } elseif (is_array($template->variables)) {
+            $result['variables'] = $template->variables;
+            $result['has_variables'] = true;
+        }
+    }
+    
+    // ประมวลผล default_variables column
+    if (!empty($template->default_variables)) {
+        if (is_string($template->default_variables)) {
+            $decoded = json_decode($template->default_variables, true);
+            if (is_array($decoded)) {
+                $result['default_variables'] = $decoded;
+                $result['variables_json'] = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            } else {
+                $result['variables_json'] = $template->default_variables;
+            }
+        } elseif (is_array($template->default_variables)) {
+            $result['default_variables'] = $template->default_variables;
+            $result['variables_json'] = json_encode($template->default_variables, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        }
+    }
+    
+    // ถ้าไม่มี variables แต่มี default_variables ให้สร้าง variables จาก default_variables
+    if (empty($result['variables']) && !empty($result['default_variables'])) {
+        $index = 0;
+        foreach ($result['default_variables'] as $varName => $varValue) {
+            $result['variables'][] = [
+                'name' => $varName,
+                'default' => $varValue,
+                'type' => 'text'
+            ];
+            $index++;
+        }
+        $result['has_variables'] = true;
+    }
+    
+    return $result;
+}
+
+    public function updatex(Request $request, NotificationTemplate $template)
     {
         $this->processAndTransformData($request);
+        $processedVariables = $this->processUpdateVariables($request);
         // dd($template,$request);
 
         $request->validate([
@@ -203,6 +277,168 @@ class NotificationTemplateController extends Controller
         return redirect()->route('templates.index')
             ->with('success', 'Template updated successfully!');
     }
+
+    public function update(Request $request, NotificationTemplate $template)
+{
+    // Validation rules
+    $rules = [
+        'name' => 'required|string|max:255|unique:notification_templates,name,' . $template->id,
+        'slug' => 'nullable|string|max:255|unique:notification_templates,slug,' . $template->id,
+        'category' => 'required|in:system,marketing,operational,emergency',
+        'priority' => 'required|in:low,medium,normal,high,urgent',
+        'description' => 'nullable|string|max:1000',
+        'subject_template' => 'required|string|max:500',
+        'body_html_template' => 'nullable|string',
+        'body_text_template' => 'nullable|string',
+        'supported_channels' => 'required|array|min:1',
+        'supported_channels.*' => 'in:email,teams,sms',
+        'is_active' => 'boolean',
+        'variables' => 'nullable|array',
+        'variables.*.name' => 'required_with:variables|string|max:100',
+        'variables.*.default' => 'nullable|string|max:500',
+        'variables.*.type' => 'nullable|in:text,number,date,url,email',
+        'default_variables_json' => 'nullable|string',
+    ];
+
+    $validated = $request->validate($rules);
+
+    try {
+        // ประมวลผลตัวแปร
+        $processedVariables = $this->processUpdateVariables($request);
+        
+        // Debug log
+        \Log::info('Template Update Debug', [
+            'template_id' => $template->id,
+            'request_variables' => $request->get('variables'),
+            'request_default_variables_json' => $request->get('default_variables_json'),
+            'processed_variables' => $processedVariables,
+        ]);
+
+        // เตรียมข้อมูลสำหรับอัปเดต
+        $updateData = [
+            'name' => $validated['name'],
+            'slug' => $validated['slug'] ?: Str::slug($validated['name']),
+            'category' => $validated['category'],
+            'priority' => $validated['priority'],
+            'description' => $validated['description'],
+            'subject_template' => $validated['subject_template'],
+            'body_html_template' => $validated['body_html_template'],
+            'body_text_template' => $validated['body_text_template'],
+            'supported_channels' => json_encode($validated['supported_channels']),
+            'is_active' => $request->has('is_active'),
+            'variables' => $processedVariables['variables_json'],
+            'default_variables' => $processedVariables['default_variables_json'],
+        ];
+
+        // อัปเดต template
+        $template->update($updateData);
+
+        // Log successful update
+        \Log::info('Template updated successfully', [
+            'template_id' => $template->id,
+            'updated_by' => auth()->id(),
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'อัปเดตเทมเพลตเรียบร้อย',
+                'template_id' => $template->id,
+                'redirect' => route('templates.show', $template)
+            ]);
+        }
+
+        return redirect()->route('templates.show', $template)
+            ->with('success', 'Template updated successfully!');
+
+
+    } catch (\Exception $e) {
+        \Log::error('Template update failed', [
+            'template_id' => $template->id,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'เกิดข้อผิดพลาดในการอัปเดตเทมเพลต: ' . $e->getMessage()
+            ], 500);
+        }
+
+        return redirect()
+            ->back()
+            ->withInput()
+            ->withErrors(['error' => 'เกิดข้อผิดพลาดในการอัปเดตเทมเพลต: ' . $e->getMessage()]);
+    }
+}
+
+    private function processUpdateVariables(Request $request) 
+{
+    $result = [
+        'variables_json' => null,
+        'default_variables_json' => null
+    ];
+
+    // ประมวลผล required variables
+    $variables = $request->get('variables', []);
+    $processedVariables = [];
+    
+    if (is_array($variables)) {
+        foreach ($variables as $variable) {
+            if (isset($variable['name']) && !empty($variable['name'])) {
+                $processedVariables[] = [
+                    'name' => $variable['name'],
+                    'default' => $variable['default'] ?? '',
+                    'type' => $variable['type'] ?? 'text'
+                ];
+            }
+        }
+    }
+    
+    // บันทึก variables เป็น JSON ถ้ามีข้อมูล
+    if (!empty($processedVariables)) {
+        $result['variables_json'] = json_encode($processedVariables, JSON_UNESCAPED_UNICODE);
+    }
+
+    // ประมวลผล default variables JSON
+    $defaultVarsJson = $request->get('default_variables_json');
+    if (!empty($defaultVarsJson)) {
+        try {
+            $decoded = json_decode($defaultVarsJson, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $result['default_variables_json'] = json_encode($decoded, JSON_UNESCAPED_UNICODE);
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Invalid default variables JSON', [
+                'json' => $defaultVarsJson,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    // ถ้าไม่มี default_variables แต่มี variables ให้สร้าง default_variables จาก variables
+    if (empty($result['default_variables_json']) && !empty($processedVariables)) {
+        $defaultVars = [];
+        foreach ($processedVariables as $variable) {
+            $defaultVars[$variable['name']] = $variable['default'] ?: 'ตัวอย่าง ' . $variable['name'];
+        }
+        if (!empty($defaultVars)) {
+            $result['default_variables_json'] = json_encode($defaultVars, JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    // ถ้าไม่มีข้อมูลเลยให้สร้าง empty structures
+    if (empty($result['variables_json'])) {
+        $result['variables_json'] = json_encode([], JSON_UNESCAPED_UNICODE);
+    }
+    
+    if (empty($result['default_variables_json'])) {
+        $result['default_variables_json'] = json_encode(new \stdClass(), JSON_UNESCAPED_UNICODE);
+    }
+
+    return $result;
+}
 
     /**
      * Process and transform request data to proper format for Laravel
@@ -334,16 +570,24 @@ class NotificationTemplateController extends Controller
         ]);
     }
 
-    public function preview(NotificationTemplate $template, Request $request)
+    public function preview(NotificationTemplate $template)
     {
-        $sampleData = $request->get('sample_data', []);
-        $preview = $template->preview($sampleData);
+        $template->load(['creator', 'updater', 'notifications']);
         
-        return response()->json([
-            'success' => true,
-            'preview' => $preview,
-            'html' => view('templates.preview', compact('preview', 'template'))->render()
-        ]);
+        // สร้างข้อมูลตัวอย่างสำหรับ preview
+        $sampleData = $template->generateSampleData();
+        
+        // ดึงตัวแปรที่ตรวจพบ
+        $detectedVariables = $template->extractVariables();
+        
+        // ข้อมูลเพิ่มเติมสำหรับ view
+        $defaultTestData = $sampleData;
+        
+        return view('templates.preview', compact(
+            'template',
+            'detectedVariables', 
+            'defaultTestData'
+        ));
     }
 
     public function duplicate(NotificationTemplate $template)

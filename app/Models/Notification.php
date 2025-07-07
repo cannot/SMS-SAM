@@ -384,8 +384,8 @@ class Notification extends Model
             'failed_count' => $stats['failed'],
         ]);
 
-        // Update sent_at if all notifications are delivered
-        if ($stats['pending'] === 0 && $stats['total'] > 0 && !$this->sent_at) {
+        // Update sent_at if all notifications are delivered -- && !$this->sent_at
+        if ($stats['pending'] === 0 && $stats['total'] > 0 ) {
             $this->update([
                 'status' => $stats['failed'] > 0 ? 'failed' : 'sent',
                 'sent_at' => now(),

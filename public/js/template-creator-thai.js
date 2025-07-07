@@ -702,6 +702,11 @@ function addDetectedVariableToRequired(variableName) {
 window.addVariable = function(variableName = '') {
     const container = document.getElementById('variables-container');
     if (!container) return;
+
+    const noVarMessage = document.getElementById('no-variables-message');
+    if (noVarMessage) {
+        noVarMessage.style.display = 'none';
+    }
     
     const variableCount = container.children.length;
     
@@ -739,6 +744,91 @@ window.removeVariableRow = function(button) {
     const row = button.closest('.variable-row');
     if (row) {
         row.remove();
+        
+        // ตรวจสอบว่าเหลือตัวแปรหรือไม่
+        const container = document.getElementById('variables-container');
+        const remainingRows = container.querySelectorAll('.variable-row');
+        
+        if (remainingRows.length === 0) {
+            // แสดงข้อความ "ยังไม่มีตัวแปร" อีกครั้ง
+            const noVarMessage = document.getElementById('no-variables-message');
+            if (noVarMessage) {
+                noVarMessage.style.display = 'block';
+            } else {
+                // สร้างข้อความใหม่ถ้าไม่มี
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'text-muted text-center py-3';
+                messageDiv.id = 'no-variables-message';
+                messageDiv.innerHTML = '<i class="fas fa-info-circle me-2"></i>ยังไม่มีตัวแปรที่จำเป็น คลิก "เพิ่มตัวแปร" เพื่อเริ่มต้น';
+                container.appendChild(messageDiv);
+            }
+        }
+    }
+};
+
+window.debugTemplateVariables = function() {
+    const variables = [];
+    document.querySelectorAll('.variable-row').forEach((row, index) => {
+        const nameInput = row.querySelector('input[placeholder*="ชื่อตัวแปร"]');
+        const defaultInput = row.querySelector('input[placeholder*="ค่าเริ่มต้น"]');
+        const typeSelect = row.querySelector('select');
+        
+        variables.push({
+            index: index,
+            name: nameInput ? nameInput.value : '',
+            default: defaultInput ? defaultInput.value : '',
+            type: typeSelect ? typeSelect.value : 'text'
+        });
+    });
+    
+    console.log('Current variables:', variables);
+    
+    const defaultVarsJson = document.getElementById('default_variables_json')?.value;
+    console.log('Default variables JSON:', defaultVarsJson);
+    
+    try {
+        const parsed = JSON.parse(defaultVarsJson || '{}');
+        console.log('Parsed default variables:', parsed);
+    } catch (e) {
+        console.error('JSON parse error:', e);
+    }
+    
+    return variables;
+};
+
+window.loadTemplateVariablesFromJSON = function() {
+    const defaultVarsJson = document.getElementById('default_variables_json')?.value;
+    if (!defaultVarsJson || defaultVarsJson.trim() === '{}') {
+        console.log('No default variables found');
+        return;
+    }
+    
+    try {
+        const defaultVars = JSON.parse(defaultVarsJson);
+        
+        // ล้างตัวแปรเดิม
+        const container = document.getElementById('variables-container');
+        const existingRows = container.querySelectorAll('.variable-row');
+        existingRows.forEach(row => row.remove());
+        
+        // เพิ่มตัวแปรจาก JSON
+        Object.entries(defaultVars).forEach(([varName, varValue]) => {
+            addVariable(varName);
+            
+            // หาแถวที่เพิ่งเพิ่มและใส่ค่า default
+            const lastRow = container.querySelector('.variable-row:last-child');
+            if (lastRow) {
+                const defaultInput = lastRow.querySelector('input[placeholder*="ค่าเริ่มต้น"]');
+                if (defaultInput) {
+                    defaultInput.value = varValue;
+                }
+            }
+        });
+        
+        console.log('Loaded variables from JSON:', Object.keys(defaultVars));
+        
+    } catch (e) {
+        console.error('Failed to load variables from JSON:', e);
     }
 };
 
