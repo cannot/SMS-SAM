@@ -144,8 +144,8 @@
 <!-- Notification Analytics -->
 @can('view-notification-analytics')
 <li class="nav-item">
-    <a class="nav-link {{ request()->routeIs('admin.notifications.analytics') ? 'active' : '' }}"
-        href="{{ route('admin.notifications.analytics') }}">
+    <a class="nav-link {{ request()->routeIs('admin.statistics.index') ? 'active' : '' }}"
+        href="{{ route('admin.statistics.index') }}">
         <i class="bi bi-graph-up"></i>
         <span class="nav-text">สถิติการแจ้งเตือน</span>
     </a>

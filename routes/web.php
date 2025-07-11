@@ -18,7 +18,7 @@ use App\Http\Controllers\Web\UserController;
 use App\Http\Controllers\Web\UserPreferenceController;
 
 use App\Http\Controllers\Api\V1\UserController as ApiUserController;
-
+use App\Http\Controllers\Web\NotificationStatisticsController;
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -250,6 +250,25 @@ Route::middleware(['auth', 'web'])->group(function () {
         // Soft Delete Management
         Route::post('/{id}/restore', [UserController::class, 'restore'])->name('restore')->middleware('can:manage-users');
         Route::delete('/{id}/force-destroy', [UserController::class, 'forceDestroy'])->name('force-destroy')->middleware('can:delete-users');
+    });
+
+    // Routes สำหรับหน้าสถิติการแจ้งเตือน
+    Route::prefix('admin/statistics')->name('admin.statistics.')->group(function () {
+        
+        // หน้าหลักสถิติ - ใช้ can middleware แทน permission
+        Route::get('/', [NotificationStatisticsController::class, 'index'])
+            ->name('index')
+            ->middleware('can:view-notification-analytics');
+        
+        // API สำหรับดึงข้อมูลสถิติแบบ Real-time
+        Route::get('/api', [NotificationStatisticsController::class, 'apiStats'])
+            ->name('api')
+            ->middleware('can:view-notification-analytics');
+        
+        // Export ข้อมูลสถิติ
+        Route::get('/export', [NotificationStatisticsController::class, 'export'])
+            ->name('export')
+            ->middleware('can:view-notification-analytics,export-data');
     });
 
     // // ===========================================
@@ -712,13 +731,13 @@ Route::middleware(['auth:sanctum'])->prefix('webhooks')->name('webhooks.')->grou
 // ===========================================
 // ROUTE CACHING OPTIMIZATION (PRODUCTION)
 // ===========================================
-if (app()->environment('production')) {
-    Route::middleware(['cache.headers:public;max_age=3600'])->group(function () {
-        Route::get('/permissions/matrix/view', [PermissionController::class, 'matrix'])->name('permissions.matrix.cached');
-        Route::get('/permissions/export/csv', [PermissionController::class, 'export'])->name('permissions.export.cached');
-        Route::get('/roles/export/csv', [RoleController::class, 'export'])->name('roles.export.cached');
-    });
-}
+// if (app()->environment('production')) {
+//     Route::middleware(['cache.headers:public;max_age=3600'])->group(function () {
+//         Route::get('/permissions/matrix/view', [PermissionController::class, 'matrix'])->name('permissions.matrix.cached');
+//         Route::get('/permissions/export/csv', [PermissionController::class, 'export'])->name('permissions.export.cached');
+//         Route::get('/roles/export/csv', [RoleController::class, 'export'])->name('roles.export.cached');
+//     });
+// }
 
 // Debug routes (only in development)
 if (app()->environment(['local', 'development'])) {

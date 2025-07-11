@@ -11,6 +11,7 @@ use App\Models\ApiKey;
 use App\Jobs\SendTeamsNotification;
 use App\Jobs\SendEmailNotification;
 use App\Jobs\SendWebhookNotification;
+use App\Services\WebhookService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Log;
@@ -22,6 +23,7 @@ class NotificationService
 {
     protected $teamsService;
     protected $emailService;
+    protected $webhookService;
 
     // Valid priority values that match database constraint
     const VALID_PRIORITIES = ['low', 'medium', 'normal', 'high', 'urgent'];
@@ -29,15 +31,17 @@ class NotificationService
     // Valid status values that match database constraint
     const VALID_STATUSES = ['draft', 'queued', 'scheduled', 'processing', 'sent', 'failed', 'cancelled'];
 
-    public function __construct($teamsService = null, $emailService = null)
+    public function __construct($teamsService = null, $emailService = null, $webhookService = null)
     {
         try {
             $this->teamsService = $teamsService;
             $this->emailService = $emailService;
+            $this->webhookService = $webhookService ?: new WebhookService();
             
             Log::info('NotificationService initialized', [
                 'teams_service' => $teamsService ? get_class($teamsService) : 'null',
-                'email_service' => $emailService ? get_class($emailService) : 'null'
+                'email_service' => $emailService ? get_class($emailService) : 'null',
+                'webhook_service' => get_class($this->webhookService)
             ]);
         } catch (\Exception $e) {
             Log::error('NotificationService constructor failed', [
@@ -45,6 +49,7 @@ class NotificationService
             ]);
             $this->teamsService = null;
             $this->emailService = null;
+            $this->webhookService = new WebhookService();
         }
     }
 
@@ -227,15 +232,20 @@ class NotificationService
             
             $recipients = $this->getRecipientsForNotificationEnhanced($notification);
             $hasWebhook = in_array('webhook', $notification->channels);
+
+            $groupWebhooks = $this->getGroupWebhooks($notification);
+            $hasGroupWebhooks = !empty($groupWebhooks);
             
             Log::info("DEBUG: Recipients and webhook info", [
                 'recipients_count' => count($recipients),
                 'has_webhook' => $hasWebhook,
+                'has_group_webhooks' => $hasGroupWebhooks,
+                'group_webhooks_count' => count($groupWebhooks),
                 'recipient_emails' => array_column($recipients, 'email')
             ]);
             
-            if (empty($recipients) && !$hasWebhook) {
-                throw new \Exception('No valid recipients found');
+            if (empty($recipients) && !$hasWebhook && !$hasGroupWebhooks) {
+                throw new \Exception('No valid recipients found and no webhooks configured');
             }
             
             // สร้าง logs สำหรับแต่ละ recipient และ channel
@@ -249,6 +259,11 @@ class NotificationService
                 ]);
                 
                 $this->processChannelEnhanced($notification, $channel, $recipients);
+            }
+
+            if ($hasGroupWebhooks) {
+                Log::info("Processing group webhooks for enhanced notification");
+                $this->processGroupWebhooks($notification, $groupWebhooks);
             }
             
             // อัพเดตสถานะ
@@ -273,6 +288,107 @@ class NotificationService
         }
     }
 
+    private function updateMainWebhookLog(Notification $notification, array $webhookResult)
+    {
+        try {
+            $log = NotificationLog::where('notification_id', $notification->id)
+                                 ->where('channel', 'webhook')
+                                 ->where('recipient_email', 'system@webhook')
+                                 ->first();
+
+            if (!$log) {
+                Log::warning("Main webhook log not found", [
+                    'notification_id' => $notification->id
+                ]);
+                return;
+            }
+
+            // เช็คผลลัพธ์ main webhook
+            $mainWebhookSuccess = $webhookResult['results']['main_webhook']['success'] ?? false;
+            
+            if ($mainWebhookSuccess) {
+                $log->update([
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                    'delivered_at' => now(),
+                    'webhook_response_code' => $webhookResult['results']['main_webhook']['status_code'] ?? 200,
+                    'response_data' => [
+                        'success' => true,
+                        'webhook_service_result' => $webhookResult,
+                        'timestamp' => now()->toISOString(),
+                        'method' => 'webhook_service'
+                    ]
+                ]);
+                
+                Log::info("Main webhook log updated - success", [
+                    'log_id' => $log->id,
+                    'notification_id' => $notification->id
+                ]);
+            } else {
+                $errorMessage = $webhookResult['results']['main_webhook']['error'] ?? 'Unknown webhook error';
+                
+                $log->update([
+                    'status' => 'failed',
+                    'error_message' => substr($errorMessage, 0, 500),
+                    'retry_count' => ($log->retry_count ?? 0) + 1,
+                    'failed_at' => now(),
+                    'response_data' => [
+                        'success' => false,
+                        'error' => $errorMessage,
+                        'webhook_service_result' => $webhookResult,
+                        'timestamp' => now()->toISOString()
+                    ]
+                ]);
+                
+                Log::warning("Main webhook log updated - failed", [
+                    'log_id' => $log->id,
+                    'notification_id' => $notification->id,
+                    'error' => $errorMessage
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Failed to update main webhook log", [
+                'notification_id' => $notification->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * ✅ อัพเดต main webhook log เมื่อเกิด exception
+     */
+    private function updateMainWebhookLogFailed(Notification $notification, string $errorMessage)
+    {
+        try {
+            $log = NotificationLog::where('notification_id', $notification->id)
+                                 ->where('channel', 'webhook')
+                                 ->where('recipient_email', 'system@webhook')
+                                 ->first();
+
+            if ($log) {
+                $log->update([
+                    'status' => 'failed',
+                    'error_message' => substr($errorMessage, 0, 500),
+                    'retry_count' => ($log->retry_count ?? 0) + 1,
+                    'failed_at' => now(),
+                    'response_data' => [
+                        'success' => false,
+                        'error' => $errorMessage,
+                        'timestamp' => now()->toISOString(),
+                        'method' => 'webhook_service_exception'
+                    ]
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to update webhook log after exception", [
+                'notification_id' => $notification->id,
+                'original_error' => $errorMessage,
+                'update_error' => $e->getMessage()
+            ]);
+        }
+    }
+
     /**
      * Process notification แบบ Standard (สำหรับ Admin และ API ธรรมดา)
      */
@@ -285,11 +401,16 @@ class NotificationService
             // Get recipients
             $recipients = $this->getAllRecipientsSafely($notification);
 
+            $groupWebhooks = $this->getGroupWebhooks($notification);
+            $hasGroupWebhooks = !empty($groupWebhooks);
+
             Log::info('Recipients found', [
                 'notification_id' => $notification->id,
                 'recipient_count' => count($recipients),
                 'channels' => $notification->channels,
-                'hasWebhookOnly' => $hasWebhookOnly
+                'hasWebhookOnly' => $hasWebhookOnly,
+                'has_group_webhooks' => $hasGroupWebhooks,
+                'group_webhooks_count' => count($groupWebhooks)
             ]);
 
             // For webhook-only notifications, we always have at least the system recipient
@@ -324,6 +445,8 @@ class NotificationService
                 ]);
             });
 
+            $this->processAllWebhooks($notification, $groupWebhooks);
+
             // Queue the notification
             $this->queueNotificationSafely($notification);
 
@@ -341,6 +464,222 @@ class NotificationService
             ]);
             
             return false;
+        }
+    }
+
+    private function processAllWebhooks(Notification $notification, array $groupWebhooks = [])
+    {
+        Log::info("processAllWebhooks START", [
+            'notification_id' => $notification->uuid,
+            'has_main_webhook' => in_array('webhook', $notification->channels) && !empty($notification->webhook_url),
+            'has_group_webhooks' => !empty($groupWebhooks),
+            'group_webhooks_count' => count($groupWebhooks)
+        ]);
+
+        try {
+            $webhookResults = [];
+
+            // 1. ประมวลผล Main Webhook (ถ้ามี webhook ใน channels)
+            if (in_array('webhook', $notification->channels) && !empty($notification->webhook_url)) {
+                Log::info("Processing main webhook channel");
+                $mainResult = $this->processMainWebhook($notification);
+                $webhookResults['main_webhook'] = $mainResult;
+            }
+
+            // 2. ประมวลผล Group Webhooks (เสมอ ถ้ามี)
+            if (!empty($groupWebhooks)) {
+                Log::info("Processing group webhooks", [
+                    'groups_count' => count($groupWebhooks)
+                ]);
+                $groupResults = $this->processGroupWebhooks($notification, $groupWebhooks);
+                $webhookResults['group_webhooks'] = $groupResults;
+            }
+
+            Log::info("processAllWebhooks completed", [
+                'notification_id' => $notification->uuid,
+                'main_webhook_processed' => isset($webhookResults['main_webhook']),
+                'group_webhooks_processed' => isset($webhookResults['group_webhooks']),
+                'total_group_results' => count($webhookResults['group_webhooks'] ?? [])
+            ]);
+
+            return $webhookResults;
+
+        } catch (\Exception $e) {
+            Log::error("processAllWebhooks failed", [
+                'notification_id' => $notification->uuid,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * ✅ ประมวลผล Main Webhook
+     */
+    private function processMainWebhook(Notification $notification)
+    {
+        try {
+            Log::info("Processing main webhook", [
+                'notification_id' => $notification->uuid,
+                'webhook_url' => $notification->webhook_url
+            ]);
+
+            // เตรียม group webhooks ในรูปแบบที่ WebhookService ต้องการ (empty สำหรับ main only)
+            $result = $this->webhookService->sendWebhookNotification($notification, []);
+
+            // อัพเดต main webhook log
+            if (!empty($notification->webhook_url)) {
+                $this->updateMainWebhookLog($notification, $result);
+            }
+
+            return $result;
+
+        } catch (\Exception $e) {
+            Log::error("processMainWebhook failed", [
+                'notification_id' => $notification->uuid,
+                'error' => $e->getMessage()
+            ]);
+
+            $this->updateMainWebhookLogFailed($notification, $e->getMessage());
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * ✅ ประมวลผล Group Webhooks
+     */
+    private function processGroupWebhooks(Notification $notification, array $groupWebhooks)
+    {
+        $groupResults = [];
+
+        try {
+            // เตรียม group webhooks ในรูปแบบที่ WebhookService ต้องการ
+            $groupWebhookUrls = [];
+            foreach ($groupWebhooks as $groupId => $webhookData) {
+                $groupWebhookUrls[$groupId] = $webhookData['url'];
+            }
+
+            // ส่งผ่าน WebhookService (main webhook = null เพราะประมวลผลแยก)
+            $notification->webhook_url = null; // ชั่วคราว เพื่อไม่ให้ส่ง main webhook ซ้ำ
+            $result = $this->webhookService->sendWebhookNotification($notification, $groupWebhookUrls);
+            
+            // กู้คืน webhook_url
+            $notification->refresh();
+
+            Log::info("Group webhooks processed", [
+                'notification_id' => $notification->uuid,
+                'groups_processed' => count($groupWebhookUrls),
+                'successful' => $result['successful'],
+                'failed' => $result['failed']
+            ]);
+
+            return $result;
+
+        } catch (\Exception $e) {
+            Log::error("processGroupWebhooks failed", [
+                'notification_id' => $notification->uuid,
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage(), 'group_results' => []];
+        }
+    }
+
+    /**
+     * ✅ เพิ่มเมธอดสำหรับ test webhook ที่รองรับ group webhooks
+     */
+    public function testWebhookWithGroups(array $testData)
+    {
+        try {
+            Log::info("Testing webhook with groups", $testData);
+
+            $results = [];
+
+            // 1. Test main webhook (ถ้ามี)
+            if (!empty($testData['webhook_url'])) {
+                $mainResult = $this->webhookService->testWebhook(
+                    $testData['webhook_url'],
+                    array_merge($testData, ['webhook_type' => 'main'])
+                );
+                $results['main_webhook'] = $mainResult;
+            }
+
+            // 2. Test group webhooks (ถ้ามี)
+            if (!empty($testData['group_webhooks'])) {
+                $results['group_webhooks'] = [];
+                
+                foreach ($testData['group_webhooks'] as $groupId => $webhookUrl) {
+                    if (!empty($webhookUrl)) {
+                        $groupResult = $this->webhookService->testWebhook(
+                            $webhookUrl,
+                            array_merge($testData, [
+                                'webhook_type' => 'group',
+                                'group_id' => $groupId
+                            ])
+                        );
+                        $results['group_webhooks'][$groupId] = $groupResult;
+                    }
+                }
+            }
+
+            // สรุปผลลัพธ์
+            $successCount = 0;
+            $totalCount = 0;
+            
+            if (isset($results['main_webhook'])) {
+                $totalCount++;
+                if ($results['main_webhook']['success']) $successCount++;
+            }
+            
+            if (isset($results['group_webhooks'])) {
+                foreach ($results['group_webhooks'] as $groupResult) {
+                    $totalCount++;
+                    if ($groupResult['success']) $successCount++;
+                }
+            }
+
+            return [
+                'success' => $successCount > 0,
+                'total_tested' => $totalCount,
+                'successful' => $successCount,
+                'failed' => $totalCount - $successCount,
+                'results' => $results
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("Webhook group test failed", [
+                'error' => $e->getMessage(),
+                'test_data' => $testData
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'results' => []
+            ];
+        }
+    }
+
+    /**
+     * ✅ เพิ่มเมธอดสำหรับดู webhook logs
+     */
+    public function getWebhookLogsForNotification($notificationId)
+    {
+        try {
+            $notification = Notification::where('uuid', $notificationId)->first();
+            
+            if (!$notification) {
+                return [];
+            }
+
+            return $this->webhookService->getWebhookLogs($notification);
+
+        } catch (\Exception $e) {
+            Log::error("Failed to get webhook logs", [
+                'notification_id' => $notificationId,
+                'error' => $e->getMessage()
+            ]);
+            return [];
         }
     }
 
@@ -1128,11 +1467,11 @@ class NotificationService
             $teamsDetails['Sent At'] = now()->format('Y-m-d H:i:s');
             
             // เพิ่ม variables ถ้ามี
-            if (!empty($content['variables'])) {
-                foreach ($content['variables'] as $key => $value) {
-                    $teamsDetails[ucfirst($key)] = (string) $value;
-                }
-            }
+            // if (!empty($content['variables'])) {
+            //     foreach ($content['variables'] as $key => $value) {
+            //         $teamsDetails[ucfirst($key)] = (string) $value;
+            //     }
+            // }
 
             if (!empty($content['body_text'])) {
                 // ลองแปลง JSON ก่อน
@@ -1306,7 +1645,8 @@ class NotificationService
             
             Log::info("Webhook channel detected - single system recipient created", [
                 'notification_id' => $notification->id,
-                'webhook_url' => $notification->webhook_url
+                'notification_webhook_url' => $notification->webhook_url,
+                'has_group_webhooks' => $this->hasGroupWebhooks($notification) // ✅ ตรวจสอบ group webhooks
             ]);
             
             // If webhook is the only channel, return early
@@ -1404,6 +1744,63 @@ class NotificationService
         ]);
 
         return $recipients;
+    }
+
+    /**
+     * ✅ ตรวจสอบว่ามี group webhooks หรือไม่
+     */
+    private function hasGroupWebhooks(Notification $notification)
+    {
+        if (empty($notification->recipient_groups)) {
+            return false;
+        }
+
+        $groupWebhooks = $this->getGroupWebhooks($notification);
+        return !empty($groupWebhooks);
+    }
+
+    /**
+     * ✅ ดึง webhook URLs จาก groups
+     */
+    private function getGroupWebhooks(Notification $notification)
+    {
+        if (empty($notification->recipient_groups)) {
+            return [];
+        }
+
+        try {
+            $groups = NotificationGroup::whereIn('id', $notification->recipient_groups)
+                                      ->whereNotNull('webhook_url')
+                                      ->where('webhook_url', '!=', '')
+                                      ->get(['id', 'webhook_url', 'name']);
+
+            $webhooks = [];
+            foreach ($groups as $group) {
+                if (!empty(trim($group->webhook_url))) {
+                    $webhooks[$group->id] = [
+                        'url' => trim($group->webhook_url),
+                        'name' => $group->name
+                    ];
+                }
+            }
+
+            Log::info("Group webhooks found", [
+                'notification_id' => $notification->id,
+                'groups_checked' => $notification->recipient_groups,
+                'webhooks_found' => count($webhooks),
+                'webhook_groups' => array_keys($webhooks)
+            ]);
+
+            return $webhooks;
+
+        } catch (\Exception $e) {
+            Log::error("Failed to get group webhooks", [
+                'notification_id' => $notification->id,
+                'groups' => $notification->recipient_groups,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
     }
 
     // ===============================================

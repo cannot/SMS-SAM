@@ -16,7 +16,8 @@ class RoleController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = Role::with(['permissions', 'users']);
+            // เพิ่มการนับจำนวนผู้ใช้และสิทธิ์สำหรับแต่ละ role
+            $query = Role::withCount(['users', 'permissions']);
 
             // Search functionality
             if ($request->filled('search')) {

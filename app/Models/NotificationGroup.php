@@ -21,11 +21,13 @@ class NotificationGroup extends Model
         'criteria', // JSON field for dynamic criteria
         'is_active',
         'created_by',
+        'webhook_url',
     ];
 
     protected $casts = [
         'criteria' => 'array',
         'is_active' => 'boolean',
+        'webhook_url' => 'string',
     ];
 
     // ========== ACTIVITY LOG ==========

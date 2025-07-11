@@ -88,6 +88,7 @@ class GroupController extends Controller
             'criteria' => 'nullable|array',
             'users' => 'nullable|array',
             'users.*' => 'exists:users,id',
+            'webhook_url' => 'nullable|url',
         ]);
 
         try {
@@ -100,6 +101,7 @@ class GroupController extends Controller
                 'criteria' => $request->criteria,
                 'is_active' => true,
                 'created_by' => Auth::id(),
+                'webhook_url' => $request->webhook_url,
             ]);
 
             // Add users for manual groups
@@ -124,7 +126,7 @@ class GroupController extends Controller
             return back()->withInput()
                 ->with('error', 'เกิดข้อผิดพลาดในการสร้างกลุ่ม: ' . $e->getMessage());
         }
-    }
+    } 
 
     /**
      * Display the specified group
@@ -166,6 +168,7 @@ class GroupController extends Controller
             'users' => 'nullable|array',
             'users.*' => 'exists:users,id',
             'is_active' => 'boolean',
+            'webhook_url' => 'nullable|url',
         ]);
 
         try {
@@ -177,6 +180,7 @@ class GroupController extends Controller
                 'type' => $request->type,
                 'criteria' => $request->criteria,
                 'is_active' => $request->boolean('is_active'),
+                'webhook_url' => $request->webhook_url,
             ]);
 
             // *** แก้ไขตรงนี้ ***

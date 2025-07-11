@@ -8,13 +8,6 @@ export default defineConfig({
             input: [
                 'resources/css/app.css',
                 'resources/js/app.js',
-                
-                // เพิ่มไฟล์ CSS/JS เฉพาะ
-                // 'resources/css/admin.css',
-                // 'resources/css/dashboard.css',
-                // 'resources/js/admin.js',
-                // 'resources/js/dashboard.js',
-                // 'resources/js/notifications.js',
             ],
             refresh: true,
         }),
@@ -22,7 +15,6 @@ export default defineConfig({
     resolve: {
         alias: {
             '~bootstrap': resolve(__dirname, 'node_modules/bootstrap'),
-            '~bootstrap-icons': resolve(__dirname, 'node_modules/bootstrap-icons'),
             '~@fortawesome': resolve(__dirname, 'node_modules/@fortawesome'),
             '~datatables.net': resolve(__dirname, 'node_modules/datatables.net'),
             '~select2': resolve(__dirname, 'node_modules/select2'),
@@ -30,6 +22,7 @@ export default defineConfig({
         }
     },
     css: {
+        devSourcemap: true,
         preprocessorOptions: {
             scss: {
                 additionalData: `@import "bootstrap/scss/functions"; @import "bootstrap/scss/variables";`
@@ -37,14 +30,33 @@ export default defineConfig({
         }
     },
     build: {
+        sourcemap: false,
+        outDir: 'public/build',
+        emptyOutDir: true,
+        manifest: true,
         rollupOptions: {
             output: {
                 manualChunks: {
                     'vendor': ['bootstrap', 'jquery'],
-                    'icons': ['bootstrap-icons', '@fortawesome/fontawesome-free'],
+                    'fontawesome': ['@fortawesome/fontawesome-free'],
                     'ui': ['select2', 'sweetalert2', 'datatables.net']
                 }
             }
+        },
+        commonjsOptions: {
+            include: [/bootstrap/, /jquery/, /node_modules/]
+        }
+    },
+    esbuild: {
+        sourcemap: false
+    },
+    optimizeDeps: {
+        include: ['bootstrap', 'jquery', 'select2', 'sweetalert2', 'datatables.net'],
+        force: true
+    },
+    server: {
+        fs: {
+            strict: false
         }
     }
 });
