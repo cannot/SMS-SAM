@@ -38,7 +38,28 @@ class Kernel extends ConsoleKernel
             'start' => now()->subDay()->startOfDay(),
             'end' => now()->subDay()->endOfDay()
         ])->dailyAt('02:00');
+
+        // // Run SQL alerts every minute
+        // $schedule->command('sql-alerts:run')
+        //     ->everyMinute()
+        //     ->withoutOverlapping()
+        //     ->runInBackground();
+
+        // // Update schedules every hour
+        // $schedule->command('sql-alerts:schedule')
+        //     ->hourly();
+
+        // // Cleanup old data daily at 2 AM
+        // $schedule->command('sql-alerts:cleanup --days=30 --attachments=7')
+        //     ->dailyAt('02:00');
+
+        // // Health check every 5 minutes
+        // $schedule->command('sql-alerts:run --dry-run')
+        //     ->everyFiveMinutes()
+        //     ->appendOutputTo(storage_path('logs/sql-alerts-health.log'));
+
     }
+    
 
     /**
      * Register the commands for the application.

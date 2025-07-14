@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\ApiKeyController;
 use App\Http\Controllers\Admin\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\RabbitMQController;
+use App\Http\Controllers\Admin\SqlAlertController;
 
 use App\Http\Controllers\User\NotificationController as UserNotificationController;
 use App\Http\Controllers\Web\ActivityLogController;
@@ -471,32 +472,6 @@ Route::middleware(['auth', 'web'])->group(function () {
     });
 
     Route::prefix('admin/notifications')->name('admin.notifications.')->group(function () {
-        // Route::get('/', [AdminNotificationController::class, 'index'])->name('index')->middleware('can:manage-notifications');
-        // Route::get('create', [AdminNotificationController::class, 'create'])->name('create')->middleware('can:manage-notifications');
-        // Route::post('/', [AdminNotificationController::class, 'store'])->name('store')->middleware('can:manage-notifications');
-        // Route::get('{uuid}', [AdminNotificationController::class, 'show'])->name('show')->middleware('can:manage-notifications');
-        // Route::get('{uuid}/edit', [AdminNotificationController::class, 'edit'])->name('edit')->middleware('can:manage-notifications');
-        // Route::put('{uuid}', [AdminNotificationController::class, 'update'])->name('update')->middleware('can:manage-notifications');
-        // Route::delete('{uuid}', [AdminNotificationController::class, 'destroy'])->name('destroy')->middleware('can:manage-notifications');
-        // Route::get('logs', [AdminNotificationController::class, 'logs'])->name('logs')->middleware('can:manage-notifications');
-
-        // // New resend routes
-        // Route::post('/{uuid}/resend', [AdminNotificationController::class, 'resend'])->name('resend');
-        // Route::post('/{uuid}/logs/{log}/resend', [AdminNotificationController::class, 'resendLog'])->name('resend-log');
-        // Route::get('/{uuid}/preview', [AdminNotificationController::class, 'preview'])->name('preview');
-
-        // // Additional admin actions
-        // Route::post('test', [AdminNotificationController::class, 'sendTest'])->name('test')->middleware('can:manage-notifications');
-        // Route::post('{uuid}/cancel', [AdminNotificationController::class, 'cancel'])->name('cancel')->middleware('can:manage-notifications');
-        // Route::post('{uuid}/duplicate', [AdminNotificationController::class, 'duplicate'])->name('duplicate')->middleware('can:manage-notifications');
-        // Route::post('template-preview', [AdminNotificationController::class, 'templatePreview'])->name('template-preview')->middleware('can:manage-notifications');
-
-        // // Analytics
-        // Route::get('analytics/dashboard', [AdminNotificationController::class, 'analytics'])->name('analytics')->middleware('can:manage-notifications');
-        // Route::get('statistics', [AdminNotificationController::class, 'statistics'])->name('statistics')->middleware('can:manage-notifications');
-
-        // Route::post('/{uuid}/cancel', [AdminNotificationController::class, 'cancel'])->name('cancel');
-        // Route::post('/{uuid}/retry', [AdminNotificationController::class, 'retry'])->name('retry');
 
         // Main CRUD routes
         Route::get('/', [AdminNotificationController::class, 'index'])->name('index');
@@ -538,6 +513,44 @@ Route::middleware(['auth', 'web'])->group(function () {
         Route::post('/test-webhook', [AdminNotificationController::class, 'testWebhook'])
         ->name('test-webhook');
 
+
+    });
+
+    
+
+    // SQL Alerts routes
+    Route::prefix('sql-alerts')->name('sql-alerts.')->group(function () {
+                
+        // Main wizard page
+        Route::get('/create', [SqlAlertController::class, 'create'])
+            ->name('create');
+        
+        // API endpoints for wizard steps
+        Route::post('/test-connection', [SqlAlertController::class, 'testConnection'])
+            ->name('test-connection');
+        
+        Route::post('/execute-query', [SqlAlertController::class, 'executeQuery'])
+            ->name('execute-query');
+        
+        Route::post('/send-test', [SqlAlertController::class, 'sendTest'])
+            ->name('send-test');
+        
+        // Store the final alert
+        Route::post('/store', [SqlAlertController::class, 'store'])
+            ->name('store');
+        
+        // Additional utility endpoints
+        Route::post('/validate-sql', [SqlAlertController::class, 'validateSql'])
+            ->name('validate-sql');
+        
+        Route::post('/preview-email', [SqlAlertController::class, 'previewEmail'])
+            ->name('preview-email');
+        
+        Route::get('/export-config', [SqlAlertController::class, 'exportConfig'])
+            ->name('export-config');
+        
+        Route::post('/import-config', [SqlAlertController::class, 'importConfig'])
+            ->name('import-config');
     });
 
     // ===========================================
@@ -706,6 +719,30 @@ Route::bind('role', function ($value) {
         ->firstOrFail();
 });
 
+Route::prefix('admin')->name('admin.')->middleware(['auth'])->group(function () {
+    // SQL Alerts routes
+    Route::prefix('sql-alerts')->name('sql-alerts.')->group(function () {
+        Route::get('/', [SqlAlertController::class, 'index'])->name('index');
+        Route::get('/create', [SqlAlertController::class, 'create'])->name('create');
+        Route::post('/', [SqlAlertController::class, 'store'])->name('store');
+        Route::get('/{sqlAlert}', [SqlAlertController::class, 'show'])->name('show');
+        Route::put('/{sqlAlert}', [SqlAlertController::class, 'update'])->name('update');
+        Route::delete('/{sqlAlert}', [SqlAlertController::class, 'destroy'])->name('destroy');
+        
+        // AJAX routes for wizard
+        Route::post('/test-connection', [SqlAlertController::class, 'testConnection'])->name('test-connection');
+        Route::post('/execute-query', [SqlAlertController::class, 'executeQuery'])->name('execute-query');
+        Route::post('/send-test', [SqlAlertController::class, 'sendTest'])->name('send-test');
+        
+        // Execution routes
+        Route::post('/{sqlAlert}/execute', [SqlAlertController::class, 'execute'])->name('execute');
+        Route::get('/{sqlAlert}/executions', [SqlAlertController::class, 'executions'])->name('executions');
+        Route::get('/executions/{execution}', [SqlAlertController::class, 'showExecution'])->name('show-execution');
+        
+        // Attachment download
+        Route::get('/attachments/{attachment}/download', [SqlAlertController::class, 'downloadAttachment'])->name('download-attachment');
+    });
+});
 // ===========================================
 // FALLBACK ROUTES FOR BACKWARD COMPATIBILITY
 // ===========================================

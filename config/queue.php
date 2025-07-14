@@ -79,6 +79,15 @@ return [
             'block_for' => null,
             'after_commit' => false,
         ],
+
+        
+        'sql-alerts' => [
+            'driver' => 'database',
+            'table' => 'jobs',
+            'queue' => 'sql-alerts',
+            'retry_after' => 300,
+            'after_commit' => false,
+        ],
         
         'rabbitmq' => [
             'driver' => 'rabbitmq',
