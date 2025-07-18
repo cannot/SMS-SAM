@@ -1,8 +1,3 @@
-@extends('layouts.app')
-
-@section('title', 'สร้างการแจ้งเตือนแบบ SQL - กำหนดเนื้อหา')
-
-@push('styles')
 <style>
 .wizard-container {
     background: white;
@@ -76,406 +71,173 @@
     font-weight: bold;
 }
 
-.editor-layout {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30px;
+.variable-panel {
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 25px;
     margin-bottom: 30px;
 }
 
-.editor-section {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 25px;
-}
-
-.editor-header {
+.variable-panel-header {
+    font-size: 1.1rem;
     font-weight: 600;
+    color: #1f2937;
     margin-bottom: 20px;
-    color: #374151;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-label {
-    font-weight: 500;
-    color: #374151;
-    margin-bottom: 8px;
-    display: block;
-    font-size: 0.875rem;
-}
-
-.form-control {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    transition: all 0.3s ease;
-}
-
-.form-control:focus {
-    outline: none;
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
-}
-
-.form-textarea {
-    min-height: 200px;
-    font-family: Arial, sans-serif;
-    line-height: 1.5;
-    resize: vertical;
-}
-
-.html-editor {
-    min-height: 300px;
-    font-family: 'Courier New', monospace;
-    font-size: 0.875rem;
-    line-height: 1.4;
-    background: #1f2937;
-    color: #e5e7eb;
-    border: 2px solid #374151;
-}
-
-.editor-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 15px;
-    padding: 10px;
-    background: #f3f4f6;
-    border-radius: 6px;
-}
-
-.toolbar-btn {
-    padding: 6px 12px;
-    background: white;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: all 0.3s ease;
-}
-
-.toolbar-btn:hover {
-    background: #f9fafb;
-    border-color: #4f46e5;
-}
-
-.toolbar-btn.format {
-    font-weight: bold;
-}
-
-.toolbar-btn.variable {
-    background: #fef3c7;
-    border-color: #f59e0b;
-    color: #92400e;
-}
-
-.toolbar-btn.variable:hover {
-    background: #fed7aa;
-}
-
-.variables-panel {
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 20px;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-.variables-header {
-    font-weight: 600;
-    margin-bottom: 10px;
-    color: #374151;
-    font-size: 0.875rem;
 }
 
 .variables-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
 }
 
-.variable-item {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    padding: 8px 10px;
+.variable-tag {
+    background: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+    padding: 10px 15px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 0.75rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
 }
 
-.variable-item:hover {
-    background: #f0f9ff;
-    border-color: #4f46e5;
-    transform: translateY(-1px);
+.variable-tag:hover {
+    background: #c7d2fe;
+    color: #312e81;
 }
 
 .variable-name {
-    font-family: 'Courier New', monospace;
     font-weight: 600;
-    color: #7c3aed;
-    margin-bottom: 2px;
 }
 
-.variable-desc {
-    color: #6b7280;
-    font-size: 0.65rem;
+.variable-description {
+    font-size: 0.85rem;
+    opacity: 0.8;
 }
 
-.preview-section {
-    background: white;
-    border: 2px solid #e5e7eb;
+.content-editor {
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
     border-radius: 12px;
-    overflow: hidden;
+    padding: 30px;
+    margin-bottom: 30px;
+}
+
+.tabs {
+    display: flex;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 20px;
+}
+
+.tab {
+    padding: 12px 24px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.tab.active {
+    color: #4f46e5;
+    border-bottom-color: #4f46e5;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.editor-group {
+    margin-bottom: 25px;
+}
+
+.editor-label {
+    display: block;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+}
+
+.editor-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s ease;
+}
+
+.editor-input:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.editor-textarea {
+    min-height: 120px;
+    resize: vertical;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    line-height: 1.6;
+}
+
+.help-text {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 5px;
+}
+
+.preview-container {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
 }
 
 .preview-header {
-    background: #f9fafb;
-    padding: 15px 20px;
-    border-bottom: 1px solid #e5e7eb;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.preview-title {
     font-weight: 600;
-    color: #374151;
-    font-size: 0.875rem;
-}
-
-.preview-controls {
+    color: #1f2937;
+    margin-bottom: 15px;
     display: flex;
+    align-items: center;
     gap: 8px;
 }
 
 .preview-content {
-    padding: 20px;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.email-preview {
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e2e8f0;
     border-radius: 6px;
-    overflow: hidden;
-    background: white;
-}
-
-.email-header-preview {
-    background: #f9fafb;
-    padding: 12px 15px;
-    border-bottom: 1px solid #e5e7eb;
-    font-size: 0.875rem;
-}
-
-.email-field-preview {
-    display: flex;
-    margin-bottom: 6px;
-}
-
-.email-field-preview:last-child {
-    margin-bottom: 0;
-}
-
-.email-field-label-preview {
-    min-width: 60px;
-    font-weight: 600;
-    color: #6b7280;
-}
-
-.email-field-value-preview {
-    color: #374151;
-}
-
-.email-body-preview {
-    padding: 15px;
-    line-height: 1.6;
-    color: #374151;
-}
-
-.email-body-preview h1, 
-.email-body-preview h2, 
-.email-body-preview h3 {
-    color: #1f2937;
-    margin-bottom: 10px;
-}
-
-.email-body-preview p {
-    margin-bottom: 10px;
-}
-
-.email-body-preview ul {
-    margin-bottom: 10px;
-    padding-left: 20px;
+    padding: 20px;
+    background: #fafafa;
+    min-height: 150px;
 }
 
 .variable-highlight-preview {
     background: #fef3c7;
     color: #92400e;
-    padding: 1px 3px;
-    border-radius: 2px;
-    font-family: 'Courier New', monospace;
-    font-size: 0.875em;
-}
-
-.advanced-options {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 30px;
-}
-
-.advanced-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-    cursor: pointer;
-}
-
-.advanced-title {
-    font-weight: 600;
-    color: #374151;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.advanced-content {
-    display: none;
-    margin-top: 15px;
-}
-
-.advanced-content.show {
-    display: block;
-    animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-}
-
-.form-select {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-    background-position: right 8px center;
-    background-repeat: no-repeat;
-    background-size: 16px 12px;
-    padding-right: 40px;
-}
-
-.checkbox-group {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 10px;
-    margin-bottom: 15px;
-}
-
-.checkbox-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    background: white;
+    padding: 2px 6px;
     border-radius: 4px;
-    cursor: pointer;
-}
-
-.checkbox-item input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: #4f46e5;
-}
-
-.checkbox-label {
-    font-size: 0.875rem;
-    color: #374151;
-    cursor: pointer;
-}
-
-.btn {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-weight: 500;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.875rem;
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    color: white;
-}
-
-.btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
-}
-
-.btn-secondary {
-    background: #6b7280;
-    color: white;
-}
-
-.btn-secondary:hover {
-    background: #4b5563;
-}
-
-.btn-success {
-    background: #10b981;
-    color: white;
-}
-
-.btn-success:hover {
-    background: #059669;
-}
-
-.btn-sm {
-    padding: 6px 12px;
-    font-size: 0.75rem;
-}
-
-.test-email-section {
-    background: #fef3c7;
-    border-left: 4px solid #f59e0b;
-    padding: 15px;
-    border-radius: 0 8px 8px 0;
-    margin-bottom: 20px;
-}
-
-.test-email-header {
     font-weight: 600;
-    margin-bottom: 10px;
-    color: #92400e;
-    font-size: 0.875rem;
+}
+
+.alert {
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid;
+}
+
+.alert-info {
+    background: #eff6ff;
+    color: #1e40af;
+    border-color: #bfdbfe;
 }
 
 .wizard-navigation {
@@ -485,6 +247,45 @@
     margin-top: 40px;
     padding-top: 25px;
     border-top: 1px solid #e5e7eb;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.btn-secondary:hover {
+    background: #d1d5db;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 25px rgba(79, 70, 229, 0.3);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .status-indicator {
@@ -501,19 +302,10 @@
 
 @media (max-width: 768px) {
     .wizard-content {
-        padding: 25px;
+        padding: 20px;
     }
     
-    .editor-layout {
-        grid-template-columns: 1fr;
-        gap: 20px;
-    }
-    
-    .form-row {
-        grid-template-columns: 1fr;
-    }
-    
-    .checkbox-group {
+    .variables-grid {
         grid-template-columns: 1fr;
     }
     
@@ -523,33 +315,13 @@
     }
 }
 </style>
-@endpush
-
-@section('content')
-<div class="container">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0">
-                <i class="fas fa-database text-primary me-2"></i>
-                สร้างการแจ้งเตือนแบบ SQL
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">หน้าหลัก</a></li>
-                    <li class="breadcrumb-item"><a href="{{ route('notifications.index') }}">การแจ้งเตือน</a></li>
-                    <li class="breadcrumb-item active">สร้างการแจ้งเตือนแบบ SQL</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
 
     <!-- Wizard Container -->
     <div class="wizard-container">
         <!-- Wizard Header -->
         <div class="wizard-header">
-            <div class="wizard-title">✏️ กำหนดเนื้อหา</div>
-            <div class="wizard-subtitle">ปรับแต่งเนื้อหาอีเมลและใส่ตัวแปรตามต้องการ</div>
+        <div class="wizard-title">📧 กำหนดเนื้อหา Email</div>
+        <div class="wizard-subtitle">ปรับแต่งหัวข้อและเนื้อหา email สำหรับการแจ้งเตือน</div>
             
             <!-- Step Indicator -->
             <div class="step-indicator">
@@ -575,193 +347,69 @@
             <!-- Step 10: Email Content Customization -->
             <div class="section-title">
                 <div class="section-icon">10</div>
-                กำหนดเนื้อหา
+            กำหนดเนื้อหา Email
             </div>
 
-            <!-- Editor Layout -->
-            <div class="editor-layout">
-                <!-- Left Side - Editor -->
-                <div class="editor-section">
-                    <div class="editor-header">
-                        <i class="fas fa-edit"></i>
-                        แก้ไขเนื้อหาอีเมล
+        <div class="alert alert-info">
+            <strong>💡 คำแนะนำ:</strong> คลิกที่ตัวแปรด้านล่างเพื่อเพิ่มลงในเนื้อหา หรือพิมพ์ตัวแปรในรูปแบบ <code>&#123;&#123;variable_name&#125;&#125;</code>
                     </div>
 
-                    <!-- Subject Line -->
-                    <div class="form-group">
-                        <label class="form-label" for="emailSubject">หัวข้ออีเมล (Subject)</label>
-                        <input type="text" 
-                               class="form-control" 
-                               id="emailSubject" 
-                               placeholder="หัวข้ออีเมล"
-                               onchange="updatePreview()">
+        <!-- Variable Panel -->
+        <div class="variable-panel">
+            <div class="variable-panel-header">
+                🏷️ ตัวแปรที่สามารถใช้ได้
                     </div>
-
-                    <!-- Variables Panel -->
-                    <div class="variables-panel">
-                        <div class="variables-header">
-                            <i class="fas fa-tags me-1"></i>
-                            คลิกเพื่อใส่ตัวแปร
-                        </div>
-                        <div class="variables-grid" id="variablesGrid">
-                            <!-- Variables will be populated here -->
+            <div class="variables-grid" id="availableVariables">
+                <!-- Variables will be populated by JavaScript -->
                         </div>
                     </div>
 
-                    <!-- HTML Editor -->
-                    <div class="form-group">
-                        <label class="form-label">เนื้อหาอีเมล (HTML)</label>
-                        
-                        <!-- Editor Toolbar -->
-                        <div class="editor-toolbar">
-                            <button type="button" class="toolbar-btn format" onclick="formatText('bold')" title="ตัวหนา">
-                                <b>B</b>
-                            </button>
-                            <button type="button" class="toolbar-btn format" onclick="formatText('italic')" title="ตัวเอียง">
-                                <i>I</i>
-                            </button>
-                            <button type="button" class="toolbar-btn format" onclick="formatText('underline')" title="ขีดเส้นใต้">
-                                <u>U</u>
-                            </button>
-                            <button type="button" class="toolbar-btn" onclick="insertHeading()" title="หัวข้อ">
-                                H3
-                            </button>
-                            <button type="button" class="toolbar-btn" onclick="insertList()" title="รายการ">
-                                <i class="fas fa-list"></i>
-                            </button>
-                            <button type="button" class="toolbar-btn" onclick="insertTable()" title="ตาราง">
-                                <i class="fas fa-table"></i>
-                            </button>
+        <!-- Content Editor -->
+        <div class="content-editor">
+            <div class="tabs">
+                <div class="tab active" data-tab="subject">📧 หัวข้อ Email</div>
+                <div class="tab" data-tab="html">🌐 เนื้อหา HTML</div>
+                <div class="tab" data-tab="text">📝 เนื้อหาข้อความ</div>
                         </div>
 
-                        <textarea class="form-control html-editor" 
-                                  id="emailHtmlContent" 
-                                  placeholder="เนื้อหาอีเมลแบบ HTML..."
-                                  onchange="updatePreview()"
-                                  oninput="updatePreview()"></textarea>
-                    </div>
-
-                    <!-- Plain Text Version -->
-                    <div class="form-group">
-                        <label class="form-label" for="emailTextContent">เนื้อหาแบบข้อความธรรมดา</label>
-                        <textarea class="form-control form-textarea" 
-                                  id="emailTextContent" 
-                                  placeholder="เนื้อหาอีเมลแบบข้อความธรรมดา..."
-                                  onchange="updatePreview()"></textarea>
+            <div class="tab-content active" id="subject-content">
+                <div class="editor-group">
+                    <label class="editor-label">หัวข้อ Email (Subject)</label>
+                    <input type="text" class="editor-input" id="emailSubject" placeholder="กรอกหัวข้อ email...">
+                    <div class="help-text">หัวข้อที่จะแสดงในอีเมล สามารถใช้ตัวแปรได้</div>
                     </div>
                 </div>
 
-                <!-- Right Side - Preview -->
-                <div class="preview-section">
-                    <div class="preview-header">
-                        <div class="preview-title">
-                            <i class="fas fa-eye"></i>
-                            ตัวอย่างอีเมล
-                        </div>
-                        <div class="preview-controls">
-                            <button type="button" class="btn btn-success btn-sm" onclick="updatePreview()">
-                                <i class="fas fa-sync-alt"></i>
-                                รีเฟรช
-                            </button>
+            <div class="tab-content" id="html-content">
+                <div class="editor-group">
+                    <label class="editor-label">เนื้อหา HTML</label>
+                    <textarea class="editor-input editor-textarea" id="emailHtmlBody" placeholder="กรอกเนื้อหา HTML..."></textarea>
+                    <div class="help-text">เนื้อหาในรูปแบบ HTML สำหรับการแสดงผลที่สวยงาม</div>
                         </div>
                     </div>
 
-                    <div class="preview-content">
-                        <div class="email-preview">
-                            <div class="email-header-preview">
-                                <div class="email-field-preview">
-                                    <div class="email-field-label-preview">From:</div>
-                                    <div class="email-field-value-preview" id="previewFrom">-</div>
+            <div class="tab-content" id="text-content">
+                <div class="editor-group">
+                    <label class="editor-label">เนื้อหาข้อความธรรมดา</label>
+                    <textarea class="editor-input editor-textarea" id="emailTextBody" placeholder="กรอกเนื้อหาข้อความธรรมดา..."></textarea>
+                    <div class="help-text">เนื้อหาสำรองในรูปแบบข้อความธรรมดา</div>
                                 </div>
-                                <div class="email-field-preview">
-                                    <div class="email-field-label-preview">Subject:</div>
-                                    <div class="email-field-value-preview" id="previewSubject">-</div>
-                                </div>
-                                <div class="email-field-preview">
-                                    <div class="email-field-label-preview">Priority:</div>
-                                    <div class="email-field-value-preview" id="previewPriority">-</div>
-                                </div>
-                            </div>
-                            <div class="email-body-preview" id="emailBodyPreview">
-                                <!-- Preview content will be populated here -->
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 
-            <!-- Advanced Options -->
-            <div class="advanced-options">
-                <div class="advanced-header" onclick="toggleAdvanced()">
-                    <div class="advanced-title">
-                        <i class="fas fa-cogs"></i>
-                        ตัวเลือกขั้นสูง
+        <!-- Preview -->
+        <div class="preview-container">
+            <div class="preview-header">
+                👀 ตัวอย่างการแสดงผล
                     </div>
-                    <i class="fas fa-chevron-down" id="advancedIcon"></i>
+            <div class="preview-content" id="emailPreview">
+                <div style="margin-bottom: 10px;">
+                    <strong>หัวข้อ:</strong> <span id="previewSubject">-</span>
                 </div>
-
-                <div class="advanced-content" id="advancedContent">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label" for="replyTo">Reply-To</label>
-                            <input type="email" 
-                                   class="form-control" 
-                                   id="replyTo" 
-                                   placeholder="noreply@company.com">
+                <div>
+                    <strong>เนื้อหา:</strong>
+                    <div id="previewBody" style="margin-top: 10px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 4px; background: white;">-</div>
                         </div>
-
-                        <div class="form-group">
-                            <label class="form-label" for="emailFormat">รูปแบบอีเมล</label>
-                            <select class="form-control form-select" id="emailFormat">
-                                <option value="html">HTML เท่านั้น</option>
-                                <option value="text">ข้อความธรรมดาเท่านั้น</option>
-                                <option value="both" selected>ทั้ง HTML และข้อความธรรมดา</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="checkbox-group">
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="trackOpen" checked>
-                            <label class="checkbox-label" for="trackOpen">ติดตามการเปิดอีเมล</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="trackClick">
-                            <label class="checkbox-label" for="trackClick">ติดตามการคลิกลิงก์</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="autoGenerateText" checked>
-                            <label class="checkbox-label" for="autoGenerateText">สร้างข้อความธรรมดาอัตโนมัติ</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="includeUnsubscribe">
-                            <label class="checkbox-label" for="includeUnsubscribe">รวมลิงก์ยกเลิกการสมัคร</label>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Test Email -->
-            <div class="test-email-section">
-                <div class="test-email-header">
-                    <i class="fas fa-paper-plane me-1"></i>
-                    ทดสอบส่งอีเมล
-                </div>
-                <div style="display: flex; gap: 15px; align-items: end;">
-                    <div style="flex: 1;">
-                        <input type="email" 
-                               class="form-control" 
-                               id="testEmail" 
-                               placeholder="your.email@example.com"
-                               style="margin-bottom: 0;">
-                    </div>
-                    <button type="button" class="btn btn-primary" onclick="sendTestEmail()">
-                        <i class="fas fa-paper-plane"></i>
-                        ส่งทดสอบ
-                    </button>
                 </div>
             </div>
 
@@ -778,446 +426,329 @@
                 </div>
                 
                 <button type="button" class="btn btn-primary" onclick="nextStep()">
-                    ถัดไป (กำหนดตัวแปรใน Mail)
+                ถัดไป (ตั้งค่าผู้รับ)
                     <i class="fas fa-arrow-right"></i>
                 </button>
-            </div>
         </div>
     </div>
 </div>
 
-@push('scripts')
 <script>
+let currentTab = 'subject';
 let availableVariables = [];
-let templateData = {};
 
 document.addEventListener('DOMContentLoaded', function() {
-    loadSavedData();
-    loadVariables();
-    loadTemplateData();
-    updatePreview();
+    console.log('Step 10 DOM loaded');
+    initializeStep10();
 });
 
-function loadSavedData() {
-    // Load saved content
-    const saved = sessionStorage.getItem('sql_alert_email_content');
-    if (saved) {
-        try {
-            const data = JSON.parse(saved);
-            
-            document.getElementById('emailSubject').value = data.subject || '';
-            document.getElementById('emailHtmlContent').value = data.htmlContent || '';
-            document.getElementById('emailTextContent').value = data.textContent || '';
-            document.getElementById('replyTo').value = data.replyTo || '';
-            document.getElementById('emailFormat').value = data.format || 'both';
-            
-            // Load checkboxes
-            document.getElementById('trackOpen').checked = data.trackOpen !== false;
-            document.getElementById('trackClick').checked = data.trackClick || false;
-            document.getElementById('autoGenerateText').checked = data.autoGenerateText !== false;
-            document.getElementById('includeUnsubscribe').checked = data.includeUnsubscribe || false;
-            
-        } catch (e) {
-            console.error('Error loading saved content:', e);
-        }
-    }
+function initializeStep10() {
+    console.log('Initializing Step 10...');
+    
+    // Load available variables
+    loadAvailableVariables();
+    
+    // Initialize tabs
+    initializeTabs();
+    
+    // Load template data from step 9
+    loadTemplateData();
+    
+    // Load saved data
+    loadSavedData();
+    
+    // Initialize preview
+    updatePreview();
+    
+    // Add input event listeners
+    document.getElementById('emailSubject').addEventListener('input', updatePreview);
+    document.getElementById('emailHtmlBody').addEventListener('input', updatePreview);
+    document.getElementById('emailTextBody').addEventListener('input', updatePreview);
+    
+    console.log('Step 10 initialized');
 }
 
-function loadVariables() {
-    // Load available variables
-    const computedVars = JSON.parse(sessionStorage.getItem('sql_alert_computed_variables') || '[]');
-    const customVars = JSON.parse(sessionStorage.getItem('sql_alert_variables') || '[]');
+function loadAvailableVariables() {
+    // Load from previous steps
+    const systemVariables = JSON.parse(sessionStorage.getItem('sql_alert_system_variables') || '[]');
+    const statsVariables = JSON.parse(sessionStorage.getItem('sql_alert_statistics_variables') || '[]');
     
     availableVariables = [
-        ...computedVars.map(v => ({ name: v.name, description: v.description, type: 'system' })),
-        ...customVars.map(v => ({ name: v.name, description: v.description, type: 'custom' }))
+        // System variables
+        { name: 'record_count', description: 'จำนวนแถวข้อมูล' },
+        { name: 'query_date', description: 'วันที่รัน query' },
+        { name: 'query_time', description: 'เวลาที่รัน query' },
+        { name: 'query_datetime', description: 'วันที่และเวลาที่รัน query' },
+        { name: 'execution_time', description: 'เวลาการประมวลผล' },
+        { name: 'data_size', description: 'ขนาดข้อมูล' },
+        { name: 'total_columns', description: 'จำนวนคอลัมน์' },
+        { name: 'database_name', description: 'ชื่อฐานข้อมูล' },
+        { name: 'database_type', description: 'ประเภทฐานข้อมูล' },
+        { name: 'current_date', description: 'วันที่ปัจจุบัน' },
+        { name: 'current_datetime', description: 'วันที่และเวลาปัจจุบัน' }
     ];
     
-    updateVariablesGrid();
-}
-
-function loadTemplateData() {
-    // Load template from previous step
-    const template = JSON.parse(sessionStorage.getItem('sql_alert_email_template') || '{}');
-    templateData = template;
-    
-    // Pre-fill if no saved content
-    const savedContent = sessionStorage.getItem('sql_alert_email_content');
-    if (!savedContent && template.templateData) {
-        document.getElementById('emailSubject').value = template.templateData.subject || '';
-        document.getElementById('emailHtmlContent').value = template.templateData.htmlBody || '';
-        document.getElementById('emailTextContent').value = template.templateData.textBody || '';
+    // Add statistics variables if available
+    if (statsVariables.length > 0) {
+        statsVariables.forEach(variable => {
+            availableVariables.push({
+                name: variable.name,
+                description: variable.description || 'ตัวแปรจากสถิติ'
+            });
+        });
     }
+    
+    // Add export variables
+    const exportSettings = JSON.parse(sessionStorage.getItem('sql_alert_export_settings') || '{}');
+    if (exportSettings.excel && exportSettings.excel.enabled) {
+        availableVariables.push(
+            { name: 'export_filename', description: 'ชื่อไฟล์ส่งออก' },
+            { name: 'export_size', description: 'ขนาดไฟล์ส่งออก' }
+        );
+    }
+    
+    renderVariables();
 }
 
-function updateVariablesGrid() {
-    const grid = document.getElementById('variablesGrid');
-    grid.innerHTML = '';
+function initializeTabs() {
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            const tabName = this.getAttribute('data-tab');
+            switchTab(tabName);
+        });
+    });
+}
+
+function switchTab(tabName) {
+    // Update active tab
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    
+    // Update active content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById(`${tabName}-content`).classList.add('active');
+    
+    currentTab = tabName;
+}
+
+function renderVariables() {
+    const container = document.getElementById('availableVariables');
+    container.innerHTML = '';
     
     availableVariables.forEach(variable => {
-        const item = document.createElement('div');
-        item.className = 'variable-item';
-        item.onclick = () => insertVariable(variable.name);
+        const variableElement = document.createElement('div');
+        variableElement.className = 'variable-tag';
+        variableElement.onclick = () => insertVariable(variable.name);
         
-        item.innerHTML = `
-            <div class="variable-name">{{${variable.name}}}</div>
-            <div class="variable-desc">${variable.description}</div>
+        variableElement.innerHTML = `
+            <div class="variable-name">&#123;&#123;${variable.name}&#125;&#125;</div>
+            <div class="variable-description">${variable.description || 'ตัวแปรจากข้อมูล'}</div>
         `;
         
-        grid.appendChild(item);
+        container.appendChild(variableElement);
     });
 }
 
 function insertVariable(variableName) {
-    const activeElement = document.activeElement;
-    const variableText = `{{${variableName}}}`;
+    let activeInput;
     
-    if (activeElement && (activeElement.id === 'emailHtmlContent' || activeElement.id === 'emailTextContent' || activeElement.id === 'emailSubject')) {
-        const start = activeElement.selectionStart;
-        const end = activeElement.selectionEnd;
-        const text = activeElement.value;
+    if (currentTab === 'subject') {
+        activeInput = document.getElementById('emailSubject');
+    } else if (currentTab === 'html') {
+        activeInput = document.getElementById('emailHtmlBody');
+    } else if (currentTab === 'text') {
+        activeInput = document.getElementById('emailTextBody');
+    }
+    
+    if (activeInput) {
+        const start = activeInput.selectionStart || 0;
+        const end = activeInput.selectionEnd || 0;
+        const value = activeInput.value;
         
-        activeElement.value = text.substring(0, start) + variableText + text.substring(end);
-        activeElement.selectionStart = activeElement.selectionEnd = start + variableText.length;
-        activeElement.focus();
+        const variableText = `&#123;&#123;${variableName}&#125;&#125;`;
+        const newValue = value.substring(0, start) + variableText + value.substring(end);
         
+        activeInput.value = newValue;
+        
+        // Update cursor position
+        const newCursorPosition = start + variableText.length;
+        activeInput.setSelectionRange(newCursorPosition, newCursorPosition);
+        
+        // Update preview
         updatePreview();
-        saveContent();
-    } else {
-        // Insert at the end of HTML content if no focus
-        const htmlContent = document.getElementById('emailHtmlContent');
-        htmlContent.value += variableText;
-        htmlContent.focus();
-        updatePreview();
-        saveContent();
+        
+        // Focus back to input
+        activeInput.focus();
     }
-}
-
-function formatText(command) {
-    const textarea = document.getElementById('emailHtmlContent');
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = textarea.value.substring(start, end);
-    
-    if (!selectedText) {
-        alert('กรุณาเลือกข้อความที่ต้องการจัดรูปแบบ');
-        return;
-    }
-    
-    let formattedText = '';
-    switch (command) {
-        case 'bold':
-            formattedText = `<strong>${selectedText}</strong>`;
-            break;
-        case 'italic':
-            formattedText = `<em>${selectedText}</em>`;
-            break;
-        case 'underline':
-            formattedText = `<u>${selectedText}</u>`;
-            break;
-        default:
-            formattedText = selectedText;
-    }
-    
-    textarea.value = textarea.value.substring(0, start) + formattedText + textarea.value.substring(end);
-    textarea.selectionStart = start;
-    textarea.selectionEnd = start + formattedText.length;
-    textarea.focus();
-    
-    updatePreview();
-    saveContent();
-}
-
-function insertHeading() {
-    const textarea = document.getElementById('emailHtmlContent');
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = textarea.value.substring(start, end) || 'หัวข้อ';
-    
-    const headingText = `<h3 style="color: #1f2937; margin-bottom: 15px;">${selectedText}</h3>`;
-    
-    textarea.value = textarea.value.substring(0, start) + headingText + textarea.value.substring(end);
-    textarea.selectionStart = start;
-    textarea.selectionEnd = start + headingText.length;
-    textarea.focus();
-    
-    updatePreview();
-    saveContent();
-}
-
-function insertList() {
-    const textarea = document.getElementById('emailHtmlContent');
-    const start = textarea.selectionStart;
-    
-    const listText = `<ul style="margin-bottom: 15px; padding-left: 20px;">
-    <li>รายการที่ 1</li>
-    <li>รายการที่ 2</li>
-    <li>รายการที่ 3</li>
-</ul>`;
-    
-    textarea.value = textarea.value.substring(0, start) + listText + textarea.value.substring(start);
-    textarea.selectionStart = textarea.selectionEnd = start + listText.length;
-    textarea.focus();
-    
-    updatePreview();
-    saveContent();
-}
-
-function insertTable() {
-    const textarea = document.getElementById('emailHtmlContent');
-    const start = textarea.selectionStart;
-    
-    const tableText = `<table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
-    <tr style="background: #f9fafb;">
-        <th style="padding: 10px; border: 1px solid #e5e7eb; text-align: left;">หัวข้อ 1</th>
-        <th style="padding: 10px; border: 1px solid #e5e7eb; text-align: left;">หัวข้อ 2</th>
-    </tr>
-    <tr>
-        <td style="padding: 10px; border: 1px solid #e5e7eb;">ข้อมูล 1</td>
-        <td style="padding: 10px; border: 1px solid #e5e7eb;">ข้อมูล 2</td>
-    </tr>
-</table>`;
-    
-    textarea.value = textarea.value.substring(0, start) + tableText + textarea.value.substring(start);
-    textarea.selectionStart = textarea.selectionEnd = start + tableText.length;
-    textarea.focus();
-    
-    updatePreview();
-    saveContent();
 }
 
 function updatePreview() {
-    // Load template data
-    const template = JSON.parse(sessionStorage.getItem('sql_alert_email_template') || '{}');
+    const subject = document.getElementById('emailSubject').value;
+    const htmlBody = document.getElementById('emailHtmlBody').value;
+    const textBody = document.getElementById('emailTextBody').value;
     
-    // Update preview header
-    document.getElementById('previewFrom').textContent = template.sender || 'ไม่ระบุ';
-    document.getElementById('previewSubject').textContent = document.getElementById('emailSubject').value || 'ไม่มีหัวข้อ';
-    
-    const priorityLabels = {
-        'low': '🟢 ต่ำ (Low)',
-        'normal': '🟡 ปกติ (Normal)',
-        'high': '🟠 สูง (High)',
-        'urgent': '🔴 เร่งด่วน (Urgent)'
-    };
-    document.getElementById('previewPriority').textContent = priorityLabels[template.priority] || '🟡 ปกติ (Normal)';
-    
-    // Update preview body
-    const htmlContent = document.getElementById('emailHtmlContent').value;
-    const processedContent = processVariablesForPreview(htmlContent);
-    document.getElementById('emailBodyPreview').innerHTML = processedContent;
-    
-    // Auto-generate text content if enabled
-    if (document.getElementById('autoGenerateText').checked) {
-        const textContent = htmlToText(htmlContent);
-        document.getElementById('emailTextContent').value = textContent;
-    }
-}
-
-function processVariablesForPreview(content) {
-    // Replace variables with sample values for preview
-    const sampleValues = {
+    // Mock data for preview
+    const mockData = {
         'record_count': '25',
-        'query_date': '2025-07-11',
+        'query_date': '2024-01-15',
         'query_time': '14:30:00',
-        'query_datetime': '2025-07-11 14:30:00',
-        'execution_time': '0.45s',
-        'data_size': '15.2 KB',
-        'export_filename': 'alert_data_20250711.xlsx',
-        'export_size': '15.2 KB',
-        'column_count': '7',
-        'database_name': 'company_db'
+        'query_datetime': '2024-01-15 14:30:00',
+        'execution_time': '0.25s',
+        'data_size': '1.2MB',
+        'total_columns': '8',
+        'database_name': 'example_db',
+        'database_type': 'MySQL',
+        'current_date': new Date().toISOString().split('T')[0],
+        'current_datetime': new Date().toISOString().replace('T', ' ').slice(0, 19),
+        'export_filename': 'report_2024-01-15.xlsx',
+        'export_size': '45KB'
     };
     
-    let processed = content;
+    let previewSubject = subject;
+    let previewBody = htmlBody || textBody;
     
-    // Replace variables with highlighted sample values
-    Object.entries(sampleValues).forEach(([key, value]) => {
-        const regex = new RegExp(`{{${key}}}`, 'g');
-        processed = processed.replace(regex, `<span class="variable-highlight-preview">${value}</span>`);
+    // Replace variables with mock data
+    Object.keys(mockData).forEach(key => {
+        const regex = new RegExp(`&#123;&#123;${key}&#125;&#125;`, 'g');
+        previewSubject = previewSubject.replace(regex, mockData[key]);
+        previewBody = previewBody.replace(regex, mockData[key]);
     });
     
-    // Handle any remaining variables
-    processed = processed.replace(/{{([^}]+)}}/g, '<span class="variable-highlight-preview">$1</span>');
+    // Highlight remaining variables
+    previewBody = previewBody.replace(/&#123;&#123;([^}]+)&#125;&#125;/g, '<span class="variable-highlight-preview">$1</span>');
     
-    return processed;
+    // Update preview
+    document.getElementById('previewSubject').textContent = previewSubject || 'ไม่ได้กำหนดหัวข้อ';
+    document.getElementById('previewBody').innerHTML = previewBody || 'ไม่ได้กำหนดเนื้อหา';
+    
+    // Save data
+    saveData();
 }
 
-function htmlToText(html) {
-    // Simple HTML to text conversion
-    let text = html;
-    
-    // Convert common HTML tags to text equivalents
-    text = text.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n$1\n');
-    text = text.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n');
-    text = text.replace(/<br\s*\/?>/gi, '\n');
-    text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n');
-    text = text.replace(/<ul[^>]*>(.*?)<\/ul>/gi, '$1\n');
-    text = text.replace(/<ol[^>]*>(.*?)<\/ol>/gi, '$1\n');
-    text = text.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '*$1*');
-    text = text.replace(/<em[^>]*>(.*?)<\/em>/gi, '_$1_');
-    text = text.replace(/<u[^>]*>(.*?)<\/u>/gi, '$1');
-    
-    // Remove remaining HTML tags
-    text = text.replace(/<[^>]*>/g, '');
-    
-    // Clean up whitespace
-    text = text.replace(/\n\s*\n\s*\n/g, '\n\n');
-    text = text.trim();
-    
-    return text;
-}
-
-function toggleAdvanced() {
-    const content = document.getElementById('advancedContent');
-    const icon = document.getElementById('advancedIcon');
-    
-    if (content.classList.contains('show')) {
-        content.classList.remove('show');
-        icon.classList.remove('fa-chevron-up');
-        icon.classList.add('fa-chevron-down');
-    } else {
-        content.classList.add('show');
-        icon.classList.remove('fa-chevron-down');
-        icon.classList.add('fa-chevron-up');
+function loadTemplateData() {
+    const templateData = sessionStorage.getItem('sql_alert_email_template');
+    if (templateData) {
+        try {
+            const data = JSON.parse(templateData);
+            
+            if (data.selectedTemplate && data.selectedTemplate !== 'custom') {
+                // Load predefined template
+                loadPredefinedTemplate(data.selectedTemplate);
+            } else if (data.customTemplateData) {
+                // Load custom template
+                document.getElementById('emailSubject').value = data.customTemplateData.subject || '';
+                document.getElementById('emailHtmlBody').value = data.customTemplateData.htmlBody || '';
+                document.getElementById('emailTextBody').value = data.customTemplateData.textBody || '';
+            }
+        } catch (error) {
+            console.error('Error loading template data:', error);
+        }
     }
 }
 
-function sendTestEmail() {
-    const testEmail = document.getElementById('testEmail').value.trim();
-    
-    if (!testEmail) {
-        alert('กรุณาระบุอีเมลสำหรับทดสอบ');
-        return;
-    }
-    
-    if (!isValidEmail(testEmail)) {
-        alert('รูปแบบอีเมลไม่ถูกต้อง');
-        return;
-    }
-    
-    const subject = document.getElementById('emailSubject').value;
-    const htmlContent = document.getElementById('emailHtmlContent').value;
-    
-    if (!subject || !htmlContent) {
-        alert('กรุณากรอกหัวข้อและเนื้อหาอีเมลก่อนทดสอบ');
-        return;
-    }
-    
-    // Simulate sending test email
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังส่ง...';
-    btn.disabled = true;
-    
-    setTimeout(() => {
-        btn.innerHTML = '<i class="fas fa-check"></i> ส่งแล้ว';
-        setTimeout(() => {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }, 2000);
-        
-        alert(`ส่งอีเมลทดสอบไปยัง ${testEmail} เรียบร้อยแล้ว`);
-    }, 2000);
-}
-
-function isValidEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-}
-
-function saveContent() {
-    const content = {
-        subject: document.getElementById('emailSubject').value,
-        htmlContent: document.getElementById('emailHtmlContent').value,
-        textContent: document.getElementById('emailTextContent').value,
-        replyTo: document.getElementById('replyTo').value,
-        format: document.getElementById('emailFormat').value,
-        trackOpen: document.getElementById('trackOpen').checked,
-        trackClick: document.getElementById('trackClick').checked,
-        autoGenerateText: document.getElementById('autoGenerateText').checked,
-        includeUnsubscribe: document.getElementById('includeUnsubscribe').checked
+function loadPredefinedTemplate(templateType) {
+    const templates = {
+        alert: {
+            subject: '🚨 แจ้งเตือนระบบ - &#123;&#123;query_date&#125;&#125;',
+            htmlBody: '<h2>🚨 แจ้งเตือนระบบ</h2><p>ระบบพบการแจ้งเตือนจำนวน <strong>&#123;&#123;record_count&#125;&#125;</strong> รายการ</p><p>วันที่: &#123;&#123;query_date&#125;&#125;</p><p>เวลา: &#123;&#123;query_time&#125;&#125;</p>',
+            textBody: 'แจ้งเตือนระบบ\\n\\nระบบพบการแจ้งเตือนจำนวน &#123;&#123;record_count&#125;&#125; รายการ\\nวันที่: &#123;&#123;query_date&#125;&#125;\\nเวลา: &#123;&#123;query_time&#125;&#125;'
+        },
+        report: {
+            subject: '📊 รายงานข้อมูล - &#123;&#123;query_date&#125;&#125;',
+            htmlBody: '<h2>📊 รายงานข้อมูล</h2><p>รายงานประจำวันที่ <strong>&#123;&#123;query_date&#125;&#125;</strong></p><p>พบข้อมูลทั้งหมด: &#123;&#123;record_count&#125;&#125; รายการ</p><p>เวลาการประมวลผล: &#123;&#123;execution_time&#125;&#125;</p>',
+            textBody: 'รายงานข้อมูล\\n\\nรายงานประจำวันที่ &#123;&#123;query_date&#125;&#125;\\nพบข้อมูลทั้งหมด: &#123;&#123;record_count&#125;&#125; รายการ\\nเวลาการประมวลผล: &#123;&#123;execution_time&#125;&#125;'
+        },
+        summary: {
+            subject: '📋 สรุปรายวัน - &#123;&#123;query_date&#125;&#125;',
+            htmlBody: '<h2>📋 สรุปรายวัน</h2><p>สรุปประจำวันที่ &#123;&#123;query_date&#125;&#125;</p><p>ข้อมูลใหม่: &#123;&#123;record_count&#125;&#125; รายการ</p>',
+            textBody: 'สรุปรายวัน\\n\\nสรุปประจำวันที่ &#123;&#123;query_date&#125;&#125;\\nข้อมูลใหม่: &#123;&#123;record_count&#125;&#125; รายการ'
+        },
+        simple: {
+            subject: 'การแจ้งเตือน - &#123;&#123;query_date&#125;&#125;',
+            htmlBody: '<p>การแจ้งเตือน</p><p>ข้อมูลจำนวน: &#123;&#123;record_count&#125;&#125; รายการ</p><p>วันที่: &#123;&#123;query_date&#125;&#125;</p>',
+            textBody: 'การแจ้งเตือน\\n\\nข้อมูลจำนวน: &#123;&#123;record_count&#125;&#125; รายการ\\nวันที่: &#123;&#123;query_date&#125;&#125;'
+        }
     };
     
-    sessionStorage.setItem('sql_alert_email_content', JSON.stringify(content));
+    if (templates[templateType]) {
+        const template = templates[templateType];
+        document.getElementById('emailSubject').value = template.subject;
+        document.getElementById('emailHtmlBody').value = template.htmlBody;
+        document.getElementById('emailTextBody').value = template.textBody;
+    }
 }
 
-function validateContent() {
-    const subject = document.getElementById('emailSubject').value.trim();
-    const htmlContent = document.getElementById('emailHtmlContent').value.trim();
-    const textContent = document.getElementById('emailTextContent').value.trim();
-    const format = document.getElementById('emailFormat').value;
+function saveData() {
+    const data = {
+        subject: document.getElementById('emailSubject').value,
+        htmlBody: document.getElementById('emailHtmlBody').value,
+        textBody: document.getElementById('emailTextBody').value,
+        lastUpdated: new Date().toISOString()
+    };
     
-    if (!subject) {
-        alert('กรุณากรอกหัวข้ออีเมล');
-        return false;
-    }
-    
-    if (format === 'html' || format === 'both') {
-        if (!htmlContent) {
-            alert('กรุณากรอกเนื้อหาอีเมลแบบ HTML');
-            return false;
+    sessionStorage.setItem('sql_alert_email_content', JSON.stringify(data));
+    console.log('Email content saved:', data);
+}
+
+function loadSavedData() {
+    const savedData = sessionStorage.getItem('sql_alert_email_content');
+    if (savedData) {
+        try {
+            const data = JSON.parse(savedData);
+            document.getElementById('emailSubject').value = data.subject || '';
+            document.getElementById('emailHtmlBody').value = data.htmlBody || '';
+            document.getElementById('emailTextBody').value = data.textBody || '';
+        } catch (error) {
+            console.error('Error loading saved data:', error);
         }
     }
-    
-    if (format === 'text' || format === 'both') {
-        if (!textContent) {
-            alert('กรุณากรอกเนื้อหาอีเมลแบบข้อความธรรมดา');
-            return false;
-        }
-    }
-    
-    return true;
 }
 
 function previousStep() {
-    saveContent();
-    window.location.href = '{{ route("sql-alerts.create") }}?step=9';
+    if (window.SqlAlertWizard) {
+        window.SqlAlertWizard.previousStep();
+    } else {
+        window.location.href = '/admin/sql-alerts/create?step=9';
+    }
 }
 
 function nextStep() {
-    if (!validateContent()) {
+    const subject = document.getElementById('emailSubject').value;
+    const htmlBody = document.getElementById('emailHtmlBody').value;
+    const textBody = document.getElementById('emailTextBody').value;
+    
+    if (!subject.trim()) {
+        alert('กรุณากรอกหัวข้อ email');
         return;
     }
     
-    saveContent();
+    if (!htmlBody.trim() && !textBody.trim()) {
+        alert('กรุณากรอกเนื้อหา email อย่างน้อย 1 แบบ');
+        return;
+    }
+    
+    saveData();
     sessionStorage.setItem('sql_alert_step', '11');
-    window.location.href = '{{ route("sql-alerts.create") }}?step=11';
+    
+    if (window.SqlAlertWizard) {
+        window.SqlAlertWizard.nextStep();
+    } else {
+        window.location.href = '/admin/sql-alerts/create?step=11';
+    }
 }
 
-// Auto-save on input change
-document.addEventListener('input', function(e) {
-    if (e.target.matches('#emailSubject, #emailHtmlContent, #emailTextContent, #replyTo')) {
-        updatePreview();
-        saveContent();
-    }
-});
+// Export functions
+window.initializeStep10 = initializeStep10;
+window.initializeCurrentStep = initializeStep10;
+window.insertVariable = insertVariable;
+window.switchTab = switchTab;
+window.previousStep = previousStep;
+window.nextStep = nextStep;
 
-document.addEventListener('change', function(e) {
-    if (e.target.matches('#emailFormat, input[type="checkbox"]')) {
-        updatePreview();
-        saveContent();
-    }
-});
-
-// Handle auto-generate text toggle
-document.getElementById('autoGenerateText').addEventListener('change', function() {
-    if (this.checked) {
-        const htmlContent = document.getElementById('emailHtmlContent').value;
-        if (htmlContent) {
-            const textContent = htmlToText(htmlContent);
-            document.getElementById('emailTextContent').value = textContent;
-        }
-    }
-    saveContent();
-});
-
-// Handle textarea resize
-document.getElementById('emailHtmlContent').addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = Math.max(300, this.scrollHeight) + 'px';
-});
+console.log('Step 10 script loaded');
 </script>
-@endpush
-@endsection

@@ -906,21 +906,35 @@ function selectScheduleType(type, updatePreview = true) {
 }
 
 function updateCurrentTime() {
-    const timezone = document.getElementById('timezone').value;
-    const now = new Date();
+    const currentTimeElement = document.getElementById('currentTime');
+    if (!currentTimeElement) {
+        // Element not found, clear the interval
+        if (window.currentTimeInterval) {
+            clearInterval(window.currentTimeInterval);
+            window.currentTimeInterval = null;
+            console.log('Cleared currentTimeInterval - element not found');
+        }
+        return;
+    }
     
-    // Format time for the selected timezone
-    const timeString = now.toLocaleString('th-TH', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-    
-    document.getElementById('currentTime').value = timeString;
+    try {
+        const now = new Date();
+        const timeString = now.toLocaleString('th-TH', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        currentTimeElement.value = timeString;
+    } catch (error) {
+        console.error('Error updating current time:', error);
+        if (window.currentTimeInterval) {
+            clearInterval(window.currentTimeInterval);
+            window.currentTimeInterval = null;
+        }
+    }
 }
 
 function setMinDateToToday() {

@@ -773,6 +773,7 @@
 </div>
 
 @push('scripts')
+@verbatim
 <script>
 let allVariables = [];
 let usedVariables = [];
@@ -780,38 +781,26 @@ let emailContent = '';
 
 document.addEventListener('DOMContentLoaded', function() {
     loadVariables();
-    loadEmailContent();
     analyzeUsedVariables();
     updateOverview();
-    generateVariableMapping();
     refreshPreview();
-    loadSavedSettings();
 });
 
 function loadVariables() {
-    // Load all available variables
-    const computedVars = JSON.parse(sessionStorage.getItem('sql_alert_computed_variables') || '[]');
-    const customVars = JSON.parse(sessionStorage.getItem('sql_alert_variables') || '[]');
-    
-    allVariables = [
-        ...computedVars.map(v => ({ 
-            name: v.name, 
-            description: v.description, 
-            type: 'system',
-            value: v.value || generateSampleValue(v.name),
-            format: getDefaultFormat(v.name)
-        })),
-        ...customVars.map(v => ({ 
-            name: v.name, 
-            description: v.description, 
-            type: 'custom',
-            value: generateSampleValue(v.name),
-            format: getDefaultFormat(v.name)
-        }))
+    // Load variables from session
+    const systemVariables = [
+        { name: 'record_count', description: 'จำนวนแถวข้อมูล', value: '25', type: 'system' },
+        { name: 'current_date', description: 'วันที่ปัจจุบัน', value: '2025-07-11', type: 'system' },
+        { name: 'current_datetime', description: 'วันที่และเวลาปัจจุบัน', value: '2025-07-11 14:30:00', type: 'system' },
+        { name: 'current_time', description: 'เวลาปัจจุบัน', value: '14:30:00', type: 'system' },
+        { name: 'database_name', description: 'ชื่อฐานข้อมูล', value: 'company_db', type: 'system' },
+        { name: 'query_execution_time', description: 'เวลาในการรัน Query', value: '0.25s', type: 'system' }
     ];
-}
-
-function loadEmailContent() {
+    
+    const customVariables = JSON.parse(sessionStorage.getItem('sql_alert_variables') || '[]');
+    
+    allVariables = [...systemVariables, ...customVariables];
+    
     // Load email content to analyze used variables
     const content = JSON.parse(sessionStorage.getItem('sql_alert_email_content') || '{}');
     emailContent = (content.subject || '') + ' ' + (content.htmlContent || '') + ' ' + (content.textContent || '');
@@ -829,370 +818,131 @@ function updateOverview() {
     document.getElementById('totalVariables').textContent = allVariables.length;
     document.getElementById('usedVariables').textContent = usedVariables.length;
     document.getElementById('systemVariables').textContent = allVariables.filter(v => v.type === 'system').length;
-    document.getElementById('customVariables').textContent = allVariables.filter(v => v.type === 'custom').length;
-    
-    // Update used variables list
-    const usedList = document.getElementById('usedVariablesList');
-    usedList.innerHTML = '';
-    
-    usedVariables.forEach(varName => {
-        const tag = document.createElement('div');
-        tag.className = 'variable-tag';
-        tag.textContent = `{{${varName}}}`;
-        usedList.appendChild(tag);
-    });
-    
-    if (usedVariables.length === 0) {
-        usedList.innerHTML = '<span style="color: #6b7280; font-style: italic;">ไม่มีตัวแปรที่ใช้ในอีเมล</span>';
-    }
-}
-
-function generateVariableMapping() {
-    const mappingContainer = document.getElementById('variableMapping');
-    mappingContainer.innerHTML = '';
-    
-    // Filter to show only used variables and some important system variables
-    const importantSystemVars = ['record_count', 'query_date', 'export_filename'];
-    const variablesToShow = allVariables.filter(v => 
-        usedVariables.includes(v.name) || 
-        (v.type === 'system' && importantSystemVars.includes(v.name))
-    );
-    
-    if (variablesToShow.length === 0) {
-        mappingContainer.innerHTML = `
-            <div style="text-align: center; color: #6b7280; padding: 40px;">
-                <i class="fas fa-info-circle" style="font-size: 2rem; margin-bottom: 10px;"></i>
-                <p>ไม่มีตัวแปรที่ต้องกำหนดค่า</p>
-                <p style="font-size: 0.875rem;">ตัวแปรจะแสดงที่นี่เมื่อคุณใช้ในเนื้อหาอีเมล</p>
-            </div>
-        `;
-        return;
-    }
-    
-    variablesToShow.forEach(variable => {
-        const mappingItem = createMappingItem(variable);
-        mappingContainer.appendChild(mappingItem);
-    });
-}
-
-function createMappingItem(variable) {
-    const item = document.createElement('div');
-    item.className = 'mapping-item';
-    
-    const typeClass = variable.type === 'system' ? 'system' : 
-                     variable.type === 'custom' ? 'custom' : 'computed';
-    
-    item.innerHTML = `
-        <div class="mapping-row">
-            <div>
-                <div class="mapping-variable">{{${variable.name}}}</div>
-                <div class="mapping-description">${variable.description}</div>
-                <div class="mapping-type ${typeClass}">
-                    <i class="fas fa-${variable.type === 'system' ? 'cog' : variable.type === 'custom' ? 'user' : 'calculator'}"></i>
-                    ${variable.type === 'system' ? 'ระบบ' : variable.type === 'custom' ? 'กำหนดเอง' : 'คำนวณ'}
-                </div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">ค่าตัวอย่าง</label>
-                <input type="text" 
-                       class="form-control" 
-                       value="${variable.value}" 
-                       onchange="updateVariableValue('${variable.name}', this.value)"
-                       placeholder="ค่าตัวอย่าง">
-            </div>
-            <div class="form-group">
-                <label class="form-label">รูปแบบ</label>
-                <select class="form-control form-select" 
-                        onchange="updateVariableFormat('${variable.name}', this.value)">
-                    <option value="raw" ${variable.format === 'raw' ? 'selected' : ''}>ไม่จัดรูปแบบ</option>
-                    <option value="number" ${variable.format === 'number' ? 'selected' : ''}>ตัวเลข (1,234)</option>
-                    <option value="currency" ${variable.format === 'currency' ? 'selected' : ''}>เงิน (1,234 บาท)</option>
-                    <option value="percentage" ${variable.format === 'percentage' ? 'selected' : ''}>ร้อยละ (12.34%)</option>
-                    <option value="date" ${variable.format === 'date' ? 'selected' : ''}>วันที่ (11 ก.ค. 2568)</option>
-                    <option value="datetime" ${variable.format === 'datetime' ? 'selected' : ''}>วันที่เวลา (11 ก.ค. 2568 14:30)</option>
-                    <option value="filesize" ${variable.format === 'filesize' ? 'selected' : ''}>ขนาดไฟล์ (1.5 MB)</option>
-                </select>
-            </div>
-            <div>
-                <button type="button" class="btn btn-warning" onclick="testVariable('${variable.name}')" title="ทดสอบตัวแปร">
-                    <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-    `;
-    
-    return item;
-}
-
-function updateVariableValue(varName, value) {
-    const variable = allVariables.find(v => v.name === varName);
-    if (variable) {
-        variable.value = value;
-        saveSettings();
-        refreshPreview();
-    }
-}
-
-function updateVariableFormat(varName, format) {
-    const variable = allVariables.find(v => v.name === varName);
-    if (variable) {
-        variable.format = format;
-        saveSettings();
-        refreshPreview();
-    }
-}
-
-function testVariable(varName) {
-    const variable = allVariables.find(v => v.name === varName);
-    if (variable) {
-        const formattedValue = formatVariableValue(variable.value, variable.format);
-        alert(`ตัวแปร {{${varName}}}:\n\nค่าดิบ: ${variable.value}\nค่าที่จัดรูปแบบ: ${formattedValue}`);
-    }
-}
-
-function generateSampleValue(varName) {
-    // Generate appropriate sample values based on variable name
-    const sampleValues = {
-        'record_count': '25',
-        'query_date': '2025-07-11',
-        'query_time': '14:30:00',
-        'query_datetime': '2025-07-11 14:30:00',
-        'execution_time': '0.45',
-        'data_size': '15234',
-        'export_filename': 'alert_data_20250711.xlsx',
-        'export_size': '15234',
-        'column_count': '7',
-        'database_name': 'company_db',
-        'compression_ratio': '65'
-    };
-    
-    if (sampleValues[varName]) {
-        return sampleValues[varName];
-    }
-    
-    // Generate based on variable name patterns
-    if (varName.includes('count') || varName.includes('number')) {
-        return Math.floor(Math.random() * 1000).toString();
-    } else if (varName.includes('date')) {
-        return '2025-07-11';
-    } else if (varName.includes('time')) {
-        return '14:30:00';
-    } else if (varName.includes('size')) {
-        return '1024';
-    } else if (varName.includes('percentage') || varName.includes('ratio')) {
-        return '75';
-    } else {
-        return 'ตัวอย่าง';
-    }
-}
-
-function getDefaultFormat(varName) {
-    // Determine default format based on variable name
-    if (varName.includes('count') || varName.includes('number')) {
-        return 'number';
-    } else if (varName.includes('date') && varName.includes('time')) {
-        return 'datetime';
-    } else if (varName.includes('date')) {
-        return 'date';
-    } else if (varName.includes('time')) {
-        return 'raw';
-    } else if (varName.includes('size')) {
-        return 'filesize';
-    } else if (varName.includes('percentage') || varName.includes('ratio')) {
-        return 'percentage';
-    } else {
-        return 'raw';
-    }
-}
-
-function formatVariableValue(value, format) {
-    switch (format) {
-        case 'number':
-            return parseInt(value).toLocaleString('th-TH');
-        
-        case 'currency':
-            return parseInt(value).toLocaleString('th-TH') + ' บาท';
-        
-        case 'percentage':
-            return parseFloat(value).toFixed(1) + '%';
-        
-        case 'date':
-            const date = new Date(value);
-            return date.toLocaleDateString('th-TH', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-            });
-        
-        case 'datetime':
-            const datetime = new Date(value + (value.includes('T') ? '' : 'T00:00:00'));
-            return datetime.toLocaleDateString('th-TH', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        
-        case 'filesize':
-            const bytes = parseInt(value);
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            let i = 0;
-            let size = bytes;
-            while (size >= 1024 && i < sizes.length - 1) {
-                size /= 1024;
-                i++;
-            }
-            return size.toFixed(1) + ' ' + sizes[i];
-        
-        default:
-            return value;
-    }
+    document.getElementById('customVariables').textContent = allVariables.filter(v => v.type !== 'system').length;
 }
 
 function refreshPreview() {
-    const tableBody = document.getElementById('previewTableBody');
-    tableBody.innerHTML = '';
+    loadVariablesTable();
+    updatePreview();
+}
+
+function loadVariablesTable() {
+    const container = document.getElementById('variablesContainer');
     
-    // Show all variables with their formatted values
-    allVariables.forEach(variable => {
-        const row = document.createElement('tr');
-        const formattedValue = formatVariableValue(variable.value, variable.format);
-        const typeClass = variable.type === 'system' ? 'system' : 
-                         variable.type === 'custom' ? 'custom' : 'computed';
-        
-        row.innerHTML = `
-            <td>
-                <code>{{${variable.name}}}</code>
-                <div style="font-size: 0.75rem; color: #6b7280; margin-top: 2px;">
-                    ${variable.description}
-                </div>
-            </td>
-            <td>
-                <span class="variable-value">${variable.value}</span>
-            </td>
-            <td>
-                <strong>${formattedValue}</strong>
-            </td>
-            <td>
-                <span class="mapping-type ${typeClass}">
-                    <i class="fas fa-${variable.type === 'system' ? 'cog' : variable.type === 'custom' ? 'user' : 'calculator'}"></i>
-                    ${variable.type === 'system' ? 'ระบบ' : variable.type === 'custom' ? 'กำหนดเอง' : 'คำนวณ'}
-                </span>
-            </td>
-        `;
-        
-        tableBody.appendChild(row);
+    // Filter to show only used variables
+    const displayVariables = allVariables.filter(variable => 
+        usedVariables.includes(variable.name)
+    );
+    
+    if (displayVariables.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center">ไม่พบตัวแปรที่ใช้ในอีเมล</p>';
+        return;
+    }
+    
+    let html = '';
+    displayVariables.forEach((variable, index) => {
+        const isUsed = usedVariables.includes(variable.name);
+        html += generateVariableRow(variable, index, isUsed);
     });
+    
+    container.innerHTML = html;
     
     // Update validation
     updateValidation();
 }
 
-function updateValidation() {
-    const validationSection = document.getElementById('validationSection');
-    const validationList = document.getElementById('validationList');
-    const warnings = [];
+function generateVariableRow(variable, index, isUsed) {
+    const typeClass = variable.type === 'system' ? 'system' : 'custom';
+    const typeLabel = variable.type === 'system' ? 'ระบบ' : 'กำหนดเอง';
     
-    // Check for unused variables
-    const unusedImportant = allVariables.filter(v => 
-        v.type === 'system' && 
-        ['record_count', 'query_date'].includes(v.name) && 
-        !usedVariables.includes(v.name)
-    );
-    
-    if (unusedImportant.length > 0) {
-        warnings.push('ตัวแปรสำคัญที่ไม่ได้ใช้: ' + unusedImportant.map(v => `{{${v.name}}}`).join(', '));
-    }
-    
-    // Check for variables used but not defined
-    const undefinedVars = usedVariables.filter(varName => 
-        !allVariables.find(v => v.name === varName)
-    );
-    
-    if (undefinedVars.length > 0) {
-        warnings.push('ตัวแปรที่ใช้แต่ไม่ได้กำหนดค่า: ' + undefinedVars.map(v => `{{${v}}}`).join(', '));
-    }
-    
-    // Check formatting options
-    const formatSettings = getFormatSettings();
-    if (formatSettings.formatDates && !allVariables.some(v => v.format === 'date' || v.format === 'datetime')) {
-        warnings.push('เปิดใช้การจัดรูปแบบวันที่แต่ไม่มีตัวแปรวันที่');
-    }
-    
-    if (warnings.length > 0) {
-        validationSection.style.display = 'block';
-        validationList.innerHTML = warnings.map(warning => `<li>${warning}</li>`).join('');
-    } else {
-        validationSection.style.display = 'none';
+    return `
+        <div class="variable-row">
+            <div class="variable-info">
+                <div class="variable-header">
+                    <span class="variable-name">{{${variable.name}}}</span>
+                    <span class="variable-type ${typeClass}">${typeLabel}</span>
+                    ${isUsed ? '<span class="usage-indicator used"><i class="fas fa-check"></i> ใช้งาน</span>' : 
+                              '<span class="usage-indicator unused"><i class="fas fa-times"></i> ไม่ได้ใช้</span>'}
+                </div>
+                <div class="variable-description">${variable.description}</div>
+            </div>
+            <div class="variable-value">
+                <label class="form-label">ค่าตัวอย่าง</label>
+                <input type="text" class="form-control" 
+                       data-variable-name="${variable.name}"
+                       value="${variable.value || ''}" 
+                       onchange="updateVariableValue('${variable.name}', this.value)"
+                       placeholder="ใส่ค่าตัวอย่าง...">
+            </div>
+        </div>
+    `;
+}
+
+function updateVariableValue(name, value) {
+    const variable = allVariables.find(v => v.name === name);
+    if (variable) {
+        variable.value = value;
+        updatePreview();
     }
 }
 
-function getFormatSettings() {
-    return {
-        formatDates: document.getElementById('formatDates').checked,
-        formatTimes: document.getElementById('formatTimes').checked,
-        relativeDates: document.getElementById('relativeDates').checked,
-        formatNumbers: document.getElementById('formatNumbers').checked,
-        formatCurrency: document.getElementById('formatCurrency').checked,
-        formatPercentage: document.getElementById('formatPercentage').checked,
-        formatFileSize: document.getElementById('formatFileSize').checked,
-        showFileIcon: document.getElementById('showFileIcon').checked,
-        linkToFile: document.getElementById('linkToFile').checked,
-        highlightImportant: document.getElementById('highlightImportant').checked,
-        colorCode: document.getElementById('colorCode').checked,
-        showTooltips: document.getElementById('showTooltips').checked
-    };
+function updatePreview() {
+    const content = JSON.parse(sessionStorage.getItem('sql_alert_email_content') || '{}');
+    let preview = content.htmlContent || content.textContent || '';
+    
+    // Replace variables with their values
+    allVariables.forEach(variable => {
+        if (variable.value) {
+            const regex = new RegExp(`\\{\\{\\s*${variable.name}\\s*\\}\\}`, 'g');
+            preview = preview.replace(regex, `<span class="variable-highlight-preview">${variable.value}</span>`);
+        }
+    });
+    
+    // Highlight unreplaced variables
+    preview = preview.replace(/\{\{([^}]+)\}\}/g, '<span class="variable-highlight-preview">$1</span>');
+    
+    document.getElementById('previewContent').innerHTML = preview;
+}
+
+function updateValidation() {
+    // Validate that all used variables have values
+    const missingValues = usedVariables.filter(varName => {
+        const variable = allVariables.find(v => v.name === varName);
+        return !variable || !variable.value;
+    });
+    
+    const validationElement = document.getElementById('validationStatus');
+    
+    if (missingValues.length === 0) {
+        validationElement.innerHTML = `
+            <div class="validation-success">
+                <i class="fas fa-check-circle me-2"></i>
+                ตัวแปรทั้งหมดพร้อมใช้งาน
+                </div>
+        `;
+    } else {
+        validationElement.innerHTML = `
+            <div class="validation-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                ตัวแปรต่อไปนี้ยังไม่ได้กำหนดค่า: ${missingValues.map(v => `{{${v}}}`).join(', ')}
+            </div>
+        `;
+    }
 }
 
 function saveSettings() {
     const settings = {
         variables: allVariables,
-        formatSettings: getFormatSettings()
+        usedVariables: usedVariables,
+        timestamp: new Date().toISOString()
     };
     
-    sessionStorage.setItem('sql_alert_email_variables', JSON.stringify(settings));
-}
-
-function loadSavedSettings() {
-    const saved = sessionStorage.getItem('sql_alert_email_variables');
-    if (saved) {
-        try {
-            const settings = JSON.parse(saved);
-            
-            // Update variables with saved values and formats
-            if (settings.variables) {
-                settings.variables.forEach(savedVar => {
-                    const variable = allVariables.find(v => v.name === savedVar.name);
-                    if (variable) {
-                        variable.value = savedVar.value;
-                        variable.format = savedVar.format;
-                    }
-                });
-            }
-            
-            // Update format checkboxes
-            if (settings.formatSettings) {
-                Object.entries(settings.formatSettings).forEach(([key, value]) => {
-                    const checkbox = document.getElementById(key);
-                    if (checkbox) {
-                        checkbox.checked = value;
-                    }
-                });
-            }
-            
-            // Regenerate mapping with updated values
-            generateVariableMapping();
-            refreshPreview();
-            
-        } catch (e) {
-            console.error('Error loading saved email variables:', e);
-        }
-    }
+    sessionStorage.setItem('sql_alert_variable_settings', JSON.stringify(settings));
 }
 
 function previousStep() {
     saveSettings();
+    sessionStorage.setItem('sql_alert_step', '10');
     window.location.href = '{{ route("sql-alerts.create") }}?step=10';
 }
 
@@ -1228,5 +978,6 @@ document.addEventListener('input', function(e) {
     }
 });
 </script>
+@endverbatim
 @endpush
 @endsection

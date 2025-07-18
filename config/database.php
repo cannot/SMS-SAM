@@ -112,6 +112,21 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        'oracle' => [
+            'driver' => 'oracle',
+            'tns' => env('DB_TNS', ''),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '1521'),
+            'database' => env('DB_DATABASE', 'APP'),  // **แก้ไข: ลองเปลี่ยนเป็น ORCL**
+            'username' => env('DB_USERNAME', 'system'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => 'AL32UTF8',
+            'prefix' => '',
+            'prefix_schema' => '',
+            'edition' => '',
+            'server_version' => '11g',
+        ],
+
     ],
 
     /*

@@ -1,8 +1,3 @@
-@extends('layouts.app')
-
-@section('title', 'สร้างการแจ้งเตือนแบบ SQL - ตัวเลือกการส่งออกข้อมูล')
-
-@push('styles')
 <style>
 .wizard-container {
     background: white;
@@ -107,90 +102,102 @@
 
 .export-toggle:hover {
     border-color: #4f46e5;
-    background: #f0f9ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
 .export-toggle.active {
-    border-color: #10b981;
-    background: #f0fdf4;
+    border-color: #4f46e5;
+    background: #f0f9ff;
 }
 
-.toggle-content {
+.toggle-header {
     display: flex;
     align-items: center;
     gap: 15px;
+    margin-bottom: 15px;
 }
 
 .toggle-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 10px;
+    width: 40px;
+    height: 40px;
+    background: #4f46e5;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
-    transition: all 0.3s ease;
-}
-
-.export-toggle:not(.active) .toggle-icon {
-    background: #e5e7eb;
-    color: #6b7280;
-}
-
-.export-toggle.active .toggle-icon {
-    background: #10b981;
     color: white;
+    font-size: 1.2rem;
 }
 
 .toggle-info {
     flex: 1;
 }
 
-.toggle-label {
+.toggle-title {
+    font-size: 1.1rem;
     font-weight: 600;
-    margin-bottom: 5px;
     color: #374151;
+    margin-bottom: 5px;
 }
 
 .toggle-description {
-    font-size: 0.875rem;
     color: #6b7280;
+    font-size: 0.9rem;
+    line-height: 1.4;
 }
 
-.export-toggle.active .toggle-description {
-    color: #059669;
+.toggle-switch {
+    width: 60px;
+    height: 30px;
+    background: #e5e7eb;
+    border-radius: 15px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.toggle-switch.active {
+    background: #4f46e5;
+}
+
+.toggle-switch::before {
+    content: '';
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all 0.3s ease;
+}
+
+.toggle-switch.active::before {
+    transform: translateX(30px);
 }
 
 .export-settings {
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 10px;
+    display: none;
+    background: #f9fafb;
+    border-radius: 8px;
     padding: 20px;
     margin-top: 15px;
-    display: none;
-    animation: slideDown 0.3s ease;
 }
 
 .export-settings.show {
     display: block;
+    animation: fadeIn 0.3s ease;
 }
 
-@keyframes slideDown {
+@keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(-10px);
+        transform: translateY(10px);
     }
     to {
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-bottom: 20px;
 }
 
 .form-group {
@@ -202,7 +209,7 @@
     color: #374151;
     margin-bottom: 8px;
     display: block;
-    font-size: 0.875rem;
+    font-size: 0.9rem;
 }
 
 .form-control {
@@ -228,145 +235,29 @@
     padding-right: 40px;
 }
 
-.form-text {
-    font-size: 0.75rem;
-    color: #6b7280;
-    margin-top: 4px;
-}
-
-.filename-preview {
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 10px 12px;
-    font-family: 'Courier New', monospace;
-    font-size: 0.875rem;
-    color: #374151;
-    margin-top: 8px;
-}
-
-.format-options {
+.form-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: 1fr 1fr;
     gap: 15px;
-    margin-bottom: 20px;
 }
 
-.format-card {
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 15px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-align: center;
-}
-
-.format-card:hover {
-    border-color: #4f46e5;
-    background: #f0f9ff;
-}
-
-.format-card.selected {
-    border-color: #10b981;
-    background: #f0fdf4;
-}
-
-.format-icon {
-    width: 40px;
-    height: 40px;
-    margin: 0 auto 10px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    transition: all 0.3s ease;
-}
-
-.format-card:not(.selected) .format-icon {
-    background: #e5e7eb;
+.form-text {
+    font-size: 0.8rem;
     color: #6b7280;
-}
-
-.format-card.selected .format-icon {
-    background: #10b981;
-    color: white;
-}
-
-.format-name {
-    font-weight: 600;
-    margin-bottom: 5px;
-    color: #374151;
-}
-
-.format-card.selected .format-name {
-    color: #059669;
-}
-
-.format-description {
-    font-size: 0.75rem;
-    color: #6b7280;
-}
-
-.format-card.selected .format-description {
-    color: #047857;
-}
-
-.advanced-options {
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 30px;
-}
-
-.advanced-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-    cursor: pointer;
-}
-
-.advanced-title {
-    font-weight: 600;
-    color: #374151;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.advanced-content {
-    display: none;
-    margin-top: 15px;
-}
-
-.advanced-content.show {
-    display: block;
-    animation: slideDown 0.3s ease;
+    margin-top: 5px;
 }
 
 .checkbox-group {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 15px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
 }
 
 .checkbox-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px;
-    background: #f9fafb;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.checkbox-item:hover {
-    background: #f3f4f6;
+    gap: 8px;
 }
 
 .checkbox-item input[type="checkbox"] {
@@ -376,7 +267,7 @@
 }
 
 .checkbox-label {
-    font-size: 0.875rem;
+    font-size: 0.9rem;
     color: #374151;
     cursor: pointer;
 }
@@ -385,17 +276,17 @@
     background: white;
     border: 2px solid #e5e7eb;
     border-radius: 12px;
-    padding: 20px;
+    padding: 25px;
     margin-bottom: 30px;
 }
 
 .preview-header {
-    font-weight: 600;
-    margin-bottom: 15px;
-    color: #374151;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-weight: 600;
+    color: #374151;
 }
 
 .preview-stats {
@@ -406,7 +297,7 @@
 }
 
 .stat-card {
-    background: #f9fafb;
+    background: #f8f9fa;
     border-radius: 8px;
     padding: 15px;
     text-align: center;
@@ -415,37 +306,26 @@
 .stat-value {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #374151;
+    color: #4f46e5;
+    margin-bottom: 5px;
 }
 
 .stat-label {
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     color: #6b7280;
-    margin-top: 4px;
 }
 
-.file-preview {
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
+.preview-sample {
+    background: #f8f9fa;
     border-radius: 8px;
-    padding: 15px;
+    padding: 20px;
     font-family: 'Courier New', monospace;
-    font-size: 0.875rem;
-}
-
-.file-header {
-    font-weight: 600;
-    color: #059669;
-    margin-bottom: 10px;
-}
-
-.file-content {
-    color: #374151;
-    line-height: 1.4;
+    font-size: 0.85rem;
+    overflow-x: auto;
 }
 
 .btn {
-    padding: 10px 20px;
+    padding: 12px 20px;
     border-radius: 8px;
     font-weight: 500;
     text-decoration: none;
@@ -463,8 +343,8 @@
 }
 
 .btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
 }
 
 .btn-secondary {
@@ -485,9 +365,9 @@
     background: #059669;
 }
 
-.btn-sm {
-    padding: 8px 16px;
-    font-size: 0.875rem;
+.btn-lg {
+    padding: 16px 24px;
+    font-size: 1.1rem;
 }
 
 .wizard-navigation {
@@ -520,10 +400,6 @@
         grid-template-columns: 1fr;
     }
     
-    .format-options {
-        grid-template-columns: 1fr;
-    }
-    
     .preview-stats {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -538,33 +414,13 @@
     }
 }
 </style>
-@endpush
-
-@section('content')
-<div class="container">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0">
-                <i class="fas fa-database text-primary me-2"></i>
-                สร้างการแจ้งเตือนแบบ SQL
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">หน้าหลัก</a></li>
-                    <li class="breadcrumb-item"><a href="{{ route('notifications.index') }}">การแจ้งเตือน</a></li>
-                    <li class="breadcrumb-item active">สร้างการแจ้งเตือนแบบ SQL</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
 
     <!-- Wizard Container -->
     <div class="wizard-container">
         <!-- Wizard Header -->
         <div class="wizard-header">
-            <div class="wizard-title">📁 ตัวเลือกการส่งออกข้อมูล</div>
-            <div class="wizard-subtitle">กำหนดรูปแบบไฟล์และตัวเลือกการส่งออกสำหรับแนบกับอีเมล</div>
+        <div class="wizard-title">📊 ตัวเลือกการส่งออกข้อมูล</div>
+        <div class="wizard-subtitle">กำหนดรูปแบบการส่งออกข้อมูลและไฟล์แนบ</div>
             
             <!-- Step Indicator -->
             <div class="step-indicator">
@@ -593,164 +449,68 @@
                 ตัวเลือกการส่งออกข้อมูล
             </div>
 
-            <!-- Export Enable/Disable -->
+        <!-- Export Options -->
             <div class="export-options">
                 <div class="export-header">
-                    <div class="export-title">
-                        <i class="fas fa-file-export"></i>
-                        เปิดใช้งานการส่งออกข้อมูล
-                    </div>
+                <i class="fas fa-download"></i>
+                <div class="export-title">ตัวเลือกการส่งออกข้อมูล</div>
                 </div>
 
-                <div class="export-toggle active" id="exportToggle" onclick="toggleExport()">
-                    <div class="toggle-content">
+            <!-- Excel Export -->
+            <div class="export-toggle" id="excelToggle" onclick="toggleExport('excel')">
+                <div class="toggle-header">
                         <div class="toggle-icon">
                             <i class="fas fa-file-excel"></i>
                         </div>
                         <div class="toggle-info">
-                            <div class="toggle-label">บันทึกข้อมูลเป็นไฟล์เพื่อแนบกับอีเมล</div>
-                            <div class="toggle-description">สร้างไฟล์จากผลลัพธ์ SQL Query เพื่อส่งพร้อมกับการแจ้งเตือนทางอีเมล</div>
+                        <div class="toggle-title">Excel (XLSX)</div>
+                        <div class="toggle-description">ส่งออกข้อมูลเป็นไฟล์ Excel พร้อมการจัดรูปแบบ</div>
                         </div>
-                        <div style="margin-left: auto;">
-                            <input type="checkbox" id="exportEnabled" checked style="width: 20px; height: 20px;">
-                        </div>
-                    </div>
+                    <div class="toggle-switch" id="excelSwitch"></div>
                 </div>
 
-                <!-- Export Settings -->
-                <div class="export-settings show" id="exportSettings">
-                    <!-- File Format Selection -->
+                <div class="export-settings" id="excelSettings">
                     <div class="form-group">
-                        <label class="form-label">รูปแบบไฟล์</label>
-                        <div class="format-options">
-                            <div class="format-card selected" data-format="xlsx" onclick="selectFormat('xlsx')">
-                                <div class="format-icon">
-                                    <i class="fas fa-file-excel"></i>
-                                </div>
-                                <div class="format-name">Excel (.xlsx)</div>
-                                <div class="format-description">รองรับสูตร, การจัดรูปแบบ</div>
+                        <label class="form-label">ชื่อไฟล์</label>
+                        <input type="text" class="form-control" id="excelFilename" value="sql_alert_data" placeholder="ชื่อไฟล์">
                             </div>
-
-                            <div class="format-card" data-format="csv" onclick="selectFormat('csv')">
-                                <div class="format-icon">
-                                    <i class="fas fa-file-csv"></i>
-                                </div>
-                                <div class="format-name">CSV (.csv)</div>
-                                <div class="format-description">ไฟล์ข้อความคั่นด้วยจุลภาค</div>
-                            </div>
-
-                            <div class="format-card" data-format="pdf" onclick="selectFormat('pdf')">
-                                <div class="format-icon">
-                                    <i class="fas fa-file-pdf"></i>
-                                </div>
-                                <div class="format-name">PDF (.pdf)</div>
-                                <div class="format-description">เอกสารแบบพกพา</div>
-                            </div>
-
-                            <div class="format-card" data-format="json" onclick="selectFormat('json')">
-                                <div class="format-icon">
-                                    <i class="fas fa-file-code"></i>
-                                </div>
-                                <div class="format-name">JSON (.json)</div>
-                                <div class="format-description">รูปแบบข้อมูลโครงสร้าง</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- File Settings -->
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label" for="filename">ชื่อไฟล์</label>
-                            <input type="text" 
-                                   class="form-control" 
-                                   id="filename" 
-                                   value="alert_data_{date}" 
-                                   placeholder="ชื่อไฟล์"
-                                   onchange="updateFilenamePreview()">
-                            <div class="form-text">
-                                ใช้ {date} สำหรับวันที่, {time} สำหรับเวลา, {timestamp} สำหรับ timestamp
-                            </div>
-                            <div class="filename-preview" id="filenamePreview">
-                                alert_data_2025-07-11.xlsx
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label" for="encoding">การเข้ารหัสอักขระ</label>
-                            <select class="form-control form-select" id="encoding">
-                                <option value="utf8" selected>UTF-8 (แนะนำ)</option>
-                                <option value="tis620">TIS-620 (ภาษาไทย)</option>
-                                <option value="windows1252">Windows-1252</option>
-                                <option value="iso88591">ISO-8859-1</option>
-                            </select>
-                        </div>
-                    </div>
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label" for="maxRows">จำกัดจำนวนแถว</label>
-                            <select class="form-control form-select" id="maxRows">
+                            <label class="form-label">ชื่อ Worksheet</label>
+                            <input type="text" class="form-control" id="excelWorksheet" value="Data" placeholder="ชื่อ Worksheet">
+                                </div>
+                        <div class="form-group">
+                            <label class="form-label">จำกัดแถว</label>
+                            <select class="form-control form-select" id="excelLimit">
                                 <option value="0">ไม่จำกัด</option>
                                 <option value="100">100 แถว</option>
                                 <option value="500">500 แถว</option>
                                 <option value="1000" selected>1,000 แถว</option>
                                 <option value="5000">5,000 แถว</option>
-                                <option value="10000">10,000 แถว</option>
                             </select>
                         </div>
+                            </div>
 
-                        <div class="form-group">
-                            <label class="form-label" for="compression">การบีบอัด</label>
-                            <select class="form-control form-select" id="compression">
-                                <option value="none">ไม่บีบอัด</option>
-                                <option value="zip" selected>ZIP (.zip)</option>
-                                <option value="gzip">GZIP (.gz)</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Advanced Options -->
-            <div class="advanced-options">
-                <div class="advanced-header" onclick="toggleAdvanced()">
-                    <div class="advanced-title">
-                        <i class="fas fa-cogs"></i>
-                        ตัวเลือกขั้นสูง
-                    </div>
-                    <i class="fas fa-chevron-down" id="advancedIcon"></i>
-                </div>
-
-                <div class="advanced-content" id="advancedContent">
-                    <div class="checkbox-group">
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="includeHeaders" checked>
-                            <label class="checkbox-label" for="includeHeaders">รวม Header ของคอลัมน์</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="includeTimestamp" checked>
-                            <label class="checkbox-label" for="includeTimestamp">รวมเวลาที่สร้างไฟล์</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="includeSummary">
-                            <label class="checkbox-label" for="includeSummary">รวมสรุปข้อมูลในไฟล์</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="includeQuery">
-                            <label class="checkbox-label" for="includeQuery">รวม SQL Query ที่ใช้</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="formatNumbers" checked>
-                            <label class="checkbox-label" for="formatNumbers">จัดรูปแบบตัวเลข</label>
-                        </div>
-
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="formatDates" checked>
-                            <label class="checkbox-label" for="formatDates">จัดรูปแบบวันที่</label>
+                    <div class="form-group">
+                        <label class="form-label">ตัวเลือกเพิ่มเติม</label>
+                        <div class="checkbox-group">
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="excelHeaders" checked>
+                                <label class="checkbox-label" for="excelHeaders">รวม Header</label>
+                                </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="excelAutofit" checked>
+                                <label class="checkbox-label" for="excelAutofit">Auto-fit คอลัมน์</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="excelFilter">
+                                <label class="checkbox-label" for="excelFilter">เปิด Auto Filter</label>
+                                </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="excelFormat" checked>
+                                <label class="checkbox-label" for="excelFormat">จัดรูปแบบข้อมูล</label>
+                            </div>
                         </div>
                     </div>
 
@@ -760,17 +520,205 @@
                         <div class="form-text" style="margin-bottom: 10px;">
                             ตัวแปรเหล่านี้จะสามารถใช้ใน Email Template ได้
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
+                    <div class="form-row">
+                        <div class="form-group">
                                 <input type="text" class="form-control" id="fileVar" value="attachment_filename" placeholder="ชื่อตัวแปรไฟล์">
-                                <div class="form-text">{{attachment_filename}} - ชื่อไฟล์ที่แนบ</div>
+                                <div class="form-text">&#123;&#123;attachment_filename&#125;&#125; - ชื่อไฟล์ที่แนบ</div>
                             </div>
                             <div class="form-group">
                                 <input type="text" class="form-control" id="sizeVar" value="attachment_size" placeholder="ชื่อตัวแปรขนาด">
-                                <div class="form-text">{{attachment_size}} - ขนาดไฟล์</div>
+                                <div class="form-text">&#123;&#123;attachment_size&#125;&#125; - ขนาดไฟล์</div>
                             </div>
                         </div>
                     </div>
+                            </div>
+                        </div>
+
+            <!-- CSV Export -->
+            <div class="export-toggle" id="csvToggle" onclick="toggleExport('csv')">
+                <div class="toggle-header">
+                    <div class="toggle-icon">
+                        <i class="fas fa-file-csv"></i>
+                        </div>
+                    <div class="toggle-info">
+                        <div class="toggle-title">CSV</div>
+                        <div class="toggle-description">ส่งออกข้อมูลเป็นไฟล์ CSV สำหรับการประมวลผลข้อมูล</div>
+                    </div>
+                    <div class="toggle-switch" id="csvSwitch"></div>
+                </div>
+                
+                <div class="export-settings" id="csvSettings">
+                    <div class="form-group">
+                        <label class="form-label">ชื่อไฟล์</label>
+                        <input type="text" class="form-control" id="csvFilename" value="sql_alert_data" placeholder="ชื่อไฟล์">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">ตัวคั่น</label>
+                            <select class="form-control form-select" id="csvSeparator">
+                                <option value=",">Comma (,)</option>
+                                <option value=";">Semicolon (;)</option>
+                                <option value="|">Pipe (|)</option>
+                                <option value="tab">Tab</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">การเข้ารหัส</label>
+                            <select class="form-control form-select" id="csvEncoding">
+                                <option value="utf8">UTF-8</option>
+                                <option value="utf8bom">UTF-8 with BOM</option>
+                                <option value="windows1252">Windows-1252</option>
+                                <option value="tis620">TIS-620</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">ตัวเลือกเพิ่มเติม</label>
+                        <div class="checkbox-group">
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="csvHeaders" checked>
+                                <label class="checkbox-label" for="csvHeaders">รวม Header</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="csvQuotes" checked>
+                                <label class="checkbox-label" for="csvQuotes">ใส่ Quote รอบข้อความ</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="csvEscape">
+                                <label class="checkbox-label" for="csvEscape">Escape อักขระพิเศษ</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="csvDateFormat" checked>
+                                <label class="checkbox-label" for="csvDateFormat">จัดรูปแบบวันที่</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- JSON Export -->
+            <div class="export-toggle" id="jsonToggle" onclick="toggleExport('json')">
+                <div class="toggle-header">
+                    <div class="toggle-icon">
+                        <i class="fas fa-file-code"></i>
+                    </div>
+                    <div class="toggle-info">
+                        <div class="toggle-title">JSON</div>
+                        <div class="toggle-description">ส่งออกข้อมูลเป็นไฟล์ JSON สำหรับการใช้งาน API</div>
+                    </div>
+                    <div class="toggle-switch" id="jsonSwitch"></div>
+                </div>
+
+                <div class="export-settings" id="jsonSettings">
+                    <div class="form-group">
+                        <label class="form-label">ชื่อไฟล์</label>
+                        <input type="text" class="form-control" id="jsonFilename" value="sql_alert_data" placeholder="ชื่อไฟล์">
+                        </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">รูปแบบ JSON</label>
+                            <select class="form-control form-select" id="jsonFormat">
+                                <option value="array">Array of Objects</option>
+                                <option value="object">Single Object</option>
+                                <option value="nested">Nested Structure</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">การเข้ารหัส</label>
+                            <select class="form-control form-select" id="jsonEncoding">
+                                <option value="utf8">UTF-8</option>
+                                <option value="unicode">Unicode Escape</option>
+                            </select>
+                        </div>
+                        </div>
+
+                    <div class="form-group">
+                        <label class="form-label">ตัวเลือกเพิ่มเติม</label>
+                        <div class="checkbox-group">
+                        <div class="checkbox-item">
+                                <input type="checkbox" id="jsonPretty" checked>
+                                <label class="checkbox-label" for="jsonPretty">Pretty Print</label>
+                        </div>
+                        <div class="checkbox-item">
+                                <input type="checkbox" id="jsonMetadata">
+                                <label class="checkbox-label" for="jsonMetadata">รวม Metadata</label>
+                        </div>
+                        <div class="checkbox-item">
+                                <input type="checkbox" id="jsonCompress">
+                                <label class="checkbox-label" for="jsonCompress">บีบอัดไฟล์</label>
+                        </div>
+                        <div class="checkbox-item">
+                                <input type="checkbox" id="jsonDateISO" checked>
+                                <label class="checkbox-label" for="jsonDateISO">วันที่ในรูปแบบ ISO</label>
+                            </div>
+                        </div>
+                    </div>
+                        </div>
+                    </div>
+
+            <!-- PDF Export -->
+            <div class="export-toggle" id="pdfToggle" onclick="toggleExport('pdf')">
+                <div class="toggle-header">
+                    <div class="toggle-icon">
+                        <i class="fas fa-file-pdf"></i>
+                    </div>
+                    <div class="toggle-info">
+                        <div class="toggle-title">PDF</div>
+                        <div class="toggle-description">ส่งออกข้อมูลเป็นไฟล์ PDF สำหรับการพิมพ์และการนำเสนอ</div>
+                    </div>
+                    <div class="toggle-switch" id="pdfSwitch"></div>
+                </div>
+                
+                <div class="export-settings" id="pdfSettings">
+                    <div class="form-group">
+                        <label class="form-label">ชื่อไฟล์</label>
+                        <input type="text" class="form-control" id="pdfFilename" value="sql_alert_report" placeholder="ชื่อไฟล์">
+                        </div>
+                    
+                        <div class="form-row">
+                            <div class="form-group">
+                            <label class="form-label">ขนาดกระดาษ</label>
+                            <select class="form-control form-select" id="pdfPageSize">
+                                <option value="A4">A4</option>
+                                <option value="A3">A3</option>
+                                <option value="letter">Letter</option>
+                                <option value="legal">Legal</option>
+                            </select>
+                            </div>
+                            <div class="form-group">
+                            <label class="form-label">ทิศทางกระดาษ</label>
+                            <select class="form-control form-select" id="pdfOrientation">
+                                <option value="portrait">แนวตั้ง</option>
+                                <option value="landscape">แนวนอน</option>
+                            </select>
+                            </div>
+                        </div>
+
+                    <div class="form-group">
+                        <label class="form-label">ตัวเลือกเพิ่มเติม</label>
+                        <div class="checkbox-group">
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="pdfHeaders" checked>
+                                <label class="checkbox-label" for="pdfHeaders">รวม Header</label>
+                    </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="pdfFooter" checked>
+                                <label class="checkbox-label" for="pdfFooter">รวม Footer</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="pdfPageNumbers" checked>
+                                <label class="checkbox-label" for="pdfPageNumbers">เลขหน้า</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="pdfGrid" checked>
+                                <label class="checkbox-label" for="pdfGrid">แสดงเส้นตาราง</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 </div>
             </div>
 
@@ -800,22 +748,10 @@
                     </div>
                 </div>
 
-                <div class="file-preview" id="filePreview">
-                    <div class="file-header">📄 alert_data_2025-07-11.xlsx</div>
-                    <div class="file-content" id="previewContent">
-alert_id,employee_name,department,alert_type,severity,message,created_at
-1001,สมชาย ใจดี,IT,System Alert,Critical,CPU usage exceeds 90%,2025-07-11 14:30:00
-1002,สมหญิง รักงาน,HR,Security Alert,High,Failed login attempts,2025-07-11 14:25:00
-1003,วิชัย เก่งมาก,Finance,Performance Alert,Medium,Database slow response,2025-07-11 14:20:00
-...
+            <div class="preview-sample" id="previewSample">
+                <div style="color: #6b7280; text-align: center; padding: 20px;">
+                    เลือกรูปแบบการส่งออกเพื่อดูตัวอย่าง
                     </div>
-                </div>
-
-                <div style="text-align: center; margin-top: 15px;">
-                    <button type="button" class="btn btn-success btn-sm" onclick="generatePreview()">
-                        <i class="fas fa-sync-alt"></i>
-                        อัปเดตตัวอย่าง
-                    </button>
                 </div>
             </div>
 
@@ -832,363 +768,481 @@ alert_id,employee_name,department,alert_type,severity,message,created_at
                 </div>
                 
                 <button type="button" class="btn btn-primary" onclick="nextStep()">
-                    ถัดไป (นับจำนวนข้อมูล)
+                ถัดไป (เทมเพลต Email)
                     <i class="fas fa-arrow-right"></i>
                 </button>
-            </div>
         </div>
     </div>
 </div>
 
-@push('scripts')
 <script>
-let selectedFormat = 'xlsx';
-let exportEnabled = true;
-
 document.addEventListener('DOMContentLoaded', function() {
-    loadSavedSettings();
-    updateFilenamePreview();
-    updatePreviewStats();
-    generatePreview();
+    console.log('Step 7 DOM loaded');
+    
+    // Add delay to ensure DOM is fully ready
+    setTimeout(() => {
+        initializeStep7();
+    }, 100);
 });
 
-function loadSavedSettings() {
-    // Load saved export settings
-    const saved = sessionStorage.getItem('sql_alert_export_settings');
-    if (saved) {
-        try {
-            const settings = JSON.parse(saved);
-            
-            document.getElementById('exportEnabled').checked = settings.enabled !== false;
-            document.getElementById('filename').value = settings.filename || 'alert_data_{date}';
-            document.getElementById('encoding').value = settings.encoding || 'utf8';
-            document.getElementById('maxRows').value = settings.maxRows || '1000';
-            document.getElementById('compression').value = settings.compression || 'zip';
-            
-            // Advanced options
-            document.getElementById('includeHeaders').checked = settings.includeHeaders !== false;
-            document.getElementById('includeTimestamp').checked = settings.includeTimestamp !== false;
-            document.getElementById('includeSummary').checked = settings.includeSummary || false;
-            document.getElementById('includeQuery').checked = settings.includeQuery || false;
-            document.getElementById('formatNumbers').checked = settings.formatNumbers !== false;
-            document.getElementById('formatDates').checked = settings.formatDates !== false;
-            
-            if (settings.format) {
-                selectFormat(settings.format);
-            }
-            
-            exportEnabled = settings.enabled !== false;
-            updateExportToggle();
-            
-        } catch (e) {
-            console.error('Error loading export settings:', e);
+function initializeStep7() {
+    console.log('Initializing Step 7...');
+    
+    try {
+        loadSavedExportSettings();
+        updatePreview();
+        
+        // Auto-enable Excel export by default
+        if (!hasAnyExportEnabled()) {
+            toggleExport('excel');
+        }
+    } catch (error) {
+        console.error('Error initializing Step 7:', error);
+    }
+}
+
+function toggleExport(type) {
+    const toggle = document.getElementById(type + 'Toggle');
+    const switchElement = document.getElementById(type + 'Switch');
+    const settings = document.getElementById(type + 'Settings');
+    
+    if (!toggle || !switchElement || !settings) {
+        console.error('Export elements not found for type:', type);
+        return;
+    }
+    
+    const isActive = toggle.classList.contains('active');
+    
+    if (isActive) {
+        // Deactivate
+        toggle.classList.remove('active');
+        switchElement.classList.remove('active');
+        settings.classList.remove('show');
+    } else {
+        // Activate
+        toggle.classList.add('active');
+        switchElement.classList.add('active');
+        settings.classList.add('show');
+    }
+    
+    updatePreview();
+    saveExportSettings();
+}
+
+function hasAnyExportEnabled() {
+    const types = ['excel', 'csv', 'json', 'pdf'];
+    return types.some(type => {
+        const toggle = document.getElementById(type + 'Toggle');
+        return toggle && toggle.classList.contains('active');
+    });
+}
+
+function updatePreview() {
+    const activeExports = getActiveExports();
+    let queryResults = JSON.parse(sessionStorage.getItem('sql_alert_query_results') || '{}');
+    
+    // Debug
+    console.log('Step 7 - queryResults from sessionStorage:', queryResults);
+    
+    // Fallback data if no results found
+    if (!queryResults.columns || !queryResults.rows) {
+        const finalResults = JSON.parse(sessionStorage.getItem('sql_alert_final_results') || '{}');
+        console.log('Step 7 - trying final_results:', finalResults);
+        
+        if (finalResults.columns && finalResults.sample_data) {
+            queryResults = {
+                columns: finalResults.columns,
+                rows: finalResults.sample_data,
+                totalRows: finalResults.records_count || 0,
+                executionTime: finalResults.execution_time || 0
+            };
+        } else {
+            // Ultimate fallback
+            queryResults = {
+                columns: ['id', 'name', 'created_at'],
+                rows: [
+                    { id: 1, name: 'Sample Data 1', created_at: '2024-01-15' },
+                    { id: 2, name: 'Sample Data 2', created_at: '2024-01-16' },
+                    { id: 3, name: 'Sample Data 3', created_at: '2024-01-17' }
+                ],
+                totalRows: 342,
+                executionTime: 0.25
+            };
         }
     }
-}
-
-function toggleExport() {
-    exportEnabled = !exportEnabled;
-    document.getElementById('exportEnabled').checked = exportEnabled;
-    updateExportToggle();
-    saveSettings();
-}
-
-function updateExportToggle() {
-    const toggle = document.getElementById('exportToggle');
-    const settings = document.getElementById('exportSettings');
     
-    if (exportEnabled) {
-        toggle.classList.add('active');
-        settings.classList.add('show');
-    } else {
-        toggle.classList.remove('active');
-        settings.classList.remove('show');
+    if (activeExports.length === 0) {
+        document.getElementById('previewSample').innerHTML = 
+            '<div style="color: #6b7280; text-align: center; padding: 20px;">เลือกรูปแบบการส่งออกเพื่อดูตัวอย่าง</div>';
+        return;
     }
+    
+    // Update stats
+    if (queryResults.totalRows) {
+        document.getElementById('previewRows').textContent = queryResults.totalRows.toLocaleString();
+        document.getElementById('previewColumns').textContent = queryResults.columns ? queryResults.columns.length : 0;
+        document.getElementById('previewSize').textContent = estimateFileSize(queryResults, activeExports[0]);
+        document.getElementById('previewFormat').textContent = activeExports[0].toUpperCase();
+    }
+    
+    // Update sample preview
+    updateSamplePreview(activeExports[0], queryResults);
 }
 
-function selectFormat(format) {
-    selectedFormat = format;
-    
-    // Update format cards
-    document.querySelectorAll('.format-card').forEach(card => {
-        card.classList.remove('selected');
+function getActiveExports() {
+    const types = ['excel', 'csv', 'json', 'pdf'];
+    return types.filter(type => {
+        const toggle = document.getElementById(type + 'Toggle');
+        return toggle && toggle.classList.contains('active');
     });
-    document.querySelector(`[data-format="${format}"]`).classList.add('selected');
-    
-    // Update filename extension
-    updateFilenamePreview();
-    updatePreviewStats();
-    generatePreview();
-    saveSettings();
 }
 
-function updateFilenamePreview() {
-    const filename = document.getElementById('filename').value;
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS
-    const timestamp = Math.floor(now.getTime() / 1000);
+function estimateFileSize(queryResults, type) {
+    if (!queryResults.totalRows) return '0 KB';
     
-    let processedFilename = filename
-        .replace('{date}', dateStr)
-        .replace('{time}', timeStr)
-        .replace('{timestamp}', timestamp);
+    const rows = queryResults.totalRows;
+    const columns = queryResults.columns ? queryResults.columns.length : 0;
     
-    // Add extension based on selected format
-    const extensions = {
-        'xlsx': '.xlsx',
-        'csv': '.csv',
-        'pdf': '.pdf',
-        'json': '.json'
-    };
-    
-    if (!processedFilename.includes('.')) {
-        processedFilename += extensions[selectedFormat] || '.xlsx';
-    }
-    
-    document.getElementById('filenamePreview').textContent = processedFilename;
-}
-
-function toggleAdvanced() {
-    const content = document.getElementById('advancedContent');
-    const icon = document.getElementById('advancedIcon');
-    
-    if (content.classList.contains('show')) {
-        content.classList.remove('show');
-        icon.classList.remove('fa-chevron-up');
-        icon.classList.add('fa-chevron-down');
-    } else {
-        content.classList.add('show');
-        icon.classList.remove('fa-chevron-down');
-        icon.classList.add('fa-chevron-up');
-    }
-}
-
-function updatePreviewStats() {
-    // Load data from previous step
-    const previewData = JSON.parse(sessionStorage.getItem('sql_alert_preview_data') || '{}');
-    const maxRows = parseInt(document.getElementById('maxRows').value) || 0;
-    
-    const totalRows = previewData.totalRows || 25;
-    const columns = previewData.columns || 7;
-    const actualRows = maxRows === 0 ? totalRows : Math.min(maxRows, totalRows);
-    
-    // Calculate estimated file size
-    let sizeMultiplier = 1;
-    switch (selectedFormat) {
-        case 'xlsx':
-            sizeMultiplier = 1.2; // Excel files are slightly larger
+    let sizePerRow = 0;
+    switch (type) {
+        case 'excel':
+            sizePerRow = columns * 15; // Average 15 bytes per cell
             break;
         case 'csv':
-            sizeMultiplier = 0.7; // CSV files are smaller
-            break;
-        case 'pdf':
-            sizeMultiplier = 2.5; // PDF files are larger
+            sizePerRow = columns * 12; // Average 12 bytes per cell
             break;
         case 'json':
-            sizeMultiplier = 1.5; // JSON files with formatting
+            sizePerRow = columns * 25; // Average 25 bytes per field
+            break;
+        case 'pdf':
+            sizePerRow = columns * 20; // Average 20 bytes per cell
             break;
     }
     
-    const estimatedSize = (actualRows * columns * 20 * sizeMultiplier / 1024).toFixed(1); // Rough estimate
-    
-    document.getElementById('previewRows').textContent = actualRows.toLocaleString();
-    document.getElementById('previewColumns').textContent = columns;
-    document.getElementById('previewSize').textContent = estimatedSize + ' KB';
-    document.getElementById('previewFormat').textContent = selectedFormat.toUpperCase();
+    const totalSize = rows * sizePerRow;
+    if (totalSize < 1024) return totalSize + ' B';
+    if (totalSize < 1024 * 1024) return (totalSize / 1024).toFixed(1) + ' KB';
+    return (totalSize / 1024 / 1024).toFixed(1) + ' MB';
 }
 
-function generatePreview() {
-    const format = selectedFormat;
-    const filename = document.getElementById('filenamePreview').textContent;
-    const includeHeaders = document.getElementById('includeHeaders').checked;
-    const includeSummary = document.getElementById('includeSummary').checked;
-    const includeQuery = document.getElementById('includeQuery').checked;
+function updateSamplePreview(type, queryResults) {
+    const previewElement = document.getElementById('previewSample');
     
-    let preview = '';
+    if (!queryResults.columns || !queryResults.rows) {
+        previewElement.innerHTML = '<div style="color: #6b7280; text-align: center; padding: 20px;">ไม่มีข้อมูลตัวอย่าง</div>';
+        return;
+    }
     
-    switch (format) {
-        case 'xlsx':
+    // Handle both string arrays and object arrays for columns
+    const columns = Array.isArray(queryResults.columns) ? queryResults.columns.slice(0, 5) : []; // First 5 columns
+    const rows = Array.isArray(queryResults.rows) ? queryResults.rows.slice(0, 3) : []; // First 3 rows
+    
+    // Additional safety check
+    if (columns.length === 0 || rows.length === 0) {
+        previewElement.innerHTML = '<div style="color: #6b7280; text-align: center; padding: 20px;">ไม่มีข้อมูลตัวอย่าง</div>';
+        return;
+    }
+    
+    let sample = '';
+    
+    switch (type) {
+        case 'excel':
+            sample = generateExcelSample(columns, rows);
+            break;
         case 'csv':
-            preview = generateCSVPreview(includeHeaders, includeSummary, includeQuery);
-            break;
-        case 'pdf':
-            preview = generatePDFPreview();
+            sample = generateCsvSample(columns, rows);
             break;
         case 'json':
-            preview = generateJSONPreview();
+            sample = generateJsonSample(columns, rows);
+            break;
+        case 'pdf':
+            sample = generatePdfSample(columns, rows);
             break;
     }
     
-    document.getElementById('previewContent').textContent = preview;
-    
-    // Update file header
-    const fileHeader = document.querySelector('.file-header');
-    const formatIcons = {
-        'xlsx': '📊',
-        'csv': '📋',
-        'pdf': '📄',
-        'json': '💾'
-    };
-    fileHeader.textContent = `${formatIcons[format]} ${filename}`;
+    previewElement.innerHTML = sample;
 }
 
-function generateCSVPreview(includeHeaders, includeSummary, includeQuery) {
-    let preview = '';
+function generateExcelSample(columns, rows) {
+    let sample = '<div style="color: #10b981; font-weight: 600; margin-bottom: 10px;">📊 Excel (XLSX) Sample:</div>';
+    sample += '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">';
     
-    // Add summary if enabled
-    if (includeSummary) {
-        preview += '# สรุปข้อมูล\n';
-        preview += `# สร้างเมื่อ: ${new Date().toLocaleString('th-TH')}\n`;
-        preview += `# จำนวนแถว: ${document.getElementById('previewRows').textContent}\n`;
-        preview += `# จำนวนคอลัมน์: ${document.getElementById('previewColumns').textContent}\n`;
-        preview += '\n';
-    }
+    // Header
+    sample += '<tr>';
+    columns.forEach(col => {
+        const colName = typeof col === 'string' ? col : col.name;
+        sample += `<th style="border: 1px solid #d1d5db; padding: 5px; background: #f3f4f6; font-weight: 600;">${colName}</th>`;
+    });
+    sample += '</tr>';
     
-    // Add query if enabled
-    if (includeQuery) {
-        const query = sessionStorage.getItem('sql_alert_query') || '';
-        preview += '# SQL Query ที่ใช้:\n';
-        preview += `# ${query.replace(/\n/g, '\n# ')}\n`;
-        preview += '\n';
-    }
+    // Data rows
+    rows.forEach(row => {
+        sample += '<tr>';
+        columns.forEach(col => {
+            const colName = typeof col === 'string' ? col : col.name;
+            const value = row[colName] || '';
+            sample += `<td style="border: 1px solid #d1d5db; padding: 5px;">${value}</td>`;
+        });
+        sample += '</tr>';
+    });
     
-    // Add headers if enabled
-    if (includeHeaders) {
-        preview += 'alert_id,employee_name,department,alert_type,severity,message,created_at\n';
-    }
+    sample += '</table>';
+    sample += '<div style="margin-top: 10px; font-size: 0.7rem; color: #6b7280;">✓ รองรับการจัดรูปแบบและสูตร Excel</div>';
     
-    // Add sample data
-    preview += '1001,สมชาย ใจดี,IT,System Alert,Critical,CPU usage exceeds 90%,2025-07-11 14:30:00\n';
-    preview += '1002,สมหญิง รักงาน,HR,Security Alert,High,Failed login attempts,2025-07-11 14:25:00\n';
-    preview += '1003,วิชัย เก่งมาก,Finance,Performance Alert,Medium,Database slow response,2025-07-11 14:20:00\n';
-    preview += '1004,ประเสริฐ มั่นคง,Operations,User Alert,Low,Password expiry warning,2025-07-11 14:15:00\n';
-    preview += '...\n';
-    
-    return preview;
+    return sample;
 }
 
-function generatePDFPreview() {
-    return `📄 PDF Report Preview
-
-=== ระบบแจ้งเตือน ===
-วันที่สร้าง: ${new Date().toLocaleDateString('th-TH')}
-จำนวนข้อมูล: ${document.getElementById('previewRows').textContent} รายการ
-
-+-------+------------------+------------+---------------+----------+
-| ID    | ชื่อพนักงาน      | แผนก       | ประเภท        | ความสำคัญ |
-+-------+------------------+------------+---------------+----------+
-| 1001  | สมชาย ใจดี       | IT         | System Alert  | Critical |
-| 1002  | สมหญิง รักงาน    | HR         | Security      | High     |
-| 1003  | วิชัย เก่งมาก     | Finance    | Performance   | Medium   |
-+-------+------------------+------------+---------------+----------+
-
-... และรายการอื่นๆ อีก ${parseInt(document.getElementById('previewRows').textContent) - 3} รายการ`;
+function generateCsvSample(columns, rows) {
+    const separator = document.getElementById('csvSeparator')?.value || ',';
+    const actualSep = separator === 'tab' ? '\t' : separator;
+    
+    let sample = '<div style="color: #10b981; font-weight: 600; margin-bottom: 10px;">📄 CSV Sample:</div>';
+    sample += '<div style="font-size: 0.8rem; line-height: 1.6;">';
+    
+    // Header
+    sample += columns.map(col => typeof col === 'string' ? col : col.name).join(actualSep) + '<br>';
+    
+    // Data rows
+    rows.forEach(row => {
+        const values = columns.map(col => {
+            const colName = typeof col === 'string' ? col : col.name;
+            const value = row[colName] || '';
+            return typeof value === 'string' && value.includes(actualSep) ? `"${value}"` : value;
+        });
+        sample += values.join(actualSep) + '<br>';
+    });
+    
+    sample += '</div>';
+    sample += '<div style="margin-top: 10px; font-size: 0.7rem; color: #6b7280;">✓ รองรับการเข้ารหัส UTF-8</div>';
+    
+    return sample;
 }
 
-function generateJSONPreview() {
-    return `{
-  "metadata": {
-    "generated_at": "${new Date().toISOString()}",
-    "total_records": ${document.getElementById('previewRows').textContent},
-    "format": "json",
-    "query_date": "${new Date().toISOString().split('T')[0]}"
-  },
-  "data": [
-    {
-      "alert_id": 1001,
-      "employee_name": "สมชาย ใจดี",
-      "department": "IT",
-      "alert_type": "System Alert",
-      "severity": "Critical",
-      "message": "CPU usage exceeds 90%",
-      "created_at": "2025-07-11T14:30:00"
-    },
-    {
-      "alert_id": 1002,
-      "employee_name": "สมหญิง รักงาน",
-      "department": "HR",
-      "alert_type": "Security Alert",
-      "severity": "High",
-      "message": "Failed login attempts",
-      "created_at": "2025-07-11T14:25:00"
-    }
-  ]
-}`;
+function generateJsonSample(columns, rows) {
+    let sample = '<div style="color: #10b981; font-weight: 600; margin-bottom: 10px;">🔧 JSON Sample:</div>';
+    sample += '<div style="font-size: 0.8rem; line-height: 1.6;">';
+    
+    const jsonData = rows.map(row => {
+        const obj = {};
+        columns.forEach(col => {
+            const colName = typeof col === 'string' ? col : col.name;
+            obj[colName] = row[colName] || null;
+        });
+        return obj;
+    });
+    
+    sample += '<pre style="margin: 0; white-space: pre-wrap;">' + JSON.stringify(jsonData, null, 2) + '</pre>';
+    sample += '</div>';
+    sample += '<div style="margin-top: 10px; font-size: 0.7rem; color: #6b7280;">✓ รองรับ Pretty Print และ Metadata</div>';
+    
+    return sample;
 }
 
-function saveSettings() {
+function generatePdfSample(columns, rows) {
+    let sample = '<div style="color: #10b981; font-weight: 600; margin-bottom: 10px;">📋 PDF Sample:</div>';
+    sample += '<div style="border: 1px solid #d1d5db; padding: 15px; background: white; font-size: 0.8rem;">';
+    
+    // Header
+    sample += '<div style="text-align: center; font-weight: 600; margin-bottom: 15px; border-bottom: 2px solid #374151; padding-bottom: 10px;">SQL Alert Report</div>';
+    
+    // Table
+    sample += '<table style="width: 100%; border-collapse: collapse; font-size: 0.7rem;">';
+    
+    // Header
+    sample += '<tr>';
+    columns.forEach(col => {
+        const colName = typeof col === 'string' ? col : col.name;
+        sample += `<th style="border: 1px solid #374151; padding: 5px; background: #f3f4f6; font-weight: 600;">${colName}</th>`;
+    });
+    sample += '</tr>';
+    
+    // Data rows
+    rows.forEach(row => {
+        sample += '<tr>';
+        columns.forEach(col => {
+            const colName = typeof col === 'string' ? col : col.name;
+            const value = row[colName] || '';
+            sample += `<td style="border: 1px solid #374151; padding: 5px;">${value}</td>`;
+        });
+        sample += '</tr>';
+    });
+    
+    sample += '</table>';
+    
+    // Footer
+    sample += '<div style="text-align: center; margin-top: 15px; font-size: 0.6rem; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px;">Generated on ' + new Date().toLocaleString() + ' | Page 1</div>';
+    
+    sample += '</div>';
+    sample += '<div style="margin-top: 10px; font-size: 0.7rem; color: #6b7280;">✓ รองรับการจัดรูปแบบและเลขหน้า</div>';
+    
+    return sample;
+}
+
+function saveExportSettings() {
     const settings = {
-        enabled: exportEnabled,
-        format: selectedFormat,
-        filename: document.getElementById('filename').value,
-        encoding: document.getElementById('encoding').value,
-        maxRows: document.getElementById('maxRows').value,
-        compression: document.getElementById('compression').value,
-        includeHeaders: document.getElementById('includeHeaders').checked,
-        includeTimestamp: document.getElementById('includeTimestamp').checked,
-        includeSummary: document.getElementById('includeSummary').checked,
-        includeQuery: document.getElementById('includeQuery').checked,
-        formatNumbers: document.getElementById('formatNumbers').checked,
-        formatDates: document.getElementById('formatDates').checked,
-        fileVar: document.getElementById('fileVar').value,
-        sizeVar: document.getElementById('sizeVar').value
+        excel: {
+            enabled: document.getElementById('excelToggle')?.classList.contains('active') || false,
+            filename: document.getElementById('excelFilename')?.value || 'sql_alert_data',
+            worksheet: document.getElementById('excelWorksheet')?.value || 'Data',
+            limit: document.getElementById('excelLimit')?.value || '1000',
+            headers: document.getElementById('excelHeaders')?.checked || false,
+            autofit: document.getElementById('excelAutofit')?.checked || false,
+            filter: document.getElementById('excelFilter')?.checked || false,
+            format: document.getElementById('excelFormat')?.checked || false
+        },
+        csv: {
+            enabled: document.getElementById('csvToggle')?.classList.contains('active') || false,
+            filename: document.getElementById('csvFilename')?.value || 'sql_alert_data',
+            separator: document.getElementById('csvSeparator')?.value || ',',
+            encoding: document.getElementById('csvEncoding')?.value || 'utf8',
+            headers: document.getElementById('csvHeaders')?.checked || false,
+            quotes: document.getElementById('csvQuotes')?.checked || false,
+            escape: document.getElementById('csvEscape')?.checked || false,
+            dateFormat: document.getElementById('csvDateFormat')?.checked || false
+        },
+        json: {
+            enabled: document.getElementById('jsonToggle')?.classList.contains('active') || false,
+            filename: document.getElementById('jsonFilename')?.value || 'sql_alert_data',
+            format: document.getElementById('jsonFormat')?.value || 'array',
+            encoding: document.getElementById('jsonEncoding')?.value || 'utf8',
+            pretty: document.getElementById('jsonPretty')?.checked || false,
+            metadata: document.getElementById('jsonMetadata')?.checked || false,
+            compress: document.getElementById('jsonCompress')?.checked || false,
+            dateISO: document.getElementById('jsonDateISO')?.checked || false
+        },
+        pdf: {
+            enabled: document.getElementById('pdfToggle')?.classList.contains('active') || false,
+            filename: document.getElementById('pdfFilename')?.value || 'sql_alert_report',
+            pageSize: document.getElementById('pdfPageSize')?.value || 'A4',
+            orientation: document.getElementById('pdfOrientation')?.value || 'portrait',
+            headers: document.getElementById('pdfHeaders')?.checked || false,
+            footer: document.getElementById('pdfFooter')?.checked || false,
+            pageNumbers: document.getElementById('pdfPageNumbers')?.checked || false,
+            grid: document.getElementById('pdfGrid')?.checked || false
+        }
     };
     
     sessionStorage.setItem('sql_alert_export_settings', JSON.stringify(settings));
 }
 
+function loadSavedExportSettings() {
+    const saved = sessionStorage.getItem('sql_alert_export_settings');
+    if (!saved) return;
+    
+    try {
+        const settings = JSON.parse(saved);
+        
+        // Load Excel settings
+        if (settings.excel) {
+            if (settings.excel.enabled) toggleExport('excel');
+            if (document.getElementById('excelFilename')) document.getElementById('excelFilename').value = settings.excel.filename || 'sql_alert_data';
+            if (document.getElementById('excelWorksheet')) document.getElementById('excelWorksheet').value = settings.excel.worksheet || 'Data';
+            if (document.getElementById('excelLimit')) document.getElementById('excelLimit').value = settings.excel.limit || '1000';
+            if (document.getElementById('excelHeaders')) document.getElementById('excelHeaders').checked = settings.excel.headers;
+            if (document.getElementById('excelAutofit')) document.getElementById('excelAutofit').checked = settings.excel.autofit;
+            if (document.getElementById('excelFilter')) document.getElementById('excelFilter').checked = settings.excel.filter;
+            if (document.getElementById('excelFormat')) document.getElementById('excelFormat').checked = settings.excel.format;
+        }
+        
+        // Load CSV settings
+        if (settings.csv) {
+            if (settings.csv.enabled) toggleExport('csv');
+            if (document.getElementById('csvFilename')) document.getElementById('csvFilename').value = settings.csv.filename || 'sql_alert_data';
+            if (document.getElementById('csvSeparator')) document.getElementById('csvSeparator').value = settings.csv.separator || ',';
+            if (document.getElementById('csvEncoding')) document.getElementById('csvEncoding').value = settings.csv.encoding || 'utf8';
+            if (document.getElementById('csvHeaders')) document.getElementById('csvHeaders').checked = settings.csv.headers;
+            if (document.getElementById('csvQuotes')) document.getElementById('csvQuotes').checked = settings.csv.quotes;
+            if (document.getElementById('csvEscape')) document.getElementById('csvEscape').checked = settings.csv.escape;
+            if (document.getElementById('csvDateFormat')) document.getElementById('csvDateFormat').checked = settings.csv.dateFormat;
+        }
+        
+        // Load JSON settings
+        if (settings.json) {
+            if (settings.json.enabled) toggleExport('json');
+            if (document.getElementById('jsonFilename')) document.getElementById('jsonFilename').value = settings.json.filename || 'sql_alert_data';
+            if (document.getElementById('jsonFormat')) document.getElementById('jsonFormat').value = settings.json.format || 'array';
+            if (document.getElementById('jsonEncoding')) document.getElementById('jsonEncoding').value = settings.json.encoding || 'utf8';
+            if (document.getElementById('jsonPretty')) document.getElementById('jsonPretty').checked = settings.json.pretty;
+            if (document.getElementById('jsonMetadata')) document.getElementById('jsonMetadata').checked = settings.json.metadata;
+            if (document.getElementById('jsonCompress')) document.getElementById('jsonCompress').checked = settings.json.compress;
+            if (document.getElementById('jsonDateISO')) document.getElementById('jsonDateISO').checked = settings.json.dateISO;
+        }
+        
+        // Load PDF settings
+        if (settings.pdf) {
+            if (settings.pdf.enabled) toggleExport('pdf');
+            if (document.getElementById('pdfFilename')) document.getElementById('pdfFilename').value = settings.pdf.filename || 'sql_alert_report';
+            if (document.getElementById('pdfPageSize')) document.getElementById('pdfPageSize').value = settings.pdf.pageSize || 'A4';
+            if (document.getElementById('pdfOrientation')) document.getElementById('pdfOrientation').value = settings.pdf.orientation || 'portrait';
+            if (document.getElementById('pdfHeaders')) document.getElementById('pdfHeaders').checked = settings.pdf.headers;
+            if (document.getElementById('pdfFooter')) document.getElementById('pdfFooter').checked = settings.pdf.footer;
+            if (document.getElementById('pdfPageNumbers')) document.getElementById('pdfPageNumbers').checked = settings.pdf.pageNumbers;
+            if (document.getElementById('pdfGrid')) document.getElementById('pdfGrid').checked = settings.pdf.grid;
+        }
+    } catch (error) {
+        console.error('Error loading saved export settings:', error);
+    }
+}
+
 function previousStep() {
-    saveSettings();
-    window.location.href = '{{ route("sql-alerts.create") }}?step=6';
+    saveExportSettings();
+    if (window.SqlAlertWizard) {
+        window.SqlAlertWizard.previousStep();
+    } else {
+        window.location.href = '/admin/sql-alerts/create?step=6';
+    }
 }
 
 function nextStep() {
-    saveSettings();
+    const activeExports = getActiveExports();
+    
+    if (activeExports.length === 0) {
+        alert('กรุณาเลือกอย่างน้อยหนึ่งรูปแบบการส่งออก');
+        return;
+    }
+    
+    saveExportSettings();
+    
+    // **เพิ่มการสร้างข้อมูลจำลองสำหรับ step 8 ถ้าไม่มี**
+    const existingQueryResults = sessionStorage.getItem('sql_alert_query_results');
+    if (!existingQueryResults) {
+        const mockQueryResults = {
+            columns: ['id', 'alert_type', 'message', 'created_at', 'status'],
+            rows: [
+                { id: 1, alert_type: 'error', message: 'Database connection failed', created_at: '2024-01-15', status: 'pending' },
+                { id: 2, alert_type: 'warning', message: 'High CPU usage detected', created_at: '2024-01-16', status: 'resolved' },
+                { id: 3, alert_type: 'info', message: 'System update completed', created_at: '2024-01-17', status: 'acknowledged' }
+            ],
+            totalRows: 75,
+            executionTime: 0.35,
+            querySize: 250
+        };
+        sessionStorage.setItem('sql_alert_query_results', JSON.stringify(mockQueryResults));
+    }
+    
     sessionStorage.setItem('sql_alert_step', '8');
-    window.location.href = '{{ route("sql-alerts.create") }}?step=8';
+    if (window.SqlAlertWizard) {
+        window.SqlAlertWizard.nextStep();
+    } else {
+        window.location.href = '/admin/sql-alerts/create?step=8';
+    }
 }
 
-// Auto-save on input change
-document.addEventListener('input', function(e) {
-    if (e.target.matches('#filename')) {
-        updateFilenamePreview();
-    }
-    if (e.target.matches('#maxRows')) {
-        updatePreviewStats();
-    }
-    if (e.target.matches('#encoding, #compression, input[type="checkbox"]')) {
-        generatePreview();
-    }
-    saveSettings();
-});
-
+// Auto-save on change
 document.addEventListener('change', function(e) {
-    if (e.target.matches('#maxRows, #encoding, #compression')) {
-        updatePreviewStats();
-        generatePreview();
+    if (e.target.matches('#excelFilename, #csvFilename, #jsonFilename, #pdfFilename') ||
+        e.target.matches('input[type="checkbox"]') ||
+        e.target.matches('select')) {
+        saveExportSettings();
+        updatePreview();
     }
-    saveSettings();
 });
 
-// Initialize advanced section as collapsed
-document.addEventListener('DOMContentLoaded', function() {
-    const advancedContent = document.getElementById('advancedContent');
-    const advancedIcon = document.getElementById('advancedIcon');
-    
-    // Check if there are any non-default settings to show advanced by default
-    const hasAdvancedSettings = 
-        document.getElementById('includeSummary').checked ||
-        document.getElementById('includeQuery').checked ||
-        !document.getElementById('formatNumbers').checked ||
-        !document.getElementById('formatDates').checked;
-    
-    if (hasAdvancedSettings) {
-        advancedContent.classList.add('show');
-        advancedIcon.classList.remove('fa-chevron-down');
-        advancedIcon.classList.add('fa-chevron-up');
-    }
-});
+// Export functions to global scope
+window.toggleExport = toggleExport;
+window.previousStep = previousStep;
+window.nextStep = nextStep;
+window.initializeCurrentStep = initializeStep7;
+
+console.log('Step 7 script loaded');
 </script>
-@endpush
-@endsection

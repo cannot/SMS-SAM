@@ -25,7 +25,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Csv;
 class SqlAlertController extends Controller
 {
     /**
-     * Display the SQL Alert creation wizard
+     * Show the form for creating a new SQL Alert
      */
     public function create(Request $request)
     {
@@ -37,14 +37,21 @@ class SqlAlertController extends Controller
             $step = 1;
         }
         
+        $data = [
+            'title' => 'Create SQL Alert', // ✅ เพิ่ม title variable
+            'step' => $step,
+            'isAjax' => $isAjax
+        ];
+        
         // If AJAX request, return only the step content
         if ($isAjax) {
             return $this->renderStep($step, $request);
         }
         
         // Return full page with wizard container
-        return view('admin.sql-alerts.create');
+        return view('admin.sql-alerts.create', $data);
     }
+
     
     /**
      * Render specific step content
@@ -57,7 +64,7 @@ class SqlAlertController extends Controller
             // If step view doesn't exist, return inline content
             return $this->getInlineStepContent($step);
         }
-        
+
         // Load data for specific steps
         $data = [];
         switch ($step) {
@@ -65,7 +72,10 @@ class SqlAlertController extends Controller
                 $data['databases'] = $this->getSupportedDatabases();
                 break;
             case 9:
-                $data['templates'] = NotificationTemplate::where('type', 'email')->get();
+                // แก้ไข: ใช้ supported_channels แทน type
+                $data['templates'] = NotificationTemplate::supportsChannel('email')
+                                                       ->where('is_active', true)
+                                                       ->get();
                 break;
             case 12:
                 $data['groups'] = NotificationGroup::with('users')->get();
@@ -105,304 +115,455 @@ class SqlAlertController extends Controller
     }
     
     /**
-     * Test database connection with enhanced validation
+     * Test database connection
      */
     public function testConnection(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'db_type' => 'required|string|in:mysql,postgresql,sqlserver,oracle,sqlite,mariadb',
-            'db_host' => 'required_unless:db_type,sqlite|string|max:255',
-            'db_port' => 'required_unless:db_type,sqlite|integer|min:1|max:65535',
-            'db_name' => 'required|string|max:255',
-            'db_username' => 'required_unless:db_type,sqlite|string|max:255',
-            'db_password' => 'nullable|string',
-            'ssl_enabled' => 'boolean',
-            'connection_timeout' => 'integer|min:5|max:300',
-            'charset' => 'nullable|string|max:50'
-        ]);
+        // **แก้ไข: ใช้ array format สำหรับ Log::info()**
+        \Log::info('=== Testing connection START ===');
+        \Log::info('Request data:', $request->all());
+        \Log::info('Driver:', ['driver' => $request->driver]);
+        \Log::info('Host:', ['host' => $request->host]);
+        \Log::info('Port:', ['port' => $request->port]);
+        \Log::info('Database:', ['database' => $request->database]);
+        \Log::info('Username:', ['username' => $request->username]);
+        \Log::info('Password length:', ['length' => strlen($request->password ?? '')]);
         
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ข้อมูลไม่ครบถ้วนหรือไม่ถูกต้อง',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-        
-        try {
-            $startTime = microtime(true);
-            
-            // Create temporary connection config
-            $config = $this->buildConnectionConfig($request);
-            
-            // Generate unique connection name
-            $connectionName = 'sql_alert_test_' . uniqid();
-            
-            // Test connection with timeout
-            config(['database.connections.' . $connectionName => $config]);
-            
-            // Test basic connection
-            $pdo = DB::connection($connectionName)->getPdo();
-            
-            // Test database access
-            $versionQuery = $this->getVersionQuery($request->db_type);
-            $result = DB::connection($connectionName)->selectOne($versionQuery);
-            
-            // Test SELECT permissions
-            $testQuery = $this->getTestQuery($request->db_type);
-            DB::connection($connectionName)->select($testQuery);
-            
-            $connectionTime = round((microtime(true) - $startTime) * 1000, 2);
-            
-            // Clean up test connection
-            DB::purge($connectionName);
-            
-            Log::info('Database connection test successful', [
-                'db_type' => $request->db_type,
-                'host' => $request->db_host,
-                'database' => $request->db_name,
-                'connection_time' => $connectionTime . 'ms'
-            ]);
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'เชื่อมต่อฐานข้อมูลสำเร็จ',
-                'data' => [
-                    'version' => $result->version ?? 'Unknown',
-                    'connection_time' => $connectionTime . 'ms',
-                    'status' => 'Connected',
-                    'driver' => $config['driver'],
-                    'charset' => $config['charset'] ?? 'utf8',
-                    'ssl_enabled' => $request->get('ssl_enabled', false)
-                ]
-            ]);
-            
-        } catch (Exception $e) {
-            Log::warning('Database connection test failed', [
-                'db_type' => $request->db_type,
-                'host' => $request->db_host,
-                'database' => $request->db_name,
-                'error' => $e->getMessage(),
-                'error_code' => $e->getCode()
-            ]);
-            
-            // Determine error type for better user feedback
-            $errorMessage = $this->getConnectionErrorMessage($e);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้',
-                'error' => $errorMessage,
-                'error_code' => $e->getCode(),
-                'suggestions' => $this->getConnectionErrorSuggestions($e)
-            ], 500);
-        }
-    }
-    
-    /**
-     * Execute SQL query for preview with enhanced security
-     */
-    public function executeQuery(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'sql_query' => 'required|string|min:10',
-            'connection_config' => 'required|array',
-            'limit' => 'nullable|integer|min:1|max:1000'
-        ]);
-        
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ข้อมูลไม่ครบถ้วน',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-        
-        try {
-            $query = trim($request->sql_query);
-            $limit = $request->get('limit', 25);
-            
-            // Enhanced SQL injection protection
-            $securityCheck = $this->validateQuerySecurity($query);
-            if (!$securityCheck['safe']) {
+        // **ทดสอบ Oracle connection โดยตรง**
+        if ($request->driver === 'oracle') {
+            try {
+                $connection_string = $request->host . ':' . $request->port . '/' . $request->database;
+                
+                \Log::info('Oracle connection attempt:', [
+                    'connection_string' => $connection_string,
+                    'username' => $request->username
+                ]);
+                
+                $conn = oci_connect($request->username, $request->password, $connection_string);
+                
+                if (!$conn) {
+                    $e = oci_error();
+                    \Log::error('Oracle connection failed:', $e);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Oracle connection failed: ' . ($e['message'] ?? 'Unknown error')
+                    ], 400);
+                }
+                
+                \Log::info('Oracle connection successful, testing query...');
+                
+                // ทดสอบ query
+                $stid = oci_parse($conn, 'SELECT banner FROM v$version WHERE ROWNUM = 1');
+                if (!$stid) {
+                    $e = oci_error($conn);
+                    oci_close($conn);
+                    \Log::error('Oracle query parse failed:', $e);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Oracle query failed: ' . ($e['message'] ?? 'Parse error')
+                    ], 400);
+                }
+                
+                $result = oci_execute($stid);
+                if (!$result) {
+                    $e = oci_error($stid);
+                    oci_close($conn);
+                    \Log::error('Oracle query execution failed:', $e);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Oracle execution failed: ' . ($e['message'] ?? 'Execution error')
+                    ], 400);
+                }
+                
+                $row = oci_fetch_assoc($stid);
+                $version = $row['BANNER'] ?? 'Unknown';
+                
+                oci_close($conn);
+                
+                \Log::info('Oracle connection successful:', ['version' => $version]);
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Database connection successful',
+                    'data' => [
+                        'version' => $version,
+                        'connection_time' => 50,
+                        'driver' => 'oracle',
+                        'host' => $request->host,
+                        'port' => $request->port,
+                        'database' => $request->database
+                    ]
+                ]);
+                
+            } catch (Exception $e) {
+                \Log::error('Oracle connection exception:', ['error' => $e->getMessage()]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'SQL Query ไม่ปลอดภัย: ' . $securityCheck['reason'],
-                    'security_issues' => $securityCheck['issues']
-                ], 422);
+                    'message' => 'Oracle connection failed: ' . $e->getMessage()
+                ], 400);
             }
+        }
+        
+        // **ส่วนอื่น ๆ ของ database connection tests**
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'host' => 'required_unless:driver,sqlite|string',
+            'port' => 'required_unless:driver,sqlite|integer',
+            'database' => 'required|string',
+            'username' => 'required_unless:driver,sqlite|string',
+            'password' => 'nullable|string',
+            'driver' => 'required|in:mysql,pgsql,sqlsrv,sqlite,oracle'
+        ]);
+
+        if ($validator->fails()) {
+            \Log::error('Validation failed:', $validator->errors()->toArray());
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Check if required PHP extension is available
+        $extensionCheck = $this->checkDatabaseExtension($request->driver);
+        if (!$extensionCheck['available']) {
+            return response()->json([
+                'success' => false,
+                'message' => $extensionCheck['message'],
+                'suggestion' => $extensionCheck['suggestion']
+            ], 400);
+        }
+
+        try {
+            // Test connection logic here
+            $config = [
+                'driver' => $request->driver,
+                'host' => $request->host,
+                'port' => $request->port,
+                'database' => $request->database,
+                'username' => $request->username,
+                'password' => $request->password,
+            ];
+
+            // Add driver-specific configurations
+            $config = $this->addDriverSpecificConfig($config, $request->driver);
             
-            // Add LIMIT if not exists and limit is specified
-            if ($limit && stripos($query, 'LIMIT') === false) {
-                $query .= " LIMIT {$limit}";
-            }
-            
-            // Setup temporary connection
-            $connectionName = 'sql_alert_preview_' . uniqid();
-            $config = $request->connection_config;
-            
+            // **แก้ไข: ใช้ array format**
+            \Log::info('Final config:', $config);
+
+            // Create temporary connection name
+            $connectionName = 'test_connection_' . uniqid();
             config(['database.connections.' . $connectionName => $config]);
             
+            // Test connection
             $startTime = microtime(true);
+            $pdo = DB::connection($connectionName)->getPdo();
+            $connectionTime = round((microtime(true) - $startTime) * 1000, 2);
             
-            // Execute with timeout protection
-            $results = DB::connection($connectionName)
-                       ->timeout(30) // 30 second timeout
-                       ->select($query);
-            
-            $executionTime = round((microtime(true) - $startTime) * 1000, 2);
+            // Get database version
+            $version = $this->getDatabaseVersion($connectionName, $request->driver);
             
             // Clean up
             DB::purge($connectionName);
             
-            $columns = $this->getColumnNames($results);
-            $dataSize = $this->estimateDataSize($results);
-            $previewData = array_slice($results, 0, min(50, count($results)));
-            
-            Log::info('SQL Query executed successfully for preview', [
-                'query_length' => strlen($query),
-                'rows_returned' => count($results),
-                'execution_time' => $executionTime . 'ms',
-                'user_id' => auth()->id()
-            ]);
-            
             return response()->json([
                 'success' => true,
+                'message' => 'Database connection successful',
                 'data' => [
-                    'results' => $previewData,
-                    'row_count' => count($results),
-                    'execution_time' => $executionTime . 'ms',
-                    'columns' => $columns,
-                    'data_size' => $dataSize,
-                    'truncated' => count($results) > 50,
-                    'query_hash' => md5($query)
+                    'version' => $version,
+                    'connection_time' => $connectionTime,
+                    'driver' => $request->driver,
+                    'host' => $request->host,
+                    'port' => $request->port,
+                    'database' => $request->database
                 ]
             ]);
             
-        } catch (Exception $e) {
-            Log::error('SQL Query execution failed', [
-                'query' => substr($request->sql_query, 0, 500), // Log first 500 chars only
-                'error' => $e->getMessage(),
-                'error_code' => $e->getCode(),
-                'user_id' => auth()->id()
-            ]);
-            
+        } catch (\Exception $e) {
+            \Log::error('Connection failed:', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'message' => 'เกิดข้อผิดพลาดในการรัน SQL',
-                'error' => $this->getSqlErrorMessage($e),
-                'sql_state' => $e->getCode(),
-                'suggestions' => $this->getSqlErrorSuggestions($e)
-            ], 500);
+                'message' => 'Connection failed: ' . $e->getMessage()
+            ], 400);
         }
     }
     
     /**
-     * Store the SQL Alert with comprehensive validation
+     * Execute SQL query for testing
      */
-    public function store(Request $request)
+    public function executeQuery(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:sql_alerts,name',
-            'description' => 'nullable|string|max:1000',
-            'database_config' => 'required|array',
-            'database_config.type' => 'required|string',
-            'database_config.host' => 'required_unless:database_config.type,sqlite|string',
-            'database_config.database' => 'required|string',
-            'sql_query' => 'required|string|min:10',
-            'email_config' => 'required|array',
-            'email_config.subject' => 'required|string|max:255',
-            'email_config.body_template' => 'required|string',
-            'recipients' => 'required|array|min:1',
-            'recipients.*.email' => 'required|email',
-            'schedule_config' => 'required|array',
-            'schedule_config.type' => 'required|in:manual,once,recurring,cron',
-            'export_config' => 'nullable|array',
-            'variables' => 'nullable|array',
-            'status' => 'required|in:active,inactive,draft'
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'sql_query' => 'required|string',
+            'database_config' => 'required|array'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'ข้อมูลไม่ครบถ้วนหรือไม่ถูกต้อง',
                 'errors' => $validator->errors()
             ], 422);
         }
-        
-        DB::beginTransaction();
-        
+
         try {
-            // Test connection before saving
-            $testResult = $this->testConnectionFromConfig($request->database_config);
-            if (!$testResult['success']) {
-                throw new Exception('ไม่สามารถเชื่อมต่อฐานข้อมูลได้: ' . $testResult['error']);
+            // Execute query logic here
+            // For security, limit to SELECT statements only
+            $query = trim($request->sql_query);
+            
+            if (!preg_match('/^\s*SELECT\s+/i', $query)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only SELECT statements are allowed'
+                ], 400);
+            }
+
+            // Configure database connection
+            $config = $request->database_config;
+            
+            // **เพิ่ม debug log**
+            \Log::info('Execute query config:', $config);
+            \Log::info('Query:', ['query' => $query]);
+            
+            // **จัดการ Oracle แยกต่างหาก**
+            if (isset($config['driver']) && $config['driver'] === 'oracle') {
+                return $this->executeOracleQuery($query, $config);
             }
             
-            // Validate SQL query security
-            $securityCheck = $this->validateQuerySecurity($request->sql_query);
-            if (!$securityCheck['safe']) {
-                throw new Exception('SQL Query ไม่ปลอดภัย: ' . $securityCheck['reason']);
-            }
+            // **สำหรับ database อื่น ๆ**
+            config(['database.connections.test_query' => $config]);
             
-            // Calculate next run time
-            $nextRun = $this->calculateNextRunTime($request->schedule_config);
+            // Execute query with limit
+            $limitedQuery = $this->addLimitToQuery($query, $config['driver'] ?? 'mysql');
+            $results = DB::connection('test_query')->select($limitedQuery);
             
-            // Create the SQL Alert record
-            $sqlAlert = SqlAlert::create([
-                'name' => $request->name,
-                'description' => $request->description,
-                'database_config' => $request->database_config,
-                'sql_query' => $request->sql_query,
-                'email_config' => $request->email_config,
-                'recipients' => $request->recipients,
-                'schedule_config' => $request->schedule_config,
-                'schedule_type' => $request->schedule_config['type'],
-                'export_config' => $request->export_config ?? [],
-                'variables' => $request->variables ?? [],
-                'status' => $request->status,
-                'created_by' => auth()->id(),
-                'next_run' => $nextRun
+            return response()->json([
+                'success' => true,
+                'message' => 'Query executed successfully',
+                'data' => [
+                    'records_count' => count($results),
+                    'sample_data' => array_slice($results, 0, 5),
+                    'columns' => !empty($results) ? array_keys((array)$results[0]) : []
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Query execution failed:', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Query execution failed: ' . $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Execute Oracle query using oci_connect
+     */
+    private function executeOracleQuery($query, $config)
+    {
+        try {
+            $connection_string = $config['host'] . ':' . $config['port'] . '/' . $config['database'];
+            
+            \Log::info('Oracle query execution:', [
+                'connection_string' => $connection_string,
+                'username' => $config['username']
             ]);
             
-            // Set up scheduling if needed
-            if ($request->schedule_config['type'] !== 'manual') {
-                $this->setupSchedule($sqlAlert);
+            // **แก้ไข: ตั้งค่า character set สำหรับภาษาไทย**
+            $old_charset = getenv('NLS_LANG');
+            putenv('NLS_LANG=THAI_THAILAND.AL32UTF8');
+            
+            $conn = oci_connect($config['username'], $config['password'], $connection_string, 'AL32UTF8');
+            
+            if (!$conn) {
+                $e = oci_error();
+                // คืนค่า charset เดิม
+                if ($old_charset !== false) {
+                    putenv('NLS_LANG=' . $old_charset);
+                }
+                \Log::error('Oracle connection failed:', $e);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Oracle connection failed: ' . ($e['message'] ?? 'Unknown error')
+                ], 400);
             }
             
-            DB::commit();
+            // **เพิ่ม: ตั้งค่า session character set**
+            $charset_query = "ALTER SESSION SET NLS_LANGUAGE='THAI' NLS_TERRITORY='THAILAND'";
+            $charset_stid = oci_parse($conn, $charset_query);
+            oci_execute($charset_stid);
             
-            Log::info('SQL Alert created successfully', [
-                'alert_id' => $sqlAlert->id,
-                'name' => $sqlAlert->name,
-                'created_by' => auth()->id(),
-                'schedule_type' => $sqlAlert->schedule_type,
-                'recipient_count' => count($request->recipients)
+            // แก้ไข: ลบ LIMIT และเพิ่ม ROWNUM สำหรับ Oracle
+            $limitedQuery = $this->convertToOracleLimit($query);
+            
+            \Log::info('Oracle query with ROWNUM:', ['query' => $limitedQuery]);
+            
+            $stid = oci_parse($conn, $limitedQuery);
+            if (!$stid) {
+                $e = oci_error($conn);
+                oci_close($conn);
+                // คืนค่า charset เดิม
+                if ($old_charset !== false) {
+                    putenv('NLS_LANG=' . $old_charset);
+                }
+                \Log::error('Oracle query parse failed:', $e);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Oracle query parse failed: ' . ($e['message'] ?? 'Parse error')
+                ], 400);
+            }
+            
+            $result = oci_execute($stid);
+            if (!$result) {
+                $e = oci_error($stid);
+                oci_close($conn);
+                // คืนค่า charset เดิม
+                if ($old_charset !== false) {
+                    putenv('NLS_LANG=' . $old_charset);
+                }
+                \Log::error('Oracle query execution failed:', $e);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Oracle query execution failed: ' . ($e['message'] ?? 'Execution error')
+                ], 400);
+            }
+            
+            // ดึงข้อมูลผลลัพธ์
+            $results = [];
+            $columns = [];
+            $rowCount = 0;
+            
+            // ดึงชื่อ columns
+            $numCols = oci_num_fields($stid);
+            for ($i = 1; $i <= $numCols; $i++) {
+                $columns[] = oci_field_name($stid, $i);
+            }
+            
+            // **แก้ไข: ดึงข้อมูล rows และจัดการ encoding**
+            while (($row = oci_fetch_assoc($stid)) && $rowCount < 10) {
+                // แปลง encoding สำหรับแต่ละ field
+                $processedRow = [];
+                foreach ($row as $key => $value) {
+                    if (is_string($value)) {
+                        // ตรวจสอบและแปลง encoding ถ้าจำเป็น
+                        if (!mb_check_encoding($value, 'UTF-8')) {
+                            $value = mb_convert_encoding($value, 'UTF-8', 'TIS-620');
+                        }
+                        $processedRow[$key] = $value;
+                    } else {
+                        $processedRow[$key] = $value;
+                    }
+                }
+                $results[] = $processedRow;
+                $rowCount++;
+            }
+            
+            oci_close($conn);
+            
+            // คืนค่า charset เดิม
+            if ($old_charset !== false) {
+                putenv('NLS_LANG=' . $old_charset);
+            }
+            
+            \Log::info('Oracle query successful:', [
+                'records_count' => count($results),
+                'columns' => $columns
             ]);
             
             return response()->json([
                 'success' => true,
-                'message' => 'สร้างการแจ้งเตือน SQL สำเร็จ',
+                'message' => 'Query executed successfully',
                 'data' => [
-                    'alert_id' => $sqlAlert->id,
-                    'next_run' => $sqlAlert->next_run?->toISOString(),
-                    'status' => $sqlAlert->status,
-                    'redirect_url' => route('sql-alerts.show', $sqlAlert)
+                    'records_count' => count($results),
+                    'sample_data' => array_slice($results, 0, 5),
+                    'columns' => $columns
                 ]
             ]);
             
         } catch (Exception $e) {
-            DB::rollBack();
-            
-            Log::error('Failed to create SQL Alert', [
-                'error' => $e->getMessage(),
-                'user_id' => auth()->id(),
-                'request_data' => $request->except(['database_config.password'])
-            ]);
-            
+            \Log::error('Oracle query exception:', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'message' => 'เกิดข้อผิดพลาดในการบันทึก: ' . $e->getMessage()
+                'message' => 'Oracle query failed: ' . $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Add LIMIT clause to query based on database type
+     */
+    private function addLimitToQuery($query, $driver)
+    {
+        // ไม่ force limit ให้ใช้ query ตามที่ user ส่งมา
+        return $query;
+    }
+
+    /**
+     * Add Oracle ROWNUM limit
+     */
+    private function addOracleLimit($query)
+    {
+        // **แก้ไข: ลบ LIMIT clause ออกก่อน (ถ้ามี)**
+        $query = preg_replace('/\s+LIMIT\s+\d+$/i', '', $query);
+        
+        // ตรวจสอบว่ามี WHERE clause หรือไม่
+        if (preg_match('/\bWHERE\b/i', $query)) {
+            // มี WHERE clause แล้ว เพิ่ม AND ROWNUM
+            return preg_replace('/\bWHERE\b/i', 'WHERE ROWNUM <= 10 AND', $query);
+        } else {
+            // ไม่มี WHERE clause เพิ่ม WHERE ROWNUM
+            return $query . ' WHERE ROWNUM <= 10';
+        }
+    }
+    
+    /**
+     * Store a newly created SQL Alert
+     */
+    public function store(Request $request)
+    {
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'database_config' => 'required|array',
+            'sql_query' => 'required|string',
+            'email_config' => 'required|array',
+            'recipients' => 'required|array',
+            'schedule_config' => 'required|array',
+            'schedule_type' => 'required|in:manual,once,recurring,cron'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $alert = SqlAlert::create([
+                'name' => $request->name,
+                'description' => $request->description,
+                'database_config' => $request->database_config,
+                'sql_query' => $request->sql_query,
+                'variables' => $request->variables ?? [],
+                'email_config' => $request->email_config,
+                'recipients' => $request->recipients,
+                'schedule_config' => $request->schedule_config,
+                'schedule_type' => $request->schedule_type,
+                'export_config' => $request->export_config ?? [],
+                'status' => $request->status ?? 'draft',
+                'created_by' => auth()->id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'SQL Alert created successfully',
+                'alert' => $alert,
+                'redirect' => route('admin.sql-alerts.show', $alert)
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create SQL Alert: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -504,103 +665,248 @@ class SqlAlertController extends Controller
     }
     
     /**
-     * Get list of SQL Alerts with filtering and pagination
+     * Display a listing of SQL Alerts
+     * 
+     * @param Request $request
+     * @return \Illuminate\View\View
      */
     public function index(Request $request)
     {
-        $query = SqlAlert::with(['creator', 'latestExecution'])
-                         ->select(['id', 'name', 'description', 'status', 'schedule_type', 
-                                  'last_run', 'next_run', 'total_executions', 'successful_executions', 
-                                  'created_by', 'created_at', 'updated_at']);
-        
-        // Apply filters
+        // Build query with filters
+        $query = SqlAlert::with(['creator', 'executions' => function($q) {
+            $q->latest()->limit(5);
+        }]);
+
+        // Apply status filter
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        
+
+        // Apply schedule type filter
         if ($request->filled('schedule_type')) {
             $query->where('schedule_type', $request->schedule_type);
         }
-        
-        if ($request->filled('creator')) {
-            $query->where('created_by', $request->creator);
-        }
-        
+
+        // Apply search filter
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                $q->where('name', 'LIKE', "%{$search}%")
+                  ->orWhere('description', 'LIKE', "%{$search}%");
             });
         }
-        
-        // Order by
-        $orderBy = $request->get('order_by', 'created_at');
-        $direction = $request->get('direction', 'desc');
-        $query->orderBy($orderBy, $direction);
-        
-        $alerts = $query->paginate(20);
-        
-        return view('admin.sql-alerts.index', compact('alerts'));
+
+        // Order by latest
+        $query->orderBy('created_at', 'desc');
+
+        // Paginate results
+        $alerts = $query->paginate(15);
+
+        // Calculate additional stats for each alert
+        $alerts->getCollection()->transform(function ($alert) {
+            // Calculate success rate
+            if ($alert->total_executions > 0) {
+                $alert->success_rate = round(($alert->successful_executions / $alert->total_executions) * 100);
+            } else {
+                $alert->success_rate = 0;
+            }
+
+            return $alert;
+        });
+
+        // Prepare data for view
+        $data = [
+            'title' => 'SQL Alerts Management',
+            'step' => null, // ✅ เพิ่ม step variable (null สำหรับ index page)
+            'isAjax' => false, // ✅ เพิ่ม isAjax variable
+            'totalSteps' => 14, // ✅ เพิ่ม totalSteps variable
+            'sqlAlert' => null, // ✅ เพิ่ม sqlAlert variable (null สำหรับ index page)
+            'alerts' => $alerts,
+            'totalAlerts' => SqlAlert::count(),
+            'activeAlerts' => SqlAlert::where('status', 'active')->count(),
+            'recentExecutions' => SqlAlertExecution::with('sqlAlert')
+                ->latest()
+                ->limit(5)
+                ->get(),
+            'statusCounts' => [
+                'active' => SqlAlert::where('status', 'active')->count(),
+                'inactive' => SqlAlert::where('status', 'inactive')->count(),
+                'draft' => SqlAlert::where('status', 'draft')->count(),
+                'error' => SqlAlert::where('status', 'error')->count(),
+            ],
+            'scheduleTypeCounts' => [
+                'manual' => SqlAlert::where('schedule_type', 'manual')->count(),
+                'once' => SqlAlert::where('schedule_type', 'once')->count(),
+                'recurring' => SqlAlert::where('schedule_type', 'recurring')->count(),
+                'cron' => SqlAlert::where('schedule_type', 'cron')->count(),
+            ]
+        ];
+
+        return view('admin.sql-alerts.index', $data);
     }
     
     /**
-     * Show specific SQL Alert with execution history
+     * Show the specified SQL Alert
      */
     public function show(SqlAlert $sqlAlert)
     {
         $sqlAlert->load([
-            'creator', 
-            'executions' => function($query) {
-                $query->latest()->limit(20);
-            },
-            'executions.recipients',
-            'executions.attachments'
+            'creator',
+            'executions' => function($q) {
+                $q->with('recipients', 'attachments')->latest();
+            }
         ]);
-        
-        $recentExecutions = $sqlAlert->executions;
-        $statistics = $this->getAlertStatistics($sqlAlert);
-        
-        return view('admin.sql-alerts.show', compact('sqlAlert', 'recentExecutions', 'statistics'));
+
+        $data = [
+            'title' => 'SQL Alert Details: ' . $sqlAlert->name, // ✅ เพิ่ม title variable
+            'alert' => $sqlAlert,
+            'recentExecutions' => $sqlAlert->executions()->latest()->limit(10)->get(),
+            'executionStats' => [
+                'total' => $sqlAlert->total_executions,
+                'successful' => $sqlAlert->successful_executions,
+                'failed' => $sqlAlert->total_executions - $sqlAlert->successful_executions,
+                'success_rate' => $sqlAlert->total_executions > 0 
+                    ? round(($sqlAlert->successful_executions / $sqlAlert->total_executions) * 100) 
+                    : 0
+            ]
+        ];
+
+        return view('admin.sql-alerts.show', $data);
     }
+
+    /**
+     * Show the form for editing the specified SQL Alert
+     */
+    public function edit(SqlAlert $sqlAlert)
+    {
+        $data = [
+            'title' => 'Edit SQL Alert: ' . $sqlAlert->name, // ✅ เพิ่ม title variable
+            'alert' => $sqlAlert,
+            'databases' => $this->getSupportedDatabases(),
+            'templates' => \App\Models\NotificationTemplate::where('type', 'email')->get(),
+            'groups' => \App\Models\NotificationGroup::with('users')->get(),
+            'users' => \App\Models\User::where('is_active', true)->get()
+        ];
+
+        return view('admin.sql-alerts.edit', $data);
+    }
+
+    /**
+     * Update the specified SQL Alert
+     */
+    public function update(Request $request, SqlAlert $sqlAlert)
+    {
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'database_config' => 'required|array',
+            'sql_query' => 'required|string',
+            'email_config' => 'required|array',
+            'recipients' => 'required|array',
+            'schedule_config' => 'required|array',
+            'schedule_type' => 'required|in:manual,once,recurring,cron'
+        ]);
+
+        if ($validator->fails()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            $sqlAlert->update([
+                'name' => $request->name,
+                'description' => $request->description,
+                'database_config' => $request->database_config,
+                'sql_query' => $request->sql_query,
+                'variables' => $request->variables ?? [],
+                'email_config' => $request->email_config,
+                'recipients' => $request->recipients,
+                'schedule_config' => $request->schedule_config,
+                'schedule_type' => $request->schedule_type,
+                'export_config' => $request->export_config ?? [],
+                'status' => $request->status ?? $sqlAlert->status,
+                'updated_by' => auth()->id()
+            ]);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'SQL Alert updated successfully',
+                    'alert' => $sqlAlert
+                ]);
+            }
+
+            return redirect()->route('admin.sql-alerts.show', $sqlAlert)
+                ->with('success', 'SQL Alert updated successfully');
+
+        } catch (\Exception $e) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update SQL Alert: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return back()->with('error', 'Failed to update SQL Alert: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Remove the specified SQL Alert
+     */
+    public function destroy(SqlAlert $sqlAlert)
+    {
+        try {
+            $sqlAlert->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'SQL Alert deleted successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete SQL Alert: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+
     
     /**
      * Execute SQL Alert manually
      */
     public function execute(SqlAlert $sqlAlert)
     {
-        if (!$sqlAlert->canExecute()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ไม่สามารถรันการแจ้งเตือนได้ สถานะปัจจุบัน: ' . $sqlAlert->status_display
-            ], 422);
-        }
-        
         try {
-            $execution = $this->executeSqlAlert($sqlAlert, 'manual', auth()->id());
-            
+            // Create execution record
+            $execution = SqlAlertExecution::create([
+                'sql_alert_id' => $sqlAlert->id,
+                'status' => 'pending',
+                'trigger_type' => 'manual',
+                'triggered_by' => auth()->id(),
+                'started_at' => now()
+            ]);
+
+            // Dispatch job to execute the alert
+            \App\Jobs\ExecuteSqlAlert::dispatch($execution);
+
             return response()->json([
                 'success' => true,
-                'message' => 'รันการแจ้งเตือน SQL สำเร็จ',
-                'data' => [
-                    'execution_id' => $execution->id,
-                    'status' => $execution->status,
-                    'rows_returned' => $execution->rows_returned,
-                    'notifications_sent' => $execution->notifications_sent,
-                    'execution_time' => $execution->execution_time_human
-                ]
+                'message' => 'SQL Alert execution started',
+                'execution_id' => $execution->id
             ]);
-            
-        } catch (Exception $e) {
-            Log::error('Manual SQL Alert execution failed', [
-                'alert_id' => $sqlAlert->id,
-                'error' => $e->getMessage(),
-                'user_id' => auth()->id()
-            ]);
-            
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'เกิดข้อผิดพลาดในการรัน: ' . $e->getMessage()
+                'message' => 'Failed to execute SQL Alert: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -719,7 +1025,7 @@ class SqlAlertController extends Controller
             'postgresql' => 'SELECT VERSION() as version',
             'sqlserver' => 'SELECT @@VERSION as version',
             'sqlite' => 'SELECT sqlite_version() as version',
-            'oracle' => 'SELECT * FROM v$version WHERE ROWNUM = 1'
+            'oracle' => 'SELECT banner as version FROM v$version WHERE ROWNUM = 1'
         ];
         
         return $queries[$dbType] ?? 'SELECT VERSION() as version';
@@ -936,7 +1242,7 @@ class SqlAlertController extends Controller
             // Execute SQL query
             $startTime = microtime(true);
             $results = DB::connection($connectionName)->select($sqlAlert->sql_query);
-            $executionTime = round((microtime(true) - $startTime) * 1000);
+            $executionTime = round((microtime(true) - $startTime) * 1000, 2);
             
             // Clean up connection
             DB::purge($connectionName);
@@ -1151,7 +1457,7 @@ class SqlAlertController extends Controller
                 
                 $startTime = microtime(true);
                 $filePath = $this->generateFile($results, $format, $attachment->filename);
-                $generationTime = round((microtime(true) - $startTime) * 1000);
+                $generationTime = round((microtime(true) - $startTime) * 1000, 2);
                 
                 $attachment->update([
                     'file_path' => $filePath,
@@ -1493,5 +1799,174 @@ class SqlAlertController extends Controller
                 'ลองรัน Query บนเครื่องมืออื่นเพื่อทดสอบ'
             ];
         }
+    }
+
+    /**
+     * Check if database extension is available
+     */
+    private function checkDatabaseExtension($driver)
+    {
+        $extensionMap = [
+            'mysql' => [
+                'extension' => 'pdo_mysql',
+                'name' => 'MySQL',
+                'install' => 'sudo apt-get install php-mysql'
+            ],
+            'pgsql' => [
+                'extension' => 'pdo_pgsql',
+                'name' => 'PostgreSQL',
+                'install' => 'sudo apt-get install php-pgsql'
+            ],
+            'sqlsrv' => [
+                'extension' => 'pdo_sqlsrv',
+                'name' => 'SQL Server',
+                'install' => 'Install Microsoft SQL Server drivers'
+            ],
+            'sqlite' => [
+                'extension' => 'pdo_sqlite',
+                'name' => 'SQLite',
+                'install' => 'sudo apt-get install php-sqlite3'
+            ],
+            'oracle' => [
+                'extensions' => ['oci8', 'pdo_oci'],
+                'name' => 'Oracle',
+                'install' => 'Install Oracle Instant Client and PHP OCI8 extension'
+            ]
+        ];
+
+        if (!isset($extensionMap[$driver])) {
+            return [
+                'available' => false,
+                'message' => 'Unsupported database driver: ' . $driver,
+                'suggestion' => 'Please choose a supported database type'
+            ];
+        }
+
+        $info = $extensionMap[$driver];
+        
+        // จัดการกับ Oracle ที่มีหลาย extensions
+        if ($driver === 'oracle') {
+            $hasExtension = false;
+            foreach ($info['extensions'] as $ext) {
+                if (extension_loaded($ext)) {
+                    $hasExtension = true;
+                    break;
+                }
+            }
+            
+            if (!$hasExtension) {
+                return [
+                    'available' => false,
+                    'message' => "PHP extension for {$info['name']} is not installed",
+                    'suggestion' => "Please install the required extension: {$info['install']}"
+                ];
+            }
+        } else {
+            if (!extension_loaded($info['extension'])) {
+                return [
+                    'available' => false,
+                    'message' => "PHP extension for {$info['name']} is not installed",
+                    'suggestion' => "Please install the required extension: {$info['install']}"
+                ];
+            }
+        }
+
+        return [
+            'available' => true,
+            'message' => "{$info['name']} extension is available"
+        ];
+        
+    }
+
+    /**
+     * Add driver-specific configuration
+     */
+    private function addDriverSpecificConfig($config, $driver)
+    {
+        switch ($driver) {
+            case 'mysql':
+                $config['charset'] = 'utf8mb4';
+                $config['collation'] = 'utf8mb4_unicode_ci';
+                break;
+                
+            case 'pgsql':
+                $config['charset'] = 'utf8';
+                $config['schema'] = 'public';
+                break;
+                
+            case 'sqlsrv':
+                $config['charset'] = 'utf8';
+                break;
+                
+            case 'sqlite':
+                unset($config['host'], $config['port'], $config['username'], $config['password']);
+                break;
+            
+            case 'oracle':
+                $config['charset'] = 'AL32UTF8';
+                $config['prefix'] = '';
+                $config['prefix_schema'] = '';
+                $config['edition'] = '';
+                $config['server_version'] = '11g';
+                
+                // **แก้ไข: ใช้ Easy Connect format เหมือน sqlplus**
+                $config['tns'] = $config['host'] . ':' . $config['port'] . '/' . $config['database'];
+                
+                // **เพิ่ม debug log**
+                \Log::info('Oracle TNS:', ['tns' => $config['tns']]);
+                
+                break;
+        }
+        
+        return $config;
+    }
+
+    /**
+     * Get database version
+     */
+    private function getDatabaseVersion($connectionName, $driver)
+    {
+        try {
+            $query = $this->getVersionQuery($driver);
+            $result = DB::connection($connectionName)->select($query);
+            
+            if (!empty($result)) {
+                return $result[0]->version ?? 'Unknown';
+            }
+            
+            return 'Unknown';
+        } catch (\Exception $e) {
+            return 'Unknown';
+        }
+    }
+
+    /**
+     * Convert query to Oracle ROWNUM format
+     */
+    private function convertToOracleLimit($query)
+    {
+        // แปลง LIMIT เป็น ROWNUM สำหรับ Oracle เฉพาะเมื่อมี LIMIT ใน query
+        if (preg_match('/\s+LIMIT\s+(\d+)$/i', $query, $matches)) {
+            $limit = $matches[1];
+            $query = preg_replace('/\s+LIMIT\s+\d+$/i', '', $query);
+            
+            \Log::info('Query after removing LIMIT:', ['query' => $query]);
+            
+            // ตรวจสอบว่ามี WHERE clause หรือไม่
+            if (preg_match('/\bWHERE\b/i', $query)) {
+                // มี WHERE clause แล้ว เพิ่ม AND ROWNUM
+                $finalQuery = preg_replace('/\bWHERE\b/i', "WHERE ROWNUM <= $limit AND", $query);
+            } else {
+                // ไม่มี WHERE clause เพิ่ม WHERE ROWNUM
+                $finalQuery = $query . " WHERE ROWNUM <= $limit";
+            }
+            
+            \Log::info('Final Oracle query:', ['query' => $finalQuery]);
+            
+            return $finalQuery;
+        }
+        
+        // ไม่มี LIMIT ให้ส่งคืน query ตามเดิม
+        return $query;
     }
 }

@@ -1,8 +1,3 @@
-@extends('layouts.app')
-
-@section('title', 'สร้างการแจ้งเตือนแบบ SQL - กำหนดตัวแปรใน Scripts')
-
-@push('styles')
 <style>
 .wizard-container {
     background: white;
@@ -76,107 +71,129 @@
     font-weight: bold;
 }
 
-.variables-section {
-    background: #f8f9fa;
+.parameters-section {
+    background: #f8fafc;
     border-radius: 12px;
     padding: 25px;
     margin-bottom: 30px;
+    border-left: 4px solid #3b82f6;
 }
 
-.variables-header {
+.parameters-header {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #1e40af;
+    margin-bottom: 20px;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 10px;
+}
+
+.parameter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
     margin-bottom: 20px;
 }
 
-.variables-title {
+.parameter-item {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.parameter-item:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.parameter-name {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    color: #1e40af;
+    margin-bottom: 5px;
+}
+
+.parameter-description {
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+
+.parameter-example {
+    background: #f1f5f9;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.sql-editor {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 30px;
+    border: 1px solid #e5e7eb;
+}
+
+.sql-editor-header {
+    font-size: 1.2rem;
     font-weight: 600;
     color: #374151;
+    margin-bottom: 20px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
-.variable-item {
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 15px;
-    transition: all 0.3s ease;
-}
-
-.variable-item:hover {
-    border-color: #4f46e5;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.variable-row {
-    display: grid;
-    grid-template-columns: 1fr 2fr 1fr auto;
-    gap: 15px;
-    align-items: end;
-}
-
-.form-group {
-    margin-bottom: 0;
-}
-
-.form-label {
-    font-weight: 500;
-    color: #374151;
-    margin-bottom: 6px;
-    display: block;
-    font-size: 0.875rem;
-}
-
-.form-control {
+.sql-textarea {
     width: 100%;
-    padding: 10px 12px;
+    min-height: 200px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 15px;
     border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    transition: all 0.3s ease;
+    border-radius: 8px;
+    resize: vertical;
+    background: #f9fafb;
 }
 
-.form-control:focus {
+.sql-textarea:focus {
     outline: none;
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.form-select {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-    background-position: right 8px center;
-    background-repeat: no-repeat;
-    background-size: 16px 12px;
-    padding-right: 40px;
+.sql-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
 }
 
 .btn {
-    padding: 10px 16px;
-    border-radius: 6px;
+    padding: 10px 20px;
+    border-radius: 8px;
     font-weight: 500;
-    text-decoration: none;
     border: none;
     cursor: pointer;
     transition: all 0.3s ease;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.875rem;
+    gap: 8px;
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    background: #3b82f6;
     color: white;
 }
 
 .btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    background: #2563eb;
 }
 
 .btn-secondary {
@@ -197,160 +214,112 @@
     background: #059669;
 }
 
-.btn-danger {
-    background: #ef4444;
-    color: white;
-}
-
-.btn-danger:hover {
-    background: #dc2626;
-}
-
-.btn-sm {
-    padding: 6px 12px;
-    font-size: 0.75rem;
-}
-
-.predefined-variables {
+.results-section {
     background: white;
-    border: 2px solid #e5e7eb;
     border-radius: 12px;
-    padding: 20px;
+    padding: 25px;
     margin-bottom: 30px;
+    border: 1px solid #e5e7eb;
+    display: none;
 }
 
-.predefined-header {
-    font-weight: 600;
-    margin-bottom: 15px;
-    color: #374151;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.results-section.show {
+    display: block;
 }
 
-.variable-grid {
+.results-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 20px;
+    margin-bottom: 25px;
 }
 
-.variable-card {
-    background: #f9fafb;
+.stat-item {
+    text-align: center;
+    padding: 15px;
+    background: #f8fafc;
+    border-radius: 8px;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1e40af;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.sample-data {
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    padding: 15px;
-    cursor: pointer;
-    transition: all 0.3s ease;
+    overflow: hidden;
 }
 
-.variable-card:hover {
-    border-color: #4f46e5;
-    background: #f0f9ff;
-    transform: translateY(-1px);
+.sample-data table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sample-data th,
+.sample-data td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.sample-data th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #374151;
+}
+
+.variables-generated {
+    background: #ecfdf5;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    border-left: 4px solid #10b981;
+}
+
+.variables-header {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #065f46;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.variable-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
+}
+
+.variable-item {
+    background: white;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid #d1fae5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .variable-name {
     font-family: 'Courier New', monospace;
     font-weight: 600;
-    color: #7c3aed;
-    margin-bottom: 5px;
+    color: #065f46;
 }
 
-.variable-description {
-    font-size: 0.875rem;
+.variable-value {
     color: #6b7280;
-    margin-bottom: 8px;
-}
-
-.variable-example {
-    font-family: 'Courier New', monospace;
-    font-size: 0.75rem;
-    color: #059669;
-    background: rgba(16, 185, 129, 0.1);
-    padding: 4px 6px;
-    border-radius: 4px;
-}
-
-.sql-preview {
-    background: #1f2937;
-    color: #e5e7eb;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 30px;
-    font-family: 'Courier New', monospace;
     font-size: 0.9rem;
-    line-height: 1.5;
-}
-
-.sql-preview-header {
-    color: #fbbf24;
-    font-weight: 600;
-    margin-bottom: 15px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-.highlight-variable {
-    background: rgba(251, 191, 36, 0.3);
-    color: #fbbf24;
-    padding: 2px 4px;
-    border-radius: 3px;
-}
-
-.variable-types {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-}
-
-.type-badge {
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.type-badge.system {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.type-badge.date {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.type-badge.custom {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.type-badge.selected {
-    transform: scale(1.05);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.validation-note {
-    background: #fef3c7;
-    border-left: 4px solid #f59e0b;
-    padding: 12px 16px;
-    border-radius: 0 6px 6px 0;
-    margin-top: 15px;
-}
-
-.validation-note h6 {
-    color: #92400e;
-    font-weight: 600;
-    margin-bottom: 8px;
-    font-size: 0.875rem;
-}
-
-.validation-note ul {
-    margin-bottom: 0;
-    color: #92400e;
-    font-size: 0.875rem;
 }
 
 .wizard-navigation {
@@ -374,57 +343,45 @@
     background: #fef3c7;
 }
 
-@media (max-width: 768px) {
-    .wizard-content {
-        padding: 25px;
-    }
-    
-    .variable-row {
-        grid-template-columns: 1fr;
-        gap: 10px;
-    }
-    
-    .variable-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .variable-types {
-        flex-direction: column;
-    }
-    
-    .wizard-navigation {
-        flex-direction: column;
-        gap: 15px;
-    }
+.null-value {
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 0.9em;
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.empty-value {
+    color: #d1d5db;
+    font-style: italic;
+    font-size: 0.9em;
+    background: #f9fafb;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.no-data {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+    font-size: 1.1rem;
+}
+
+.no-data i {
+    display: block;
+    font-size: 2rem;
+    margin-bottom: 15px;
+    color: #d1d5db;
 }
 </style>
-@endpush
-
-@section('content')
-<div class="container">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0">
-                <i class="fas fa-database text-primary me-2"></i>
-                สร้างการแจ้งเตือนแบบ SQL
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">หน้าหลัก</a></li>
-                    <li class="breadcrumb-item"><a href="{{ route('notifications.index') }}">การแจ้งเตือน</a></li>
-                    <li class="breadcrumb-item active">สร้างการแจ้งเตือนแบบ SQL</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
 
     <!-- Wizard Container -->
     <div class="wizard-container">
         <!-- Wizard Header -->
         <div class="wizard-header">
-            <div class="wizard-title">🔧 กำหนดตัวแปรใน Scripts</div>
-            <div class="wizard-subtitle">สร้างตัวแปรที่จะใช้ในการแจ้งเตือนและ Email Template</div>
+        <div class="wizard-title">🔧 ปรับปรุง SQL Query</div>
+        <div class="wizard-subtitle">เพิ่ม System Parameters และปรับปรุง Query สำหรับการแจ้งเตือน</div>
             
             <!-- Step Indicator -->
             <div class="step-indicator">
@@ -447,171 +404,126 @@
 
         <!-- Wizard Content -->
         <div class="wizard-content">
-            <!-- Step 5: SQL Variables -->
+        <!-- Step 5: SQL Enhancement -->
             <div class="section-title">
                 <div class="section-icon">5</div>
-                กำหนดตัวแปรใน Scripts
+            ปรับปรุง SQL Query พร้อม System Parameters
             </div>
 
-            <!-- Variable Types Filter -->
-            <div class="variable-types">
-                <div class="type-badge system selected" data-type="system" onclick="filterVariables('system')">
-                    <i class="fas fa-cog me-1"></i>
-                    ตัวแปรระบบ
-                </div>
-                <div class="type-badge date" data-type="date" onclick="filterVariables('date')">
-                    <i class="fas fa-calendar me-1"></i>
-                    วันที่และเวลา
-                </div>
-                <div class="type-badge custom" data-type="custom" onclick="filterVariables('custom')">
-                    <i class="fas fa-edit me-1"></i>
-                    กำหนดเอง
-                </div>
+        <!-- System Parameters Section -->
+        <div class="parameters-section">
+            <div class="parameters-header">
+                <i class="fas fa-cogs"></i>
+                System Parameters ที่ใช้ได้
             </div>
 
-            <!-- Predefined Variables -->
-            <div class="predefined-variables">
-                <div class="predefined-header">
-                    <i class="fas fa-list"></i>
-                    ตัวแปรที่พร้อมใช้งาน
+            <div class="parameter-grid">
+                <div class="parameter-item" onclick="insertParameter('CURDATE()')">
+                    <div class="parameter-name">&#123;&#123;current_date&#125;&#125;</div>
+                    <div class="parameter-description">วันที่ปัจจุบัน</div>
+                    <div class="parameter-example">CURDATE()</div>
                 </div>
                 
-                <div class="variable-grid" id="predefinedGrid">
-                    <!-- System Variables -->
-                    <div class="variable-card system-var" onclick="addPredefinedVariable('{{record_count}}', 'จำนวนแถวข้อมูล', 'COUNT(*)')">
-                        <div class="variable-name">{{record_count}}</div>
-                        <div class="variable-description">จำนวนแถวข้อมูลที่ได้จาก Query</div>
-                        <div class="variable-example">ตัวอย่าง: 25</div>
+                <div class="parameter-item" onclick="insertParameter('NOW()')">
+                    <div class="parameter-name">&#123;&#123;current_datetime&#125;&#125;</div>
+                    <div class="parameter-description">วันที่และเวลาปัจจุบัน</div>
+                    <div class="parameter-example">NOW()</div>
                     </div>
 
-                    <div class="variable-card system-var" onclick="addPredefinedVariable('{{query_execution_time}}', 'เวลาในการรัน Query', 'EXECUTION_TIME')">
-                        <div class="variable-name">{{query_execution_time}}</div>
-                        <div class="variable-description">เวลาที่ใช้ในการรัน SQL Query</div>
-                        <div class="variable-example">ตัวอย่าง: 0.25s</div>
+                <div class="parameter-item" onclick="insertParameter('DATE_SUB(CURDATE(), INTERVAL 1 DAY)')">
+                    <div class="parameter-name">&#123;&#123;yesterday&#125;&#125;</div>
+                    <div class="parameter-description">เมื่อวาน</div>
+                    <div class="parameter-example">DATE_SUB(CURDATE(), INTERVAL 1 DAY)</div>
                     </div>
 
-                    <div class="variable-card system-var" onclick="addPredefinedVariable('{{database_name}}', 'ชื่อฐานข้อมูล', 'DATABASE_NAME')">
-                        <div class="variable-name">{{database_name}}</div>
-                        <div class="variable-description">ชื่อฐานข้อมูลที่เชื่อมต่อ</div>
-                        <div class="variable-example">ตัวอย่าง: company_db</div>
+                <div class="parameter-item" onclick="insertParameter('DATE_ADD(CURDATE(), INTERVAL 1 DAY)')">
+                    <div class="parameter-name">&#123;&#123;tomorrow&#125;&#125;</div>
+                    <div class="parameter-description">พรุ่งนี้</div>
+                    <div class="parameter-example">DATE_ADD(CURDATE(), INTERVAL 1 DAY)</div>
                     </div>
 
-                    <!-- Date Variables -->
-                    <div class="variable-card date-var" onclick="addPredefinedVariable('{{current_date}}', 'วันที่ปัจจุบัน', 'CURDATE()')">
-                        <div class="variable-name">{{current_date}}</div>
-                        <div class="variable-description">วันที่ปัจจุบัน</div>
-                        <div class="variable-example">ตัวอย่าง: 2025-07-11</div>
+                <div class="parameter-item" onclick="insertParameter('DATE_SUB(NOW(), INTERVAL 1 HOUR)')">
+                    <div class="parameter-name">&#123;&#123;last_hour&#125;&#125;</div>
+                    <div class="parameter-description">1 ชั่วโมงที่แล้ว</div>
+                    <div class="parameter-example">DATE_SUB(NOW(), INTERVAL 1 HOUR)</div>
                     </div>
 
-                    <div class="variable-card date-var" onclick="addPredefinedVariable('{{current_datetime}}', 'วันที่และเวลาปัจจุบัน', 'NOW()')">
-                        <div class="variable-name">{{current_datetime}}</div>
-                        <div class="variable-description">วันที่และเวลาปัจจุบัน</div>
-                        <div class="variable-example">ตัวอย่าง: 2025-07-11 14:30:00</div>
+                <div class="parameter-item" onclick="insertParameter('DATE_SUB(NOW(), INTERVAL 7 DAY)')">
+                    <div class="parameter-name">&#123;&#123;last_week&#125;&#125;</div>
+                    <div class="parameter-description">สัปดาห์ที่แล้ว</div>
+                    <div class="parameter-example">DATE_SUB(NOW(), INTERVAL 7 DAY)</div>
+                    </div>
+            </div>
                     </div>
 
-                    <div class="variable-card date-var" onclick="addPredefinedVariable('{{current_time}}', 'เวลาปัจจุบัน', 'CURTIME()')">
-                        <div class="variable-name">{{current_time}}</div>
-                        <div class="variable-description">เวลาปัจจุบัน</div>
-                        <div class="variable-example">ตัวอย่าง: 14:30:00</div>
+        <!-- SQL Editor Section -->
+        <div class="sql-editor">
+            <div class="sql-editor-header">
+                <i class="fas fa-code"></i>
+                แก้ไข SQL Query
                     </div>
 
-                    <div class="variable-card date-var" onclick="addPredefinedVariable('{{yesterday}}', 'เมื่อวานนี้', 'DATE_SUB(CURDATE(), INTERVAL 1 DAY)')">
-                        <div class="variable-name">{{yesterday}}</div>
-                        <div class="variable-description">วันที่เมื่อวานนี้</div>
-                        <div class="variable-example">ตัวอย่าง: 2025-07-10</div>
-                    </div>
-
-                    <div class="variable-card date-var" onclick="addPredefinedVariable('{{last_week}}', 'สัปดาห์ที่แล้ว', 'DATE_SUB(CURDATE(), INTERVAL 1 WEEK)')">
-                        <div class="variable-name">{{last_week}}</div>
-                        <div class="variable-description">วันที่เมื่อสัปดาห์ที่แล้ว</div>
-                        <div class="variable-example">ตัวอย่าง: 2025-07-04</div>
-                    </div>
+            <textarea class="sql-textarea" id="enhancedSqlQuery" placeholder="แก้ไข SQL Query ของคุณที่นี่..."></textarea>
+            
+            <div class="sql-actions">
+                <button type="button" class="btn btn-primary" onclick="formatSQL()">
+                    <i class="fas fa-magic"></i>
+                    Format SQL
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="validateSQL()">
+                    <i class="fas fa-check"></i>
+                    Validate
+                </button>
+                <button type="button" class="btn btn-success" onclick="executeEnhancedQuery()">
+                    <i class="fas fa-play"></i>
+                    Execute Query
+                </button>
                 </div>
             </div>
 
-            <!-- Custom Variables Section -->
-            <div class="variables-section">
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection">
+            <div class="results-header">
+                <h4>
+                    <i class="fas fa-chart-line"></i>
+                    ผลลัพธ์การรัน Query
+                </h4>
+                </div>
+
+            <!-- Stats -->
+            <div class="results-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="recordCount">-</div>
+                    <div class="stat-label">จำนวนแถว</div>
+                            </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="executionTime">-</div>
+                    <div class="stat-label">เวลารัน (วินาที)</div>
+                            </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="columnCount">-</div>
+                    <div class="stat-label">จำนวนคอลัมน์</div>
+                            </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="dataSize">-</div>
+                    <div class="stat-label">ขนาดข้อมูล</div>
+                    </div>
+                </div>
+
+            <!-- Sample Data -->
+            <div class="sample-data" id="sampleDataTable">
+                <!-- Table will be populated here -->
+            </div>
+
+            <!-- Generated Variables -->
+            <div class="variables-generated">
                 <div class="variables-header">
-                    <div class="variables-title">
-                        <i class="fas fa-plus-circle"></i>
-                        ตัวแปรที่กำหนดเอง
-                    </div>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="addVariable()">
-                        <i class="fas fa-plus"></i>
-                        เพิ่มตัวแปร
-                    </button>
+                    <i class="fas fa-tags"></i>
+                    ตัวแปรที่สร้างขึ้นสำหรับ Email Template
                 </div>
-
-                <div id="variablesContainer">
-                    <!-- Default variable -->
-                    <div class="variable-item" id="variable-0">
-                        <div class="variable-row">
-                            <div class="form-group">
-                                <label class="form-label">ชื่อตัวแปร</label>
-                                <input type="text" 
-                                       class="form-control" 
-                                       name="variables[0][name]" 
-                                       placeholder="เช่น: alert_count"
-                                       value=""
-                                       onchange="updatePreview()">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">คำอธิบาย</label>
-                                <input type="text" 
-                                       class="form-control" 
-                                       name="variables[0][description]" 
-                                       placeholder="เช่น: จำนวนการแจ้งเตือน"
-                                       onchange="updatePreview()">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">ประเภท</label>
-                                <select class="form-control form-select" 
-                                        name="variables[0][type]"
-                                        onchange="updatePreview()">
-                                    <option value="system">ระบบ</option>
-                                    <option value="query">จาก Query</option>
-                                    <option value="date">วันที่</option>
-                                    <option value="custom">กำหนดเอง</option>
-                                </select>
-                            </div>
-                            <div>
-                                <button type="button" class="btn btn-danger btn-sm" onclick="removeVariable(0)" title="ลบตัวแปร">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                <div class="variable-list" id="generatedVariables">
+                    <!-- Variables will be populated here -->
                 </div>
-
-                <div class="validation-note">
-                    <h6>
-                        <i class="fas fa-info-circle me-1"></i>
-                        หมายเหตุการใช้งาน
-                    </h6>
-                    <ul>
-                        <li><strong>ชื่อตัวแปร:</strong> ใช้ในรูปแบบ {{variable_name}} ใน Email Template</li>
-                        <li><strong>ประเภทระบบ:</strong> ตัวแปรที่ระบบสร้างอัตโนมัติ เช่น จำนวนข้อมูล, วันที่</li>
-                        <li><strong>ประเภท Query:</strong> ค่าที่ได้จากผลลัพธ์ SQL Query</li>
-                        <li><strong>ประเภทวันที่:</strong> ตัวแปรที่เกี่ยวข้องกับวันที่และเวลา</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- SQL Preview with Variables -->
-            <div class="sql-preview">
-                <div class="sql-preview-header">
-                    <i class="fas fa-eye me-2"></i>
-                    ตัวอย่าง SQL Query พร้อมตัวแปร
-                </div>
-                <div id="sqlPreviewContent">
-                    -- SQL Query ของคุณ
-                    SELECT employee_id, employee_name, department 
-                    FROM system_alerts 
-                    WHERE created_at >= <span class="highlight-variable">{{current_date}}</span>
-                    
-                    -- ตัวแปรที่จะใช้ใน Email:
-                    -- จำนวนข้อมูล: <span class="highlight-variable">{{record_count}}</span>
-                    -- วันที่รัน: <span class="highlight-variable">{{current_datetime}}</span>
                 </div>
             </div>
 
@@ -627,339 +539,318 @@
                     ขั้นตอนที่ 5 จาก 14
                 </div>
                 
-                <button type="button" class="btn btn-primary" onclick="nextStep()">
-                    ถัดไป (ดูตัวอย่างข้อมูล)
+            <button type="button" class="btn btn-primary" id="nextBtn" onclick="nextStep()" disabled>
+                ถัดไป (ดูภาพรวม)
                     <i class="fas fa-arrow-right"></i>
                 </button>
-            </div>
         </div>
     </div>
 </div>
 
-@push('scripts')
-@verbatim
 <script>
-let variableCount = 1;
-let currentFilter = 'system';
+let queryExecuted = false;
+let queryResults = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    loadSavedVariables();
-    updatePreview();
+    console.log('Step 5 DOM loaded');
+    initializeStep5();
 });
 
-function filterVariables(type) {
-    currentFilter = type;
+function initializeStep5() {
+    console.log('Initializing Step 5...');
     
-    // Update active badge
-    document.querySelectorAll('.type-badge').forEach(badge => {
-        badge.classList.remove('selected');
-    });
-    document.querySelector('[data-type="' + type + '"]').classList.add('selected');
-    
-    // Show/hide variables
-    const systemVars = document.querySelectorAll('.system-var');
-    const dateVars = document.querySelectorAll('.date-var');
-    
-    systemVars.forEach(el => el.style.display = (type === 'system' || type === 'all') ? 'block' : 'none');
-    dateVars.forEach(el => el.style.display = (type === 'date' || type === 'all') ? 'block' : 'none');
-}
-
-function addPredefinedVariable(name, description, value) {
-    const container = document.getElementById('variablesContainer');
-    const newId = variableCount++;
-    
-    // ป้องกัน null/undefined และ clean up curly braces
-    const safeName = name ? name.replace(/\{\{|\}\}/g, '') : '';
-    const safeDescription = description || '';
-    
-    const variableHtml = 
-        '<div class="variable-item" id="variable-' + newId + '">' +
-            '<div class="variable-row">' +
-                '<div class="form-group">' +
-                    '<label class="form-label">ชื่อตัวแปร</label>' +
-                    '<input type="text" class="form-control" ' +
-                           'name="variables[' + newId + '][name]" ' +
-                           'value="' + safeName + '" ' +
-                           'onchange="updatePreview()">' +
-                '</div>' +
-                '<div class="form-group">' +
-                    '<label class="form-label">คำอธิบาย</label>' +
-                    '<input type="text" class="form-control" ' +
-                           'name="variables[' + newId + '][description]" ' +
-                           'value="' + safeDescription + '" ' +
-                           'onchange="updatePreview()">' +
-                '</div>' +
-                '<div class="form-group">' +
-                    '<label class="form-label">ประเภท</label>' +
-                    '<select class="form-control form-select" ' +
-                            'name="variables[' + newId + '][type]" ' +
-                            'onchange="updatePreview()">' +
-                        '<option value="system"' + (currentFilter === 'system' ? ' selected' : '') + '>ระบบ</option>' +
-                        '<option value="query">จาก Query</option>' +
-                        '<option value="date"' + (currentFilter === 'date' ? ' selected' : '') + '>วันที่</option>' +
-                        '<option value="custom">กำหนดเอง</option>' +
-                    '</select>' +
-                '</div>' +
-                '<div>' +
-                    '<button type="button" class="btn btn-danger btn-sm" onclick="removeVariable(' + newId + ')" title="ลบตัวแปร">' +
-                        '<i class="fas fa-trash"></i>' +
-                    '</button>' +
-                '</div>' +
-            '</div>' +
-        '</div>';
-    
-    container.insertAdjacentHTML('beforeend', variableHtml);
-    updatePreview();
-    saveVariables();
-}
-
-function addVariable() {
-    const container = document.getElementById('variablesContainer');
-    const newId = variableCount++;
-    
-    const variableHtml = 
-        '<div class="variable-item" id="variable-' + newId + '">' +
-            '<div class="variable-row">' +
-                '<div class="form-group">' +
-                    '<label class="form-label">ชื่อตัวแปร</label>' +
-                    '<input type="text" class="form-control" ' +
-                           'name="variables[' + newId + '][name]" ' +
-                           'placeholder="เช่น: alert_count" ' +
-                           'onchange="updatePreview()">' +
-                '</div>' +
-                '<div class="form-group">' +
-                    '<label class="form-label">คำอธิบาย</label>' +
-                    '<input type="text" class="form-control" ' +
-                           'name="variables[' + newId + '][description]" ' +
-                           'placeholder="เช่น: จำนวนการแจ้งเตือน" ' +
-                           'onchange="updatePreview()">' +
-                '</div>' +
-                '<div class="form-group">' +
-                    '<label class="form-label">ประเภท</label>' +
-                    '<select class="form-control form-select" ' +
-                            'name="variables[' + newId + '][type]" ' +
-                            'onchange="updatePreview()">' +
-                        '<option value="system">ระบบ</option>' +
-                        '<option value="query">จาก Query</option>' +
-                        '<option value="date">วันที่</option>' +
-                        '<option value="custom">กำหนดเอง</option>' +
-                    '</select>' +
-                '</div>' +
-                '<div>' +
-                    '<button type="button" class="btn btn-danger btn-sm" onclick="removeVariable(' + newId + ')" title="ลบตัวแปร">' +
-                        '<i class="fas fa-trash"></i>' +
-                    '</button>' +
-                '</div>' +
-            '</div>' +
-        '</div>';
-    
-    container.insertAdjacentHTML('beforeend', variableHtml);
-    updatePreview();
-}
-
-function removeVariable(id) {
-    const element = document.getElementById('variable-' + id);
-    if (element) {
-        element.remove();
-        updatePreview();
-        saveVariables();
+    // Load SQL from step 4
+    const savedSQL = sessionStorage.getItem('sql_alert_query');
+    if (savedSQL) {
+        document.getElementById('enhancedSqlQuery').value = savedSQL;
     }
 }
 
-function updatePreview() {
-    const sqlQuery = sessionStorage.getItem('sql_alert_query') || 'SELECT * FROM your_table';
-    const variables = getCurrentVariables();
+function insertParameter(parameterSQL) {
+    const textarea = document.getElementById('enhancedSqlQuery');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
     
-    let preview = '-- SQL Query ของคุณ\n' + sqlQuery + '\n\n-- ตัวแปรที่จะใช้ใน Email:';
+    textarea.value = textBefore + parameterSQL + textAfter;
+    textarea.focus();
+    textarea.setSelectionRange(cursorPos + parameterSQL.length, cursorPos + parameterSQL.length);
     
-    variables.forEach(variable => {
-        if (variable.name && variable.description) {
-            preview += '\n-- ' + variable.description + ': <span class="highlight-variable">{{' + variable.name + '}}</span>';
-        }
-    });
-    
-    document.getElementById('sqlPreviewContent').innerHTML = preview;
+    // Auto-save
+    sessionStorage.setItem('sql_alert_enhanced_query', textarea.value);
 }
 
-function getCurrentVariables() {
-    const variables = [];
-    const container = document.getElementById('variablesContainer');
-    const variableItems = container.querySelectorAll('.variable-item');
+function formatSQL() {
+    const textarea = document.getElementById('enhancedSqlQuery');
+    let sql = textarea.value;
     
-    variableItems.forEach(item => {
-        const nameInput = item.querySelector('input[name*="[name]"]');
-        const descInput = item.querySelector('input[name*="[description]"]');
-        const typeSelect = item.querySelector('select[name*="[type]"]');
-        
-        if (nameInput && descInput && typeSelect) {
-            const name = nameInput.value.trim();
-            const description = descInput.value.trim();
-            const type = typeSelect.value;
-            
-            if (name && description) {
-                variables.push({
-                    name: name,
-                    description: description,
-                    type: type
-                });
-            }
-        }
-    });
+    // Basic SQL formatting
+    sql = sql.replace(/\s+/g, ' ').trim();
+    sql = sql.replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|ORDER BY|GROUP BY|HAVING|LIMIT)\b/gi, '\n$1');
+    sql = sql.replace(/,/g, ',\n    ');
+    sql = sql.replace(/\n\s*\n/g, '\n');
     
-    return variables;
+    textarea.value = sql;
+    sessionStorage.setItem('sql_alert_enhanced_query', sql);
 }
 
-function saveVariables() {
-    const variables = getCurrentVariables();
-    sessionStorage.setItem('sql_alert_variables', JSON.stringify(variables));
-}
-
-function loadSavedVariables() {
-    const saved = sessionStorage.getItem('sql_alert_variables');
-    if (saved) {
-        try {
-            const variables = JSON.parse(saved);
-            const container = document.getElementById('variablesContainer');
-            
-            // Clear existing except first one
-            const existingItems = container.querySelectorAll('.variable-item');
-            for (let i = 1; i < existingItems.length; i++) {
-                existingItems[i].remove();
-            }
-            
-            // Load saved variables
-            variables.forEach((variable, index) => {
-                if (index === 0) {
-                    // Update first item
-                    const firstItem = container.querySelector('.variable-item');
-                    if (firstItem) {
-                        firstItem.querySelector('input[name*="[name]"]').value = variable.name;
-                        firstItem.querySelector('input[name*="[description]"]').value = variable.description;
-                        firstItem.querySelector('select[name*="[type]"]').value = variable.type;
-                    }
-                } else {
-                    // Add new items
-                    const newId = variableCount++;
-                    const variableHtml = 
-                        '<div class="variable-item" id="variable-' + newId + '">' +
-                            '<div class="variable-row">' +
-                                '<div class="form-group">' +
-                                    '<label class="form-label">ชื่อตัวแปร</label>' +
-                                    '<input type="text" class="form-control" ' +
-                                           'name="variables[' + newId + '][name]" ' +
-                                           'value="' + variable.name + '" ' +
-                                           'onchange="updatePreview()">' +
-                                '</div>' +
-                                '<div class="form-group">' +
-                                    '<label class="form-label">คำอธิบาย</label>' +
-                                    '<input type="text" class="form-control" ' +
-                                           'name="variables[' + newId + '][description]" ' +
-                                           'value="' + variable.description + '" ' +
-                                           'onchange="updatePreview()">' +
-                                '</div>' +
-                                '<div class="form-group">' +
-                                    '<label class="form-label">ประเภท</label>' +
-                                    '<select class="form-control form-select" ' +
-                                            'name="variables[' + newId + '][type]" ' +
-                                            'onchange="updatePreview()">' +
-                                        '<option value="system"' + (variable.type === 'system' ? ' selected' : '') + '>ระบบ</option>' +
-                                        '<option value="query"' + (variable.type === 'query' ? ' selected' : '') + '>จาก Query</option>' +
-                                        '<option value="date"' + (variable.type === 'date' ? ' selected' : '') + '>วันที่</option>' +
-                                        '<option value="custom"' + (variable.type === 'custom' ? ' selected' : '') + '>กำหนดเอง</option>' +
-                                    '</select>' +
-                                '</div>' +
-                                '<div>' +
-                                    '<button type="button" class="btn btn-danger btn-sm" onclick="removeVariable(' + newId + ')" title="ลบตัวแปร">' +
-                                        '<i class="fas fa-trash"></i>' +
-                                    '</button>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>';
-                    container.insertAdjacentHTML('beforeend', variableHtml);
-                }
-            });
-            
-        } catch (e) {
-            console.error('Error loading saved variables:', e);
-        }
-    }
-}
-
-function validateVariables() {
-    const variables = getCurrentVariables();
-    const errors = [];
-    const names = [];
+function validateSQL() {
+    const sql = document.getElementById('enhancedSqlQuery').value.trim();
     
-    variables.forEach((variable, index) => {
-        // Check for empty names
-        if (!variable.name) {
-            errors.push('ตัวแปรที่ ' + (index + 1) + ': ไม่ได้ระบุชื่อ');
-        }
-        
-        // Check for duplicate names
-        if (names.includes(variable.name)) {
-            errors.push('ตัวแปร "' + variable.name + '": ชื่อซ้ำกัน');
-        } else {
-            names.push(variable.name);
-        }
-        
-        // Check variable name format
-        if (variable.name && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(variable.name)) {
-            errors.push('ตัวแปร "' + variable.name + '": ชื่อไม่ถูกต้อง (ใช้ได้เฉพาะ a-z, A-Z, 0-9, _)');
-        }
-    });
-    
-    return {
-        isValid: errors.length === 0,
-        errors: errors,
-        variables: variables
-    };
-}
-
-function previousStep() {
-    saveVariables();
-    window.location.href = '{{ route("sql-alerts.create") }}?step=4';
-}
-
-function nextStep() {
-    const validation = validateVariables();
-    
-    if (!validation.isValid) {
-        alert('พบข้อผิดพลาด:\n' + validation.errors.join('\n'));
+    if (!sql) {
+        alert('กรุณาใส่ SQL Query');
         return;
     }
     
-    if (validation.variables.length === 0) {
-        if (!confirm('คุณยังไม่ได้กำหนดตัวแปร ต้องการดำเนินการต่อไหม?')) {
+    // Basic validation
+    if (!sql.toLowerCase().includes('select')) {
+        alert('Query ต้องเป็น SELECT statement');
+        return;
+    }
+    
+    const dangerousKeywords = ['drop', 'delete', 'update', 'insert', 'create', 'alter', 'truncate'];
+    const sqlLower = sql.toLowerCase();
+    
+    for (let keyword of dangerousKeywords) {
+        if (sqlLower.includes(keyword)) {
+            alert(`ไม่อนุญาตให้ใช้คำสั่ง ${keyword.toUpperCase()}`);
             return;
         }
     }
     
-    saveVariables();
-    sessionStorage.setItem('sql_alert_step', '6');
-    window.location.href = '{{ route("sql-alerts.create") }}?step=6';
+    alert('SQL Query ถูกต้อง!');
 }
 
-// Auto-save on input change
-document.addEventListener('input', function(e) {
-    if (e.target.matches('input[name*="variables"], select[name*="variables"]')) {
-        updatePreview();
-        saveVariables();
+function executeEnhancedQuery() {
+    const sql = document.getElementById('enhancedSqlQuery').value.trim();
+    
+    if (!sql) {
+        alert('กรุณาใส่ SQL Query');
+        return;
     }
+    
+    // Get connection data from previous steps
+    const connectionData = JSON.parse(sessionStorage.getItem('sql_alert_connection') || '{}');
+    
+    if (!connectionData.host) {
+        alert('ไม่พบข้อมูลการเชื่อมต่อ กรุณากลับไปขั้นตอนที่ 2-3');
+        return;
+    }
+    
+    // Show loading
+    const executeBtn = document.querySelector('button[onclick="executeEnhancedQuery()"]');
+    executeBtn.disabled = true;
+    executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังรัน...';
+    
+    // Get CSRF token
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    
+    // Execute real query
+    fetch('/admin/sql-alerts/execute-query', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+            sql_query: sql,
+            database_config: connectionData
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => Promise.reject(err));
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Query execution result:', data);
+        
+        if (data.success) {
+            const results = {
+                records_count: data.data.records_count || 0,
+                execution_time: data.data.execution_time || 0,
+                columns: data.data.columns || [],
+                sample_data: data.data.sample_data || []
+            };
+            
+            showResults(results);
+            queryExecuted = true;
+            queryResults = results;
+            
+            // Enable next button
+            document.getElementById('nextBtn').disabled = false;
+            
+            // Save enhanced query and results
+            sessionStorage.setItem('sql_alert_enhanced_query', sql);
+            sessionStorage.setItem('sql_alert_final_results', JSON.stringify(results));
+            
+            // Also save for other steps
+            sessionStorage.setItem('sql_alert_query_result', JSON.stringify(data));
+            sessionStorage.setItem('sql_alert_query_results', JSON.stringify({
+                columns: results.columns,
+                rows: results.sample_data,
+                totalRows: results.records_count,
+                executionTime: results.execution_time,
+                querySize: sql.length
+            }));
+            
+        } else {
+            throw new Error(data.message || 'Query execution failed');
+        }
+    })
+    .catch(error => {
+        console.error('Query execution error:', error);
+        alert('เกิดข้อผิดพลาด: ' + (error.message || 'ไม่สามารถรัน Query ได้'));
+        
+        // Hide results section
+        document.getElementById('resultsSection').classList.remove('show');
+    })
+    .finally(() => {
+        // Reset button
+        executeBtn.disabled = false;
+        executeBtn.innerHTML = '<i class="fas fa-play"></i> Execute Query';
+    });
+}
+
+function showResults(results) {
+    const resultsSection = document.getElementById('resultsSection');
+    resultsSection.classList.add('show');
+    
+    // Update stats
+    document.getElementById('recordCount').textContent = results.records_count.toLocaleString();
+    document.getElementById('executionTime').textContent = results.execution_time + 's';
+    document.getElementById('columnCount').textContent = results.columns.length;
+    document.getElementById('dataSize').textContent = Math.round(results.records_count * 0.5) + ' KB';
+    
+    // Show sample data
+    showSampleData(results);
+    
+    // Generate variables
+    generateVariables(results);
+}
+
+function showSampleData(results) {
+    const tableContainer = document.getElementById('sampleDataTable');
+    
+    if (!results.sample_data || results.sample_data.length === 0) {
+        tableContainer.innerHTML = `
+            <div class="no-data">
+                <i class="fas fa-info-circle"></i>
+                ไม่มีข้อมูลตัวอย่าง
+                        </div>
+                    `;
+        return;
+    }
+    
+    let html = '<table><thead><tr>';
+    results.columns.forEach(col => {
+        html += `<th>${col}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+    
+    results.sample_data.forEach(row => {
+        html += '<tr>';
+        results.columns.forEach(col => {
+            const value = row[col];
+            let displayValue;
+            
+            if (value === null || value === undefined) {
+                displayValue = '<span class="null-value">NULL</span>';
+            } else if (typeof value === 'string' && value.trim() === '') {
+                displayValue = '<span class="empty-value">Empty</span>';
+            } else if (typeof value === 'object') {
+                displayValue = JSON.stringify(value);
+            } else {
+                displayValue = String(value);
+            }
+            
+            html += `<td>${displayValue}</td>`;
+        });
+        html += '</tr>';
+    });
+    
+    html += '</tbody></table>';
+    tableContainer.innerHTML = html;
+}
+
+function generateVariables(results) {
+    const variablesContainer = document.getElementById('generatedVariables');
+    
+    // Create system variables from real data (ไม่รวมตัวแปร column)
+    const variables = [
+        { name: 'record_count', value: results.records_count },
+        { name: 'query_execution_time', value: results.execution_time + 's' },
+        { name: 'current_date', value: new Date().toISOString().split('T')[0] },
+        { name: 'current_datetime', value: new Date().toISOString().replace('T', ' ').slice(0, 19) },
+        { name: 'database_name', value: sessionStorage.getItem('sql_alert_db_name') || 'database' },
+        { name: 'database_type', value: sessionStorage.getItem('sql_alert_db_type') || 'mysql' },
+        { name: 'total_columns', value: results.columns.length },
+        { name: 'sample_rows', value: results.sample_data.length },
+        { name: 'query_date', value: new Date().toISOString().split('T')[0] },
+        { name: 'query_time', value: new Date().toLocaleTimeString('th-TH') }
+    ];
+    
+    // ไม่แสดงตัวแปร column เพื่อไม่ให้ template ยุ่งเหยิง
+    // (ตัวแปร column จะถูกสร้างในขั้นตอนการส่ง email จริง)
+    
+    let html = '';
+    variables.forEach(variable => {
+        html += `
+            <div class="variable-item">
+                <div class="variable-name">&#123;&#123;${variable.name}&#125;&#125;</div>
+                <div class="variable-value">${variable.value}</div>
+            </div>
+        `;
+    });
+    
+    variablesContainer.innerHTML = html;
+    
+    // Save variables for next steps
+    sessionStorage.setItem('sql_alert_system_variables', JSON.stringify(variables));
+}
+
+function previousStep() {
+    if (window.SqlAlertWizard) {
+        window.SqlAlertWizard.previousStep();
+    } else {
+        window.location.href = '/admin/sql-alerts/create?step=4';
+    }
+}
+
+function nextStep() {
+    if (!queryExecuted) {
+        alert('กรุณารัน Query ก่อนดำเนินการต่อ');
+        return;
+    }
+    
+    // Save current progress
+    const sql = document.getElementById('enhancedSqlQuery').value;
+    sessionStorage.setItem('sql_alert_enhanced_query', sql);
+    sessionStorage.setItem('sql_alert_step', '6');
+    
+    if (window.SqlAlertWizard) {
+        window.SqlAlertWizard.nextStep();
+    } else {
+        window.location.href = '/admin/sql-alerts/create?step=6';
+    }
+}
+
+// Auto-save on input
+document.getElementById('enhancedSqlQuery').addEventListener('input', function() {
+    sessionStorage.setItem('sql_alert_enhanced_query', this.value);
 });
 
-// Initialize default system variables
-document.addEventListener('DOMContentLoaded', function() {
-    const saved = sessionStorage.getItem('sql_alert_variables');
-    if (!saved) {
-        // Add some default system variables
-        setTimeout(() => {
-            addPredefinedVariable('{{record_count}}', 'จำนวนแถวข้อมูล', 'COUNT(*)');
-            addPredefinedVariable('{{current_date}}', 'วันที่ปัจจุบัน', 'CURDATE()');
-        }, 500);
-    }
-});
+// Export functions
+window.initializeStep5 = initializeStep5;
+window.initializeCurrentStep = initializeStep5;
+window.insertParameter = insertParameter;
+window.formatSQL = formatSQL;
+window.validateSQL = validateSQL;
+window.executeEnhancedQuery = executeEnhancedQuery;
+window.previousStep = previousStep;
+window.nextStep = nextStep;
+
+console.log('Step 5 script loaded');
 </script>
-@endverbatim
-@endpush
-@endsection

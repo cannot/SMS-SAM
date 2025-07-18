@@ -1,1191 +1,454 @@
 @extends('layouts.app')
 
-@section('title', 'การแจ้งเตือนแบบ SQL')
-
-@push('styles')
-<style>
-.alert-card {
-    transition: all 0.3s ease;
-    border-left: 4px solid #e5e7eb;
-}
-
-.alert-card.active {
-    border-left-color: #10b981;
-}
-
-.alert-card.inactive {
-    border-left-color: #6b7280;
-}
-
-.alert-card.draft {
-    border-left-color: #f59e0b;
-}
-
-.alert-card.error {
-    border-left-color: #ef4444;
-}
-
-.alert-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.status-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.375rem;
-}
-
-.status-active {
-    background-color: #d1fae5;
-    color: #065f46;
-}
-
-.status-inactive {
-    background-color: #f3f4f6;
-    color: #374151;
-}
-
-.status-draft {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.status-error {
-    background-color: #fee2e2;
-    color: #991b1b;
-}
-
-.stats-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 12px;
-}
-
-.filter-card {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-}
-</style>
-@endpush
+@section('title', $title ?? 'SQL Alerts')
 
 @section('content')
 <div class="container-fluid">
-    <!-- Page Header -->
+    
+    {{-- Header Section --}}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h1 class="h3 mb-0">
-                <i class="fas fa-database text-primary me-2"></i>
-                การแจ้งเตือนแบบ SQL
-            </h1>
-            <p class="text-muted">จัดการและติดตามการแจ้งเตือนอัตโนมัติจากฐานข้อมูล</p>
+            <h1 class="h3 mb-0 text-gray-800">SQL Alerts</h1>
+            <p class="mb-0 text-muted">จัดการการแจ้งเตือนแบบ SQL</p>
         </div>
+        
         <div>
             <a href="{{ route('admin.sql-alerts.create') }}" class="btn btn-primary">
-                <i class="fas fa-plus me-2"></i>
-                สร้างการแจ้งเตือนใหม่
+                <i class="fas fa-plus"></i> สร้างการแจ้งเตือนใหม่
             </a>
         </div>
     </div>
 
-    <!-- Statistics Cards -->
+    {{-- Statistics Cards --}}
     <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="stats-card p-3">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <i class="fas fa-bell fa-2x opacity-75"></i>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <div class="fs-4 fw-bold">{{ $alerts->total() }}</div>
-                        <div class="opacity-75">การแจ้งเตือนทั้งหมด</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="stats-card p-3">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <i class="fas fa-play-circle fa-2x opacity-75"></i>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <div class="fs-4 fw-bold">{{ $alerts->where('status', 'active')->count() }}</div>
-                        <div class="opacity-75">กำลังทำงาน</div>
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-primary shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                การแจ้งเตือนทั้งหมด</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ $totalAlerts ?? 0 }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-database fa-2x text-gray-300"></i>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="stats-card p-3">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <i class="fas fa-clock fa-2x opacity-75"></i>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <div class="fs-4 fw-bold">{{ $alerts->where('schedule_type', '!=', 'manual')->count() }}</div>
-                        <div class="opacity-75">รันตามกำหนดเวลา</div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-success shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                การแจ้งเตือนที่ใช้งาน</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ $activeAlerts ?? 0 }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-check-circle fa-2x text-gray-300"></i>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="stats-card p-3">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <i class="fas fa-exclamation-triangle fa-2x opacity-75"></i>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-info shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                การรันล่าสุด</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                {{ $recentExecutions->count() ?? 0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-clock fa-2x text-gray-300"></i>
+                        </div>
                     </div>
-                    <div class="flex-grow-1 ms-3">
-                        <div class="fs-4 fw-bold">{{ $alerts->where('status', 'error')->count() }}</div>
-                        <div class="opacity-75">มีข้อผิดพลาด</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-warning shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                สถานะ Draft</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                {{ $statusCounts['draft'] ?? 0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-edit fa-2x text-gray-300"></i>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="filter-card">
-        <form method="GET" action="{{ route('admin.sql-alerts.index') }}">
-            <div class="row g-3">
+    {{-- Filters Section --}}
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ route('admin.sql-alerts.index') }}" class="row g-3">
+                
                 <div class="col-md-3">
-                    <label class="form-label">สถานะ</label>
-                    <select name="status" class="form-select">
-                        <option value="">ทั้งหมด</option>
-                        <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>เปิดใช้งาน</option>
-                        <option value="inactive" {{ request('status') == 'inactive' ? 'selected' : '' }}>ปิดใช้งาน</option>
-                        <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>ร่าง</option>
-                        <option value="error" {{ request('status') == 'error' ? 'selected' : '' }}>ข้อผิดพลาด</option>
+                    <label for="status" class="form-label">สถานะ</label>
+                    <select name="status" id="status" class="form-select">
+                        <option value="">ทุกสถานะ</option>
+                        <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>ใช้งาน</option>
+                        <option value="inactive" {{ request('status') === 'inactive' ? 'selected' : '' }}>ไม่ใช้งาน</option>
+                        <option value="draft" {{ request('status') === 'draft' ? 'selected' : '' }}>ร่าง</option>
+                        <option value="error" {{ request('status') === 'error' ? 'selected' : '' }}>ข้อผิดพลาด</option>
                     </select>
                 </div>
+                
                 <div class="col-md-3">
-                    <label class="form-label">ประเภทการรัน</label>
-                    <select name="schedule_type" class="form-select">
-                        <option value="">ทั้งหมด</option>
-                        <option value="manual" {{ request('schedule_type') == 'manual' ? 'selected' : '' }}>รันเอง</option>
-                        <option value="once" {{ request('schedule_type') == 'once' ? 'selected' : '' }}>รันครั้งเดียว</option>
-                        <option value="recurring" {{ request('schedule_type') == 'recurring' ? 'selected' : '' }}>รันซ้ำ</option>
-                        <option value="cron" {{ request('schedule_type') == 'cron' ? 'selected' : '' }}>กำหนดเอง</option>
+                    <label for="schedule_type" class="form-label">ประเภทตารางเวลา</label>
+                    <select name="schedule_type" id="schedule_type" class="form-select">
+                        <option value="">ทุกประเภท</option>
+                        <option value="manual" {{ request('schedule_type') === 'manual' ? 'selected' : '' }}>Manual</option>
+                        <option value="once" {{ request('schedule_type') === 'once' ? 'selected' : '' }}>Once</option>
+                        <option value="recurring" {{ request('schedule_type') === 'recurring' ? 'selected' : '' }}>Recurring</option>
+                        <option value="cron" {{ request('schedule_type') === 'cron' ? 'selected' : '' }}>Cron</option>
                     </select>
                 </div>
+                
                 <div class="col-md-4">
-                    <label class="form-label">ค้นหา</label>
-                    <input type="text" name="search" class="form-control" placeholder="ชื่อหรือคำอธิบาย" value="{{ request('search') }}">
+                    <label for="search" class="form-label">ค้นหา</label>
+                    <input type="text" name="search" id="search" class="form-control" 
+                           placeholder="ค้นหาตามชื่อหรือคำอธิบาย..." 
+                           value="{{ request('search') }}">
                 </div>
+                
                 <div class="col-md-2">
                     <label class="form-label">&nbsp;</label>
-                    <div class="d-grid">
+                    <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-outline-primary">
-                            <i class="fas fa-search me-1"></i>
-                            ค้นหา
+                            <i class="fas fa-search"></i> ค้นหา
                         </button>
+                        <a href="{{ route('admin.sql-alerts.index') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times"></i>
+                        </a>
                     </div>
                 </div>
-            </div>
-        </form>
+                
+            </form>
+        </div>
     </div>
 
-    <!-- Alerts List -->
-    <div class="row">
-        @forelse($alerts as $alert)
-        <div class="col-lg-6 mb-4">
-            <div class="card alert-card {{ $alert->status }} h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <div>
-                            <h5 class="card-title mb-1">
-                                <a href="{{ route('admin.sql-alerts.show', $alert) }}" class="text-decoration-none">
-                                    {{ $alert->name }}
-                                </a>
-                            </h5>
-                            <span class="status-badge status-{{ $alert->status }}">
-                                {{ $alert->status_display }}
-                            </span>
-                        </div>
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                <i class="fas fa-ellipsis-v"></i>
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ route('admin.sql-alerts.show', $alert) }}">
-                                    <i class="fas fa-eye me-2"></i>ดูรายละเอียด
-                                </a></li>
-                                @if($alert->canExecute())
-                                <li><a class="dropdown-item" href="#" onclick="executeAlert({{ $alert->id }})">
-                                    <i class="fas fa-play me-2"></i>รันทันที
-                                </a></li>
+    {{-- Alerts Table --}}
+    <div class="card">
+        <div class="card-body">
+            
+            @if(isset($alerts) && $alerts->count() > 0)
+            
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ชื่อการแจ้งเตือน</th>
+                            <th>สถานะ</th>
+                            <th>ประเภทตารางเวลา</th>
+                            <th>การรันล่าสุด</th>
+                            <th>อัตราความสำเร็จ</th>
+                            <th>สร้างโดย</th>
+                            <th>จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($alerts as $alert)
+                        <tr>
+                            <td>
+                                <div>
+                                    <h6 class="mb-0">{{ $alert->name }}</h6>
+                                    @if($alert->description)
+                                    <small class="text-muted">{{ Str::limit($alert->description, 50) }}</small>
+                                    @endif
+                                </div>
+                            </td>
+                            
+                            <td>
+                                @php
+                                    $statusColors = [
+                                        'active' => 'success',
+                                        'inactive' => 'secondary', 
+                                        'draft' => 'warning',
+                                        'error' => 'danger'
+                                    ];
+                                    $statusColor = $statusColors[$alert->status] ?? 'secondary';
+                                    $statusLabels = [
+                                        'active' => 'ใช้งาน',
+                                        'inactive' => 'ไม่ใช้งาน',
+                                        'draft' => 'ร่าง',
+                                        'error' => 'ข้อผิดพลาด'
+                                    ];
+                                @endphp
+                                <span class="badge bg-{{ $statusColor }}">
+                                    {{ $statusLabels[$alert->status] ?? ucfirst($alert->status) }}
+                                </span>
+                            </td>
+                            
+                            <td>
+                                <div>
+                                    @php
+                                        $scheduleLabels = [
+                                            'manual' => 'Manual',
+                                            'once' => 'ครั้งเดียว',
+                                            'recurring' => 'ซ้ำ',
+                                            'cron' => 'Cron'
+                                        ];
+                                    @endphp
+                                    <span class="badge bg-light text-dark">
+                                        {{ $scheduleLabels[$alert->schedule_type] ?? ucfirst($alert->schedule_type) }}
+                                    </span>
+                                    @if($alert->next_run)
+                                    <br><small class="text-muted">
+                                        ถัดไป: {{ $alert->next_run->format('M j, H:i') }}
+                                    </small>
+                                    @endif
+                                </div>
+                            </td>
+                            
+                            <td>
+                                @if($alert->last_run)
+                                    <span class="text-muted">{{ $alert->last_run->diffForHumans() }}</span>
+                                @else
+                                    <span class="text-muted">ยังไม่เคยรัน</span>
                                 @endif
-                                <li><a class="dropdown-item" href="{{ route('admin.sql-alerts.edit', $alert) }}">
-                                    <i class="fas fa-edit me-2"></i>แก้ไข
-                                </a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-danger" href="#" onclick="deleteAlert({{ $alert->id }})">
-                                    <i class="fas fa-trash me-2"></i>ลบ
-                                </a></li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <p class="card-text text-muted small">{{ $alert->description ?: 'ไม่มีคำอธิบาย' }}</p>
-
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <div class="d-flex align-items-center text-muted small">
-                                <i class="fas fa-database me-2"></i>
-                                {{ $alert->database_type }}
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center text-muted small">
-                                <i class="fas fa-clock me-2"></i>
-                                {{ $alert->schedule_type_display }}
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center text-muted small">
-                                <i class="fas fa-users me-2"></i>
-                                {{ $alert->getRecipientCount() }} ผู้รับ
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="d-flex align-items-center text-muted small">
-                                <i class="fas fa-chart-line me-2"></i>
-                                {{ $alert->success_rate }}% สำเร็จ
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row g-2 text-center">
-                        <div class="col-4">
-                            <div class="fs-6 fw-bold text-primary">{{ $alert->total_executions }}</div>
-                            <div class="small text-muted">รันทั้งหมด</div>
-                        </div>
-                        <div class="col-4">
-                            <div class="fs-6 fw-bold text-success">{{ $alert->successful_executions }}</div>
-                            <div class="small text-muted">สำเร็จ</div>
-                        </div>
-                        <div class="col-4">
-                            <div class="fs-6 fw-bold text-danger">{{ $alert->total_executions - $alert->successful_executions }}</div>
-                            <div class="small text-muted">ล้มเหลว</div>
-                        </div>
-                    </div>
-
-                    @if($alert->next_run)
-                    <div class="mt-3 p-2 bg-light rounded">
-                        <div class="d-flex align-items-center justify-content-between">
-                            <small class="text-muted">
-                                <i class="fas fa-calendar-alt me-1"></i>
-                                รันครั้งถัดไป:
-                            </small>
-                            <small class="fw-bold {{ $alert->is_overdue ? 'text-danger' : 'text-primary' }}">
-                                {{ $alert->next_run_human }}
-                            </small>
-                        </div>
-                    </div>
-                    @endif
+                            </td>
+                            
+                            <td>
+                                @if($alert->total_executions > 0)
+                                    @php
+                                        $successRate = round(($alert->successful_executions / $alert->total_executions) * 100);
+                                        $rateColor = $successRate >= 90 ? 'success' : ($successRate >= 70 ? 'warning' : 'danger');
+                                    @endphp
+                                    <span class="text-{{ $rateColor }}">{{ $successRate }}%</span>
+                                    <br><small class="text-muted">{{ $alert->successful_executions }}/{{ $alert->total_executions }}</small>
+                                @else
+                                    <span class="text-muted">-</span>
+                                @endif
+                            </td>
+                            
+                            <td>
+                                <div>
+                                    <span>{{ $alert->creator->name ?? 'Unknown' }}</span>
+                                    <br><small class="text-muted">{{ $alert->created_at->format('M j, Y') }}</small>
+                                </div>
+                            </td>
+                            
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{{ route('admin.sql-alerts.show', $alert) }}" 
+                                       class="btn btn-sm btn-outline-primary" title="ดู">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    
+                                    <a href="{{ route('admin.sql-alerts.edit', $alert) }}" 
+                                       class="btn btn-sm btn-outline-secondary" title="แก้ไข">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    
+                                    @if($alert->status === 'active')
+                                    <button type="button" class="btn btn-sm btn-outline-success" 
+                                            onclick="executeAlert({{ $alert->id }})" title="รันทันที">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                    @endif
+                                    
+                                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                                            onclick="deleteAlert({{ $alert->id }})" title="ลบ">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            
+            {{-- Pagination --}}
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div>
+                    <small class="text-muted">
+                        แสดง {{ $alerts->firstItem() ?? 0 }} ถึง {{ $alerts->lastItem() ?? 0 }} 
+                        จากทั้งหมด {{ $alerts->total() }} รายการ
+                    </small>
                 </div>
-
-                <div class="card-footer bg-transparent border-top-0">
-                    <div class="d-flex align-items-center justify-content-between text-muted small">
-                        <div>
-                            <i class="fas fa-user me-1"></i>
-                            {{ $alert->creator->name }}
-                        </div>
-                        <div>
-                            <i class="fas fa-calendar me-1"></i>
-                            {{ $alert->created_at->diffForHumans() }}
-                        </div>
-                    </div>
+                <div>
+                    {{ $alerts->appends(request()->query())->links() }}
                 </div>
             </div>
-        </div>
-        @empty
-        <div class="col-12">
+            
+            @else
+            
+            {{-- Empty State --}}
             <div class="text-center py-5">
                 <i class="fas fa-database fa-3x text-muted mb-3"></i>
-                <h4 class="text-muted">ยังไม่มีการแจ้งเตือน SQL</h4>
-                <p class="text-muted">เริ่มต้นสร้างการแจ้งเตือนอัตโนมัติจากฐานข้อมูลของคุณ</p>
+                <h5>ยังไม่มีการแจ้งเตือน SQL</h5>
+                <p class="text-muted">เริ่มต้นด้วยการสร้างการแจ้งเตือน SQL แรกของคุณ</p>
                 <a href="{{ route('admin.sql-alerts.create') }}" class="btn btn-primary">
-                    <i class="fas fa-plus me-2"></i>
-                    สร้างการแจ้งเตือนแรก
+                    <i class="fas fa-plus"></i> สร้างการแจ้งเตือนแรก
                 </a>
             </div>
+            
+            @endif
+            
         </div>
-        @endforelse
     </div>
-
-    <!-- Pagination -->
-    @if($alerts->hasPages())
-    <div class="d-flex justify-content-center">
-        {{ $alerts->links() }}
-    </div>
-    @endif
+    
 </div>
+
+{{-- Execute Alert Modal --}}
+<div class="modal fade" id="executeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">รันการแจ้งเตือน SQL</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>คุณแน่ใจหรือไม่ที่จะรันการแจ้งเตือน SQL นี้ทันที?</p>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    การดำเนินการนี้จะรัน SQL query และส่งการแจ้งเตือนไปยังผู้รับทั้งหมด
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" class="btn btn-success" id="confirmExecute">รันทันที</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Delete Alert Modal --}}
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">ลบการแจ้งเตือน SQL</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>คุณแน่ใจหรือไม่ที่จะลบการแจ้งเตือน SQL นี้?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    การดำเนินการนี้ไม่สามารถยกเลิกได้ ประวัติการรันทั้งหมดจะถูกลบด้วย
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">ลบ</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection
 
 @push('scripts')
 <script>
-function executeAlert(alertId) {
-    if (!confirm('ต้องการรันการแจ้งเตือนนี้ทันทีหรือไม่?')) {
-        return;
-    }
+// Routes configuration
+const routes = {
+    execute: "{{ route('admin.sql-alerts.execute', ':id') }}",
+    destroy: "{{ route('admin.sql-alerts.destroy', ':id') }}"
+};
 
-    fetch(`/admin/sql-alerts/${alertId}/execute`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('รันการแจ้งเตือนสำเร็จ\n' + 
-                  `ข้อมูล: ${data.data.rows_returned} แถว\n` +
-                  `ส่งแจ้งเตือน: ${data.data.notifications_sent} ฉบับ\n` +
-                  `เวลาที่ใช้: ${data.data.execution_time}`);
-            location.reload();
-        } else {
-            alert('เกิดข้อผิดพลาด: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('เกิดข้อผิดพลาดในการส่งคำขอ');
-    });
+let currentAlertId = null;
+
+function executeAlert(alertId) {
+    currentAlertId = alertId;
+    const modal = new bootstrap.Modal(document.getElementById('executeModal'));
+    modal.show();
 }
 
 function deleteAlert(alertId) {
-    if (!confirm('ต้องการลบการแจ้งเตือนนี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้')) {
-        return;
-    }
-
-    fetch(`/admin/sql-alerts/${alertId}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('ลบการแจ้งเตือนสำเร็จ');
-            location.reload();
-        } else {
-            alert('เกิดข้อผิดพลาด: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('เกิดข้อผิดพลาดในการส่งคำขอ');
-    });
-}
-</script>
-@endpush
-
-<?php
-// ===== resources/views/admin/sql-alerts/steps/generic-step.blade.php =====
-?>
-
-<style>
-.wizard-container {
-    background: white;
-    border-radius: 15px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-    overflow: hidden;
+    currentAlertId = alertId;
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
 }
 
-.wizard-header {
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    color: white;
-    padding: 30px;
-}
-
-.wizard-title {
-    font-size: 1.8rem;
-    font-weight: 600;
-    margin-bottom: 10px;
-}
-
-.wizard-subtitle {
-    opacity: 0.9;
-    font-size: 1.1rem;
-}
-
-.step-indicator {
-    display: flex;
-    gap: 8px;
-    margin-top: 25px;
-}
-
-.step {
-    flex: 1;
-    height: 4px;
-    background: rgba(255,255,255,0.3);
-    border-radius: 2px;
-    transition: background 0.3s ease;
-}
-
-.step.active {
-    background: #fbbf24;
-}
-
-.step.completed {
-    background: #10b981;
-}
-
-.wizard-content {
-    padding: 40px;
-}
-
-.section-title {
-    font-size: 1.4rem;
-    font-weight: 600;
-    margin-bottom: 25px;
-    color: #4f46e5;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.section-icon {
-    width: 32px;
-    height: 32px;
-    background: #4f46e5;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-}
-
-.btn {
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-weight: 500;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    color: white;
-}
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
-}
-
-.btn-secondary {
-    background: #6b7280;
-    color: white;
-}
-
-.btn-secondary:hover {
-    background: #4b5563;
-}
-
-.wizard-navigation {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 40px;
-    padding-top: 25px;
-    border-top: 1px solid #e5e7eb;
-}
-
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #92400e;
-    background: #fef3c7;
-}
-
-.coming-soon {
-    text-align: center;
-    padding: 60px 20px;
-    background: #f8f9fa;
-    border-radius: 12px;
-    margin: 20px 0;
-}
-
-.coming-soon-icon {
-    width: 80px;
-    height: 80px;
-    background: #e5e7eb;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px;
-    font-size: 32px;
-    color: #6b7280;
-}
-</style>
-
-<!-- Wizard Container -->
-<div class="wizard-container">
-    <!-- Wizard Header -->
-    <div class="wizard-header">
-        <div class="wizard-title">🚀 {{ $title }}</div>
-        <div class="wizard-subtitle">ขั้นตอนที่ {{ $step }} ของการสร้างการแจ้งเตือน SQL</div>
+// Execute confirmation
+document.getElementById('confirmExecute')?.addEventListener('click', function() {
+    if (currentAlertId) {
+        const url = routes.execute.replace(':id', currentAlertId);
         
-        <!-- Step Indicator -->
-        <div class="step-indicator">
-            @for($i = 1; $i <= $totalSteps; $i++)
-                <div class="step {{ $i < $step ? 'completed' : ($i == $step ? 'active' : '') }}"></div>
-            @endfor
-        </div>
-    </div>
-
-    <!-- Wizard Content -->
-    <div class="wizard-content">
-        <!-- Step Content -->
-        <div class="section-title">
-            <div class="section-icon">{{ $step }}</div>
-            {{ $title }}
-        </div>
+        // Show loading state
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังรัน...';
         
-        <!-- Coming Soon Content -->
-        <div class="coming-soon">
-            <div class="coming-soon-icon">
-                <i class="fas fa-cog"></i>
-            </div>
-            <h4>ขั้นตอนนี้กำลังพัฒนา</h4>
-            <p class="text-muted">
-                ขั้นตอน "{{ $title }}" กำลังอยู่ระหว่างการพัฒนา<br>
-                กรุณาดำเนินการต่อไปยังขั้นตอนถัดไป
-            </p>
-            <div class="alert alert-info mt-3">
-                <i class="fas fa-info-circle me-2"></i>
-                <strong>หมายเหตุ:</strong> ในเวอร์ชันปัจจุบันคุณสามารถข้ามขั้นตอนนี้ได้
-            </div>
-        </div>
-
-        <!-- Navigation -->
-        <div class="wizard-navigation">
-            <button type="button" class="btn btn-secondary" onclick="previousStep()">
-                <i class="fas fa-arrow-left"></i>
-                ย้อนกลับ
-            </button>
-            
-            <div class="status-indicator">
-                <i class="fas fa-info-circle"></i>
-                ขั้นตอนที่ {{ $step }} จาก {{ $totalSteps }}
-            </div>
-            
-            <button type="button" class="btn btn-primary" onclick="nextStep()">
-                @if($step < $totalSteps)
-                    ถัดไป
-                    <i class="fas fa-arrow-right"></i>
-                @else
-                    เสร็จสิ้น
-                    <i class="fas fa-check"></i>
-                @endif
-            </button>
-        </div>
-    </div>
-</div>
-
-<script>
-function previousStep() {
-    const currentStep = {{ $step }};
-    if (currentStep > 1) {
-        window.SqlAlertWizard.goToStep(currentStep - 1);
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('รันการแจ้งเตือนสำเร็จ');
+                location.reload();
+            } else {
+                alert('เกิดข้อผิดพลาดในการรัน: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+        })
+        .finally(() => {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('executeModal'));
+            modal?.hide();
+        });
     }
-}
+});
 
-function nextStep() {
-    const currentStep = {{ $step }};
-    const totalSteps = {{ $totalSteps }};
-    
-    if (currentStep < totalSteps) {
-        window.SqlAlertWizard.goToStep(currentStep + 1);
-    } else {
-        // Final step - redirect to summary or save
-        alert('การสร้างการแจ้งเตือน SQL เสร็จสิ้น!');
-        window.location.href = '{{ route("admin.sql-alerts.index") }}';
+// Delete confirmation
+document.getElementById('confirmDelete')?.addEventListener('click', function() {
+    if (currentAlertId) {
+        const url = routes.destroy.replace(':id', currentAlertId);
+        
+        // Show loading state
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังลบ...';
+        
+        fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('ลบการแจ้งเตือนสำเร็จ');
+                location.reload();
+            } else {
+                alert('เกิดข้อผิดพลาดในการลบ: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+        })
+        .finally(() => {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
+            modal?.hide();
+        });
     }
-}
-</script>
-
-<?php
-// ===== resources/views/admin/sql-alerts/show.blade.php =====
-?>
-
-@extends('layouts.app')
-
-@section('title', 'รายละเอียดการแจ้งเตือน SQL - ' . $sqlAlert->name)
-
-@push('styles')
-<style>
-.alert-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 15px 15px 0 0;
-    padding: 2rem;
-}
-
-.status-badge {
-    font-size: 0.875rem;
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    border-radius: 50px;
-    border: 2px solid rgba(255,255,255,0.3);
-}
-
-.stat-card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    transition: all 0.3s ease;
-    border-left: 4px solid #e5e7eb;
-}
-
-.stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.stat-card.success {
-    border-left-color: #10b981;
-}
-
-.stat-card.danger {
-    border-left-color: #ef4444;
-}
-
-.stat-card.warning {
-    border-left-color: #f59e0b;
-}
-
-.stat-card.info {
-    border-left-color: #3b82f6;
-}
-
-.execution-timeline {
-    position: relative;
-    padding-left: 2rem;
-}
-
-.execution-timeline::before {
-    content: '';
-    position: absolute;
-    left: 0.75rem;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: linear-gradient(to bottom, #10b981, #e5e7eb);
-}
-
-.execution-item {
-    position: relative;
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    border-left: 4px solid #e5e7eb;
-}
-
-.execution-item::before {
-    content: '';
-    position: absolute;
-    left: -2.25rem;
-    top: 1.5rem;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #e5e7eb;
-    border: 3px solid white;
-    box-shadow: 0 0 0 2px #e5e7eb;
-}
-
-.execution-item.success {
-    border-left-color: #10b981;
-}
-
-.execution-item.success::before {
-    background: #10b981;
-    box-shadow: 0 0 0 2px #10b981;
-}
-
-.execution-item.failed {
-    border-left-color: #ef4444;
-}
-
-.execution-item.failed::before {
-    background: #ef4444;
-    box-shadow: 0 0 0 2px #ef4444;
-}
-
-.execution-item.running {
-    border-left-color: #f59e0b;
-    animation: pulse 2s infinite;
-}
-
-.execution-item.running::before {
-    background: #f59e0b;
-    box-shadow: 0 0 0 2px #f59e0b;
-    animation: pulse 2s infinite;
-}
-
-.config-section {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.config-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.config-item:last-child {
-    border-bottom: none;
-}
-
-.config-label {
-    font-weight: 600;
-    color: #374151;
-}
-
-.config-value {
-    color: #6b7280;
-    font-family: 'Courier New', monospace;
-    font-size: 0.875rem;
-}
-
-.sql-query-display {
-    background: #1f2937;
-    color: #e5e7eb;
-    border-radius: 8px;
-    padding: 1rem;
-    font-family: 'Courier New', monospace;
-    font-size: 0.875rem;
-    line-height: 1.5;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
-}
-</style>
-@endpush
-
-@section('content')
-<div class="container-fluid">
-    <!-- Alert Header -->
-    <div class="alert-header mb-4">
-        <div class="d-flex justify-content-between align-items-start">
-            <div>
-                <h1 class="h2 mb-2">{{ $sqlAlert->name }}</h1>
-                <p class="mb-3 opacity-90">{{ $sqlAlert->description ?: 'ไม่มีคำอธิบาย' }}</p>
-                <div class="d-flex align-items-center gap-3">
-                    <span class="status-badge">
-                        <i class="fas fa-circle me-2"></i>
-                        {{ $sqlAlert->status_display }}
-                    </span>
-                    <span class="text-white-50">
-                        <i class="fas fa-clock me-1"></i>
-                        {{ $sqlAlert->schedule_type_display }}
-                    </span>
-                    <span class="text-white-50">
-                        <i class="fas fa-database me-1"></i>
-                        {{ $sqlAlert->database_type }}
-                    </span>
-                </div>
-            </div>
-            <div class="text-end">
-                <div class="dropdown">
-                    <button class="btn btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <i class="fas fa-cog me-2"></i>
-                        จัดการ
-                    </button>
-                    <ul class="dropdown-menu">
-                        @if($sqlAlert->canExecute())
-                        <li><a class="dropdown-item" href="#" onclick="executeAlert()">
-                            <i class="fas fa-play me-2 text-success"></i>รันทันที
-                        </a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        @endif
-                        <li><a class="dropdown-item" href="{{ route('admin.sql-alerts.edit', $sqlAlert) }}">
-                            <i class="fas fa-edit me-2 text-primary"></i>แก้ไข
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="duplicateAlert()">
-                            <i class="fas fa-copy me-2 text-info"></i>ทำสำเนา
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportConfig()">
-                            <i class="fas fa-download me-2 text-warning"></i>ส่งออกการตั้งค่า
-                        </a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteAlert()">
-                            <i class="fas fa-trash me-2"></i>ลบ
-                        </a></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="stat-card info">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">รันทั้งหมด</div>
-                        <div class="h3 mb-0">{{ $statistics['total_executions'] }}</div>
-                    </div>
-                    <i class="fas fa-play-circle fa-2x text-info opacity-75"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="stat-card success">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">สำเร็จ</div>
-                        <div class="h3 mb-0">{{ $statistics['successful_executions'] }}</div>
-                        <div class="small text-success">{{ $statistics['success_rate'] }}%</div>
-                    </div>
-                    <i class="fas fa-check-circle fa-2x text-success opacity-75"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="stat-card danger">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">ล้มเหลว</div>
-                        <div class="h3 mb-0">{{ $statistics['failed_executions'] }}</div>
-                    </div>
-                    <i class="fas fa-times-circle fa-2x text-danger opacity-75"></i>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="stat-card warning">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">เวลาเฉลี่ย</div>
-                        <div class="h3 mb-0">{{ $statistics['avg_execution_time'] }}</div>
-                    </div>
-                    <i class="fas fa-stopwatch fa-2x text-warning opacity-75"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <!-- Left Column: Configuration -->
-        <div class="col-md-8">
-            <!-- SQL Query -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-code me-2"></i>
-                        SQL Query
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="sql-query-display">{{ $sqlAlert->sql_query }}</div>
-                </div>
-                <div class="card-footer">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="text-muted">
-                            ตัวแปรที่ใช้: 
-                            @forelse($sqlAlert->getUsedVariables() as $variable)
-                                <code>{{{{ $variable }}}}</code>{{ !$loop->last ? ', ' : '' }}
-                            @empty
-                                ไม่มี
-                            @endforelse
-                        </small>
-                        <button class="btn btn-sm btn-outline-primary" onclick="testQuery()">
-                            <i class="fas fa-play me-1"></i>
-                            ทดสอบ Query
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Database Configuration -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-database me-2"></i>
-                        การเชื่อมต่อฐานข้อมูล
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="config-section">
-                        <div class="config-item">
-                            <span class="config-label">ประเภท</span>
-                            <span class="config-value">{{ $sqlAlert->database_config['type'] ?? 'Unknown' }}</span>
-                        </div>
-                        <div class="config-item">
-                            <span class="config-label">เซิร์ฟเวอร์</span>
-                            <span class="config-value">{{ $sqlAlert->database_config['host'] ?? 'localhost' }}</span>
-                        </div>
-                        <div class="config-item">
-                            <span class="config-label">พอร์ต</span>
-                            <span class="config-value">{{ $sqlAlert->database_config['port'] ?? 'Default' }}</span>
-                        </div>
-                        <div class="config-item">
-                            <span class="config-label">ฐานข้อมูล</span>
-                            <span class="config-value">{{ $sqlAlert->database_config['database'] ?? 'Unknown' }}</span>
-                        </div>
-                        <div class="config-item">
-                            <span class="config-label">ผู้ใช้</span>
-                            <span class="config-value">{{ $sqlAlert->database_config['username'] ?? 'Unknown' }}</span>
-                        </div>
-                    </div>
-                    <button class="btn btn-sm btn-outline-success" onclick="testConnection()">
-                        <i class="fas fa-plug me-1"></i>
-                        ทดสอบการเชื่อมต่อ
-                    </button>
-                </div>
-            </div>
-
-            <!-- Email Configuration -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-envelope me-2"></i>
-                        การตั้งค่าอีเมล
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="config-section">
-                        <div class="config-item">
-                            <span class="config-label">หัวข้อ</span>
-                            <span class="config-value">{{ $sqlAlert->email_config['subject'] ?? 'ไม่ระบุ' }}</span>
-                        </div>
-                        <div class="config-item">
-                            <span class="config-label">ผู้รับ</span>
-                            <span class="config-value">{{ $sqlAlert->getRecipientCount() }} คน</span>
-                        </div>
-                        <div class="config-item">
-                            <span class="config-label">รูปแบบ</span>
-                            <span class="config-value">HTML + Text</span>
-                        </div>
-                    </div>
-                    <div class="mt-3">
-                        <label class="form-label fw-bold">เทมเพลตอีเมล:</label>
-                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
-                            {!! nl2br(e($sqlAlert->email_config['body_template'] ?? 'ไม่มีเทมเพลต')) !!}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Column: Schedule & Executions -->
-        <div class="col-md-4">
-            <!-- Schedule Configuration -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-calendar-alt me-2"></i>
-                        ตารางเวลา
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="config-section">
-                        <div class="config-item">
-                            <span class="config-label">ประเภท</span>
-                            <span class="config-value">{{ $sqlAlert->schedule_type_display }}</span>
-                        </div>
-                        @if($sqlAlert->last_run)
-                        <div class="config-item">
-                            <span class="config-label">รันล่าสุด</span>
-                            <span class="config-value">{{ $sqlAlert->last_run->diffForHumans() }}</span>
-                        </div>
-                        @endif
-                        @if($sqlAlert->next_run)
-                        <div class="config-item">
-                            <span class="config-label">รันครั้งถัดไป</span>
-                            <span class="config-value {{ $sqlAlert->is_overdue ? 'text-danger' : '' }}">
-                                {{ $sqlAlert->next_run->diffForHumans() }}
-                            </span>
-                        </div>
-                        @endif
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recent Executions -->
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="fas fa-history me-2"></i>
-                        ประวัติการรัน
-                    </h5>
-                    <a href="{{ route('admin.sql-alerts.executions', $sqlAlert) }}" class="btn btn-sm btn-outline-primary">
-                        ดูทั้งหมด
-                    </a>
-                </div>
-                <div class="card-body">
-                    @forelse($recentExecutions->take(5) as $execution)
-                    <div class="execution-item {{ $execution->status }}">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <span class="badge bg-{{ $execution->status === 'success' ? 'success' : ($execution->status === 'failed' ? 'danger' : 'warning') }}">
-                                    {{ $execution->status_display }}
-                                </span>
-                                <small class="text-muted ms-2">
-                                    {{ $execution->trigger_type_display }}
-                                </small>
-                            </div>
-                            <small class="text-muted">
-                                {{ $execution->created_at->diffForHumans() }}
-                            </small>
-                        </div>
-                        
-                        @if($execution->status === 'success')
-                        <div class="row g-2 text-center">
-                            <div class="col-4">
-                                <div class="small text-muted">ข้อมูล</div>
-                                <div class="fw-bold">{{ $execution->rows_returned ?? 0 }}</div>
-                            </div>
-                            <div class="col-4">
-                                <div class="small text-muted">อีเมล</div>
-                                <div class="fw-bold">{{ $execution->notifications_sent ?? 0 }}</div>
-                            </div>
-                            <div class="col-4">
-                                <div class="small text-muted">เวลา</div>
-                                <div class="fw-bold">{{ $execution->execution_time_human }}</div>
-                            </div>
-                        </div>
-                        @elseif($execution->status === 'failed')
-                        <div class="text-danger small">
-                            <i class="fas fa-exclamation-triangle me-1"></i>
-                            {{ Str::limit($execution->error_message, 100) }}
-                        </div>
-                        @endif
-                    </div>
-                    @empty
-                    <div class="text-center py-3">
-                        <i class="fas fa-history fa-2x text-muted mb-2"></i>
-                        <p class="text-muted small">ยังไม่มีประวัติการรัน</p>
-                    </div>
-                    @endforelse
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-@endsection
-
-@push('scripts')
-<script>
-function executeAlert() {
-    if (!confirm('ต้องการรันการแจ้งเตือนนี้ทันทีหรือไม่?')) {
-        return;
-    }
-
-    fetch(`{{ route('admin.sql-alerts.execute', $sqlAlert) }}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('รันการแจ้งเตือนสำเร็จ!');
-            location.reload();
-        } else {
-            alert('เกิดข้อผิดพลาด: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('เกิดข้อผิดพลาดในการส่งคำขอ');
-    });
-}
-
-function testQuery() {
-    // Implementation for testing SQL query
-    alert('ฟีเจอร์ทดสอบ Query กำลังพัฒนา');
-}
-
-function testConnection() {
-    // Implementation for testing database connection
-    alert('ฟีเจอร์ทดสอบการเชื่อมต่อกำลังพัฒนา');
-}
-
-function duplicateAlert() {
-    if (confirm('ต้องการทำสำเนาการแจ้งเตือนนี้หรือไม่?')) {
-        alert('ฟีเจอร์ทำสำเนากำลังพัฒนา');
-    }
-}
-
-function exportConfig() {
-    alert('ฟีเจอร์ส่งออกการตั้งค่ากำลังพัฒนา');
-}
-
-function deleteAlert() {
-    if (!confirm('ต้องการลบการแจ้งเตือนนี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้')) {
-        return;
-    }
-
-    fetch(`{{ route('admin.sql-alerts.destroy', $sqlAlert) }}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('ลบการแจ้งเตือนสำเร็จ');
-            window.location.href = '{{ route("admin.sql-alerts.index") }}';
-        } else {
-            alert('เกิดข้อผิดพลาด: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('เกิดข้อผิดพลาดในการส่งคำขอ');
-    });
-}
-
-// Auto-refresh executions every 30 seconds
-setInterval(function() {
-    // Only refresh if there are running executions
-    if (document.querySelector('.execution-item.running')) {
-        location.reload();
-    }
-}, 30000);
+});
 </script>
 @endpush
